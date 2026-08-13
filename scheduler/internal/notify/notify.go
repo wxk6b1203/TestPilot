@@ -72,9 +72,12 @@ func StressFinished(db *gorm.DB, runID int64) {
 
 func send(db *gorm.DB, tenantID int64, event string, payload map[string]any, title, text string) {
 	var chans []model.NotificationChannel
-	db.Where("tenant_id = ? AND enabled = ?", tenantID, true).Find(&chans)
+	if err := db.Where("tenant_id = ? AND enabled = ?", tenantID, true).Find(&chans).Error; err != nil {
+		logging.L.Warnw("notify query channels failed", "tenant", tenantID, "event", event, "err", err)
+		return
+	}
 	for _, ch := range chans {
-		if !strings.Contains(ch.Events, event) {
+		if !eventSubscribed(ch.Events, event) {
 			continue
 		}
 		ch := ch
@@ -87,6 +90,16 @@ func send(db *gorm.DB, tenantID int64, event string, payload map[string]any, tit
 			metrics.Notifications.WithLabelValues(metrics.ChannelTypeName(ch.Type), result).Inc()
 		}()
 	}
+}
+
+// eventSubscribed 判断逗号分隔的 events 列表是否包含 event（精确匹配，避免子串误配）。
+func eventSubscribed(events, event string) bool {
+	for _, e := range strings.Split(events, ",") {
+		if strings.TrimSpace(e) == event {
+			return true
+		}
+	}
+	return false
 }
 
 func deliver(ch *model.NotificationChannel, payload map[string]any, title, text string) error {
