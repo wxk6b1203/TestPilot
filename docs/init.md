@@ -1,5 +1,9 @@
 # TestPilot 项目初始说明
 
+> **历史需求文档**：本文是项目启动时的原始需求说明，保留作溯源。其中部分描述已被后续审阅修正
+> （如"H2 与 GORM"不兼容、Worker 语言、Copilot 协议等）——**以 `docs/design.md` 为架构准绳**，
+> 当前实施进度见 `docs/roadmap.md` 顶部"进度总览"。
+
 ## 描述
 本项目试图构建一个加入LLM参与的自动化集成测试平台项目，涵盖了HTTP API，GRPC API的能力测试、压力测试，并且支持用Playwright来进行页面E2E测试，涵盖接口管理，自动化测试，文档等功能。并且支持结合Python进行低代码形式的自动化流程测试，最终目的是希望能实现例如OPENAPI/页面的端到端测试。整个项目分为调度器Scheduler，执行器Worker，Copilot，调度器可以由Golang编写，调度器可以由Python或者TS编写（因为Playwright原生支持Python/TS，可以集约到这个服务下），Copilot可以使用PyDantic-AI来作为基础AI框架，用FastAPI暴露Vercel AI V7兼容接口来与Scheduler交互，用来生成测试用例等等相关业务结构，Scheduler同时兼控制台的作用，即与前端进行CRUD。调度器用于对测试相关业务进行CRUD，并且负责分布式调度到目标执行器，执行器用来执行目标测试任务。
 

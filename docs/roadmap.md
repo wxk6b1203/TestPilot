@@ -6,6 +6,25 @@
 
 ---
 
+## 进度总览（2026-08-13 更新）
+
+**Phase 0–9 全部完成并回归通过**（M1–M6 里程碑达成）。其后完成的工程化加固：
+
+| 项 | 状态 | 说明 |
+|---|---|---|
+| #21 fiber v3 迁移 | ✅ | net/http → fiber v3（fasthttp）；全量 e2e + 链路 + 容器冒烟通过 |
+| 启动配置三级化 | ✅ | YAML/env/CLI（Copilot 多一层 .env）；逐键模板 `deploy/*.yaml.example` |
+| 无网单测 | ✅ | Go 15 internal 包 + Worker 123 用例 + Copilot 61 用例 |
+| 依赖卫生 | ✅ | locust/pyyaml/pytest(dev) 声明入 pyproject；worker 镜像含 locust（容器压测冒烟通过） |
+| v2 第一批 | ✅ | curl 导出（/export/curl）、Copilot 反代（/copilot-api/* → TP_COPILOT_URL）、OpenAPI URL 导入（gRPC openapi_url 分支 + SSRF 私网防护） |
+
+**v2 待办**（按批次，详见本文件末尾「v2 范围」）：
+- 第一批（已完成）：curl 导出 / Copilot 反代 / OpenAPI URL 导入
+- 第二批：suite 引用展开（ref_type=2）、ApplyOpenApiDiff、对象存储制品后端、loop parallel、lowcode script_ref
+- 第三批（需 Spike 前置）：gRPC 接口测试（proto reflection）、低代码 Page 模型 + 压测行为脚本、Postman 导入导出
+
+---
+
 ## 0. 实施原则
 
 1. **契约先行**：proto + 数据模型已定（任务 A）。所有组件以此为单一事实源。
@@ -38,7 +57,7 @@
 
 ## 2. 阶段划分
 
-### Phase 0 — 地基（脚手架 + 契约落地）
+### Phase 0 — 地基（脚手架 + 契约落地） ✅
 **目标**：可构建、可运行的空骨架，契约可 codegen，组件能连通。
 
 | 交付物 | 组件 |
@@ -55,7 +74,7 @@
 
 ---
 
-### Phase 1 — 端到端骨架（walking skeleton）
+### Phase 1 — 端到端骨架（walking skeleton） ✅
 **目标**：打通最小闭环，验证执行引擎与表达式语言。
 
 | 交付物 | 组件 |
@@ -73,7 +92,7 @@
 
 ---
 
-### Phase 2 — 领域管理 + 导入导出
+### Phase 2 — 领域管理 + 导入导出 ✅
 **目标**：完整的基础业务结构管理（对标 Postman/Apifox 的接口管理）。
 
 | 交付物 | 组件 |
@@ -92,7 +111,7 @@
 
 ---
 
-### Phase 3 — 执行引擎深化 + 报告
+### Phase 3 — 执行引擎深化 + 报告 ✅
 **目标**：声明式引擎全能力 + 完整结果/报告 + CI。
 
 | 交付物 | 组件 |
@@ -111,7 +130,7 @@
 
 ---
 
-### Phase 4 — 低代码 SDK + 沙箱
+### Phase 4 — 低代码 SDK + 沙箱 ✅
 **目标**：Python 低代码用例可编写、可安全执行。
 
 | 交付物 | 组件 |
@@ -129,7 +148,7 @@
 
 ---
 
-### Phase 5 — Playwright E2E
+### Phase 5 — Playwright E2E ✅
 **目标**：页面 E2E 测试。
 
 | 交付物 | 组件 |
@@ -145,7 +164,7 @@
 
 ---
 
-### Phase 6 — Copilot
+### Phase 6 — Copilot ✅
 **目标**：AI 生成与分析。
 
 | 交付物 | 组件 |
@@ -162,7 +181,7 @@
 
 ---
 
-### Phase 7 — 压力测试
+### Phase 7 — 压力测试 ✅
 **目标**：分布式压测。
 
 | 交付物 | 组件 |
@@ -179,7 +198,7 @@
 
 ---
 
-### Phase 8 — 多租户/认证/RBAC/通知/配额强化
+### Phase 8 — 多租户/认证/RBAC/通知/配额强化 ✅
 **目标**：生产级多租户与治理。`tenant_id` 过滤自 Phase 0 已内建，本阶段替换存根认证为真认证并补全治理。
 
 | 交付物 | 组件 |
@@ -198,7 +217,7 @@
 
 ---
 
-### Phase 9 — 可观测性 + 部署 + 收尾
+### Phase 9 — 可观测性 + 部署 + 收尾 ✅
 **目标**：可运维、可交付。
 
 | 交付物 | 组件 |
@@ -281,3 +300,39 @@
 | Phase 7 | 8（压力测试） |
 | Phase 8 | 2.4（多租户）、9.3/9.4（RBAC/认证）、9.5（SSRF）、13.1/13.2/13.3/13.5（调度/通知/配额/保留） |
 | Phase 9 | 13.4（部署）、14（可观测性） |
+
+---
+
+## 8. v2 范围（MVP 后增强；原 Phase 2/3/5/7 中裁剪项 + 新增）
+
+> 下列各项在原阶段计划中存在但被裁剪/降级，或属新增增强。按投入产出与依赖分批。
+
+### 第一批（已完成 2026-08-13）
+| 项 | 原属 | 落地 |
+|---|---|---|
+| curl 导出 | Phase 2「导出 curl」 | `GET /export/curl?project_id=`（impexp.ExportCurl） |
+| Copilot 生产反代 | Phase 6/9 边界 | scheduler `/copilot-api/*` → `TP_COPILOT_URL`（SSE FlushInterval=-1） |
+| OpenAPI URL 导入 | Phase 2 导入增强 | gRPC `ImportOpenApi.openapi_url` 分支 + 私网/环回 SSRF 防护 |
+
+### 第二批（中等，无 Spike 依赖）
+| 项 | 位置 | 说明 |
+|---|---|---|
+| suite 引用展开 | runner.go `RefType != 1` 跳过；DDL `test_suites/test_suite_items` 已预留 | 需新增 Suite GORM 模型 + runner 递归展开 + 去环 |
+| ApplyOpenApiDiff | copilot_service.go `Unimplemented` | OpenAPI diff 增量应用（按 method+uri 匹配 patch，含删除策略） |
+| 对象存储制品后端 | artifact_handlers.go 直读本地目录 | ArtifactBackend 接口 + local/S3 双实现（artifact_dir 语义层已留口） |
+| loop parallel | engine.py `parallel=true not supported` | asyncio.gather + 变量隔离/聚合语义定义 |
+| lowcode script_ref | engine.py `script_ref not supported` | 需新增脚本存储模型（artifact 是 run 产物，非资产库） |
+
+### 第三批（大工程，需 Spike 前置）
+| 项 | 前置 | 说明 |
+|---|---|---|
+| gRPC 接口测试 | Spike F（proto reflection / 上传） | DDL `grpc_apis/proto_files` 已预留；GrpcApi CRUD + 引擎 GRPC_CALL 步骤 + Copilot `API_KIND_GRPC` |
+| 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | 沙箱内驱动浏览器（Page pydantic 封装经能力桥转发 Playwright 操作） |
+| 压测 behavior_case | 依赖低代码 Page 能力桥 | stress target_type=2 接低代码行为脚本 |
+| Postman 导入导出 | — | collection v2.1 解析/生成（对称已有 OpenAPI/curl） |
+
+### 明确不做/另议
+- **OAuth2（非 OIDC）登录**：grant 类型未定（client_credentials 为 S2S、password 已弃用），待具体需求
+- **api_tokens 表（CI token）**：DDL 已预留；roadmap Phase 3 的「CI 集成 + CLI」整体待议（用户已明确不依赖 GitHub CI）
+- **VictoriaMetrics**：压测时序当前落 `stress_metric_points` 表；设计文档保留 VictoriaMetrics 为大规模部署的可选替换，非排期项
+- **Vault**：密钥管理走敏感变量 + secret_ref 引用（沙箱零凭据设计）；Vault 对接非排期项

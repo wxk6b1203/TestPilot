@@ -1,7 +1,10 @@
 # TestPilot 数据模型（ER 与表结构）
 
 > 与 `docs/design.md` 第 3/4 章领域模型、第 9 章存储、`proto/testpilot/common/v1/types.proto` 对齐。
-> 本文档定义逻辑模型与表结构；物理 DDL 由 golang-migrate 版本化管理。
+> 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
+> 创建/演进**（`scheduler/internal/model`，当前 26 张）；`docs/sql/*.sql` 为生产 DDL 参考脚本
+> （31 表，含 5 张 v2 预留——grpc_apis / proto_files / test_suites / test_suite_items / api_tokens，
+> 尚未进 GORM 模型，随 v2 批次落地）。
 
 ## 0. 约定
 

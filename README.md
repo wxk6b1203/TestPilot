@@ -108,7 +108,8 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、导出 OpenAPI 3
 - **结果模型**：TestRun → TestCaseResult → TestStepResult（点路径定址，含请求/响应快照与断言明细）+ Artifact（截图/trace/har）
 - **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（30 表，与 GORM 模型一致）
+- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（31 表；其中 5 张为 v2 预留——
+  grpc_apis / proto_files / test_suites / test_suite_items / api_tokens，GORM AutoMigrate 当前迁移 26 张）
 
 ## 代码生成
 
