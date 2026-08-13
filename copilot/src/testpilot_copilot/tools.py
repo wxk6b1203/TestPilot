@@ -198,11 +198,17 @@ async def create_test_plan(ctx: RunContext[CopilotDeps], project_id: str, env_id
 
 @writes.tool(requires_approval=True)
 async def import_openapi(ctx: RunContext[CopilotDeps], project_id: str,
-                         openapi_document: str) -> dict:
-    """导入 OpenAPI 3 文档（JSON 或 YAML 原文），批量生成接口。"""
-    r = await ctx.deps.sched.stub.ImportOpenApi(
-        cpb.ImportOpenApiRequest(ctx=ctx.deps.ctx(), project_id=project_id,
-                                 openapi_document=openapi_document))
+                         openapi_document: str = "", openapi_url: str = "") -> dict:
+    """导入 OpenAPI 3 文档，批量生成接口。二选一：openapi_document（JSON/YAML 原文）
+    或 openapi_url（文档 URL，服务端拉取；环回/私网地址会被拒绝）。"""
+    req = cpb.ImportOpenApiRequest(ctx=ctx.deps.ctx(), project_id=project_id)
+    if openapi_url:
+        req.openapi_url = openapi_url
+    elif openapi_document:
+        req.openapi_document = openapi_document
+    else:
+        raise ValueError("openapi_document 与 openapi_url 需提供一个")
+    r = await ctx.deps.sched.stub.ImportOpenApi(req)
     return to_dict(r)
 
 

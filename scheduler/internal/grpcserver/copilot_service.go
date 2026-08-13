@@ -5,6 +5,10 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -542,8 +546,19 @@ func (s *CopilotService) ImportOpenApi(_ context.Context, req *copilotv1.ImportO
 		return nil, err
 	}
 	doc := req.GetOpenapiDocument()
+	source := "document"
 	if doc == "" {
-		return nil, status.Error(codes.InvalidArgument, "openapi_document required (url import not supported yet)")
+		if u := req.GetOpenapiUrl(); u != "" {
+			raw, err := fetchOpenAPIURL(u)
+			if err != nil {
+				return nil, status.Error(codes.InvalidArgument, "fetch openapi_url: "+err.Error())
+			}
+			doc = string(raw)
+			source = u
+		}
+	}
+	if doc == "" {
+		return nil, status.Error(codes.InvalidArgument, "openapi_document or openapi_url required")
 	}
 	projectID := mustID(req.GetProjectId())
 	if projectID == 0 {
@@ -557,8 +572,40 @@ func (s *CopilotService) ImportOpenApi(_ context.Context, req *copilotv1.ImportO
 	for _, id := range res.APIIDs {
 		out.ApiIds = append(out.ApiIds, idStr(id))
 	}
-	s.audit(req.GetCtx(), "import_openapi", "http_api", "", map[string]any{"project_id": projectID, "count": len(res.APIIDs)})
+	s.audit(req.GetCtx(), "import_openapi", "http_api", "", map[string]any{"project_id": projectID, "count": len(res.APIIDs), "source": source})
 	return out, nil
+}
+
+// lookupIP 域名解析（测试可替换，隔离私网防护与真实连接）。
+var lookupIP = net.DefaultResolver.LookupIPAddr
+
+// fetchOpenAPIURL 拉取 OpenAPI 文档（15s 超时、≤16MB）。SSRF 防护：拒绝
+// 解析到环回/私网/链路本地地址的 host（Copilot 可被诱导访问内网元数据端点）。
+func fetchOpenAPIURL(rawURL string) ([]byte, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+		return nil, fmt.Errorf("invalid url (http/https only)")
+	}
+	ips, err := lookupIP(context.Background(), u.Hostname())
+	if err != nil {
+		return nil, fmt.Errorf("resolve host: %w", err)
+	}
+	for _, ipa := range ips {
+		ip := ipa.IP
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return nil, fmt.Errorf("host %s resolves to private/loopback address", u.Hostname())
+		}
+	}
+	client := &http.Client{Timeout: 15 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("upstream returned %d", resp.StatusCode)
+	}
+	return io.ReadAll(io.LimitReader(resp.Body, 16<<20))
 }
 
 func (s *CopilotService) ApplyOpenApiDiff(_ context.Context, req *copilotv1.ApplyOpenApiDiffRequest) (*copilotv1.ApplyOpenApiDiffResponse, error) {

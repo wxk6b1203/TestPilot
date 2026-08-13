@@ -37,10 +37,10 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --
 | 服务 | 镜像/构建 | 端口 | 说明 |
 |---|---|---|---|
 | postgres | postgres:17-alpine | 127.0.0.1:5432（仅回环，可删） | 主库（`TP_DB_DSN` 指向） |
-| scheduler | deploy/scheduler.Dockerfile | :8080 REST+前端、:9090 gRPC | 内嵌 web/dist 托管 |
+| scheduler | deploy/scheduler.Dockerfile | :8080 REST+前端、:9090 gRPC | 内嵌 web/dist 托管；`/copilot-api/*` 反代到 copilot（`TP_COPILOT_URL`），SSE 生产入口收敛到 :8080 |
 | worker | deploy/worker.Dockerfile × `${WORKER_REPLICAS}` | — | functional/lowcode/playwright |
 | worker-stress | 同上 × `${STRESS_WORKER_REPLICAS}` | — | 压测独占编排 |
-| copilot | deploy/copilot.Dockerfile | :8100 | LLM 密钥只走 .env |
+| copilot | deploy/copilot.Dockerfile | 127.0.0.1:8100（仅调试，可删） | LLM 密钥只走 .env；正常流量走 scheduler 反代 |
 | jaeger | jaegertracing/jaeger | :16686 UI、:4317 OTLP | 链路（`TP_OTEL_EXPORTER=otlp`） |
 | prometheus | prom/prometheus | :9091 | 抓取 scheduler:8080/metrics |
 

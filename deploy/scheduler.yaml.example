@@ -31,6 +31,9 @@ retention_interval_min: 60
 
 # —— HTTP 调优 ——
 body_limit_mb: 64               # OpenAPI 导入需要较大上限
-read_timeout_sec: 0             # 0=不限
+read_timeout_sec: 0             # 0=不限（注意：SSE 长连接/慢速下载场景勿设小值）
 write_timeout_sec: 0
 idle_timeout_sec: 0
+
+# —— Copilot ——
+copilot_url: http://127.0.0.1:8100  # /copilot-api/* 反代目标（生产 compose 设 http://copilot:8100；空=关闭反代）

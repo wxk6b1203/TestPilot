@@ -47,6 +47,8 @@ type Config struct {
 	OTelExporter string `yaml:"otel_exporter"` // "" 关闭 | stdout | otlp
 	OTelEndpoint string `yaml:"otel_endpoint"` // otlp gRPC 地址
 
+	CopilotURL string `yaml:"copilot_url"` // /copilot-api/* 反代目标（前端 SSE 走此；空=关闭反代）
+
 	DefaultTenantID int64 `yaml:"-"` // 存根租户（不开放配置）
 }
 
@@ -64,6 +66,7 @@ func Defaults() Config {
 		RetentionIntervalMin: 60,
 		BodyLimitMB:          64,
 		OTelEndpoint:         "127.0.0.1:4317",
+		CopilotURL:           "http://127.0.0.1:8100",
 		DefaultTenantID:      1,
 	}
 }

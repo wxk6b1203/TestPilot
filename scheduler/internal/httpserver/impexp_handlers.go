@@ -81,3 +81,18 @@ func (s *Server) exportOpenAPI(ctx fiber.Ctx) error {
 	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="openapi.json"`)
 	return ctx.Status(fiber.StatusOK).Send(doc)
 }
+
+func (s *Server) exportCurl(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	pid := queryInt(ctx, "project_id")
+	if pid == 0 {
+		return writeErr(ctx, fiber.StatusBadRequest, "project_id required")
+	}
+	out, err := impexp.ExportCurl(s.db, c.TenantID, pid)
+	if err != nil {
+		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+	}
+	ctx.Set(fiber.HeaderContentType, "text/plain; charset=utf-8")
+	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="apis.sh"`)
+	return ctx.Status(fiber.StatusOK).SendString(out)
+}

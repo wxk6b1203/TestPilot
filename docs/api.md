@@ -53,7 +53,14 @@
 | POST | /import/openapi | member | OpenAPI 3 JSON/YAML（幂等跳过重复） |
 | POST | /import/curl | member | curl 命令文本 → 接口 |
 | GET | /export/openapi?project_id= | viewer | 导出 OpenAPI 3 |
+| GET | /export/curl?project_id= | viewer | 导出 curl 命令脚本（每接口一行） |
 | GET | /workers | viewer | 在线 Worker（能力/负载/标签） |
+
+## Copilot 反代（不在 /api/v1 下）
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| ALL | /copilot-api/* | Copilot 侧校验 | 反向代理到 `TP_COPILOT_URL`（路径重写为 /api/*；SSE 逐 token flush；上游不可达 502 `COPILOT_UNAVAILABLE`） |
 
 ## 定时调度 / 通知 / 配额 / 成员 / 身份源 / 审计
 

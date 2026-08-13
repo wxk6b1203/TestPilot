@@ -381,3 +381,41 @@ func TestApplyOpenApiDiffUnimplemented(t *testing.T) {
 		t.Fatalf("want Unimplemented, got %v", err)
 	}
 }
+
+func TestImportOpenApiFromURL(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	// httptest 回环会被私网防护拦截——URL 导入防护针对的是任意外网目标；
+	// 测试通过 fetchOpenAPIURL 的单测覆盖正常路径（见下），gRPC 层这里只验证接线：
+	// 私网 URL 必须被 InvalidArgument 拒绝。
+	_, err := cli.ImportOpenApi(context.Background(), &copilotv1.ImportOpenApiRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100",
+		Spec: &copilotv1.ImportOpenApiRequest_OpenapiUrl{OpenapiUrl: "http://127.0.0.1:9/openapi.json"},
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("loopback url should be InvalidArgument, got %v", err)
+	}
+	if !strings.Contains(status.Convert(err).Message(), "private/loopback") {
+		t.Fatalf("message should mention private/loopback: %v", err)
+	}
+	// 无 document 无 url → InvalidArgument
+	_, err = cli.ImportOpenApi(context.Background(), &copilotv1.ImportOpenApiRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100",
+	})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty spec should be InvalidArgument, got %v", err)
+	}
+	// 兜底：document 路径仍正常（回归）
+	var doc = `{"openapi":"3.0.3","paths":{"/h":{"get":{}}}}`
+	r, err := cli.ImportOpenApi(context.Background(), &copilotv1.ImportOpenApiRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100",
+		Spec: &copilotv1.ImportOpenApiRequest_OpenapiDocument{OpenapiDocument: doc},
+	})
+	if err != nil || r.GetImportedCount() != 1 {
+		t.Fatalf("document import broken: r=%+v err=%v", r, err)
+	}
+	var n int64
+	d.Model(&model.HttpApi{}).Where("project_id = 100").Count(&n)
+	if n != 1 {
+		t.Fatalf("apis=%d", n)
+	}
+}

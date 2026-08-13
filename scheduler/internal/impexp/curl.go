@@ -156,3 +156,52 @@ func ImportCurl(db *gorm.DB, tenantID, projectID int64, command string) (int64, 
 	}
 	return id, nil
 }
+
+// shellQuote 单引号包裹并转义内嵌单引号（'a'b' → 'a'\''b'）。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// ExportCurl 导出项目全部 HttpApi 为 curl 命令行（每行一条，按 uri, method 排序）。
+// params 并入 URL query；headers 逐条 -H；body 原文 -d（JSON 追加 Content-Type）。
+func ExportCurl(db *gorm.DB, tenantID, projectID int64) (string, error) {
+	var apis []model.HttpApi
+	if err := db.Where("tenant_id = ? AND project_id = ?", tenantID, projectID).
+		Order("uri, method").Find(&apis).Error; err != nil {
+		return "", err
+	}
+	var sb strings.Builder
+	for _, a := range apis {
+		method := strings.ToUpper(strings.TrimPrefix(
+			commonv1.HttpMethod_name[int32(a.Method)], "HTTP_METHOD_"))
+		if method == "" || method == "UNSPECIFIED" {
+			continue
+		}
+		url := a.URI
+		if qs := unmarshalKV(a.Params); len(qs) > 0 {
+			var pairs []string
+			for _, kv := range qs {
+				pairs = append(pairs, kv[0]+"="+kv[1])
+			}
+			sep := "?"
+			if strings.Contains(url, "?") {
+				sep = "&"
+			}
+			url += sep + strings.Join(pairs, "&")
+		}
+		sb.WriteString("curl")
+		body := unmarshalBodyRaw(a.Body)
+		if method != "GET" || body != "" {
+			sb.WriteString(" -X " + method)
+		}
+		sb.WriteString(" " + shellQuote(url))
+		for _, kv := range unmarshalKV(a.Headers) {
+			sb.WriteString(" -H " + shellQuote(kv[0]+": "+kv[1]))
+		}
+		if body != "" {
+			sb.WriteString(" -d " + shellQuote(body))
+		}
+		sb.WriteString("\n")
+	}
+	return sb.String(), nil
+}

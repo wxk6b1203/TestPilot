@@ -112,6 +112,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPost, "/import/openapi", auth.RoleMember, s.importOpenAPI)
 	h(fiber.MethodPost, "/import/curl", auth.RoleMember, s.importCurl)
 	h(fiber.MethodGet, "/export/openapi", auth.RoleViewer, s.exportOpenAPI)
+	h(fiber.MethodGet, "/export/curl", auth.RoleViewer, s.exportCurl)
 
 	// 运行
 	h(fiber.MethodPost, "/plans/:id/run", auth.RoleMember, s.runPlan)
@@ -159,6 +160,11 @@ func (s *Server) App() *fiber.App {
 
 	// Worker 在线状态（调试/管理）
 	h(fiber.MethodGet, "/workers", auth.RoleViewer, s.listWorkers)
+
+	// Copilot SSE 反代（生产前端托管后，/copilot-api/* → copilot /api/*）。
+	if s.cfg.CopilotURL != "" {
+		app.All("/copilot-api/*", s.proxyCopilot)
+	}
 
 	// 可选：托管前端构建产物（static_dir；HashRouter，无需 history 回退）。
 	// 注册在最后：API 路由先匹配，静态中间件只在无 API 命中时尝试文件。

@@ -38,6 +38,8 @@ services:
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_LOG_FORMAT: json
+      # 前端 /copilot-api/* 由 scheduler 反代到 copilot（SSE 生产入口收敛到 :8080）
+      TP_COPILOT_URL: http://copilot:8100
     volumes:
       - artifacts:/data/artifacts
     ports:
@@ -105,8 +107,9 @@ services:
       TP_COPILOT_ADDR: 0.0.0.0:8100
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
       TP_OTEL_ENDPOINT: jaeger:4317
+    # 端口暴露仅调试用：生产前端经 scheduler /copilot-api 反代，无需对外 8100
     ports:
-      - "8100:8100"
+      - "127.0.0.1:8100:8100"
     depends_on:
       - scheduler
     restart: unless-stopped

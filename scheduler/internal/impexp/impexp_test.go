@@ -206,3 +206,69 @@ func TestExportOpenAPI(t *testing.T) {
 		t.Fatalf("tenant leak: %s", out2)
 	}
 }
+
+func TestExportCurl(t *testing.T) {
+	d := openTestDB(t)
+	// 经 ImportOpenAPI/ImportCurl 造数据
+	if _, err := ImportOpenAPI(d, 1, 10, []byte(openAPIJSON)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ImportCurl(d, 1, 10,
+		`curl -X POST http://h/login -H 'Content-Type: application/json' -d '{"u":"a"}'`); err != nil {
+		t.Fatal(err)
+	}
+	out, err := ExportCurl(d, 1, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 4 { // openAPIJSON 3 条 + curl 导入 1 条
+		t.Fatalf("lines=%d: %q", len(lines), out)
+	}
+	// POST /users 带 body；GET /users 带 query 参数（openapi 导入）
+	var usersPost, usersGet string
+	for _, l := range lines {
+		if !strings.Contains(l, "'/users") { // URL 可能带 ?query
+			continue
+		}
+		if strings.Contains(l, "POST") {
+			usersPost = l
+		} else if !strings.Contains(l, "-X") {
+			usersGet = l
+		}
+	}
+	if usersPost == "" || !strings.Contains(usersPost, `-d '`) {
+		t.Fatalf("POST /users body missing: %q", out)
+	}
+	if usersGet == "" || !strings.Contains(usersGet, "?page=") {
+		t.Fatalf("GET /users query param missing: %q", usersGet)
+	}
+	if strings.Contains(usersGet, "-X GET") {
+		t.Fatalf("plain GET should omit -X: %q", usersGet)
+	}
+	// curl 导入的 POST /login：header 与 JSON body
+	var login string
+	for _, l := range lines {
+		if strings.Contains(l, "/login") {
+			login = l
+		}
+	}
+	if !strings.Contains(login, `-X POST`) ||
+		!strings.Contains(login, `Content-Type: application/json`) ||
+		!strings.Contains(login, `{"u":"a"}`) {
+		t.Fatalf("login line: %q", login)
+	}
+	// 单引号转义
+	if _, err := ImportCurl(d, 1, 11, `curl 'http://h/q?a=it'"'"'s'`); err != nil {
+		t.Fatal(err)
+	}
+	out2, _ := ExportCurl(d, 1, 11)
+	if !strings.Contains(out2, "it'\\''s'") { // shell 标准转义：it'\''s
+		t.Fatalf("quote escape: %q", out2)
+	}
+	// 租户隔离
+	out3, _ := ExportCurl(d, 9, 10)
+	if out3 != "" {
+		t.Fatalf("tenant leak: %q", out3)
+	}
+}

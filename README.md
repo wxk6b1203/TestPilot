@@ -162,6 +162,7 @@ testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key
 | `TP_BODY_LIMIT_MB` | `64` | 请求体上限（OpenAPI 导入需要较大值） |
 | `TP_READ_TIMEOUT_SEC` / `TP_WRITE_TIMEOUT_SEC` / `TP_IDLE_TIMEOUT_SEC` | `0` | HTTP 超时（0=不限） |
 | `TP_OTEL_EXPORTER` | 空 | 空=关 / `stdout` 调试 / `otlp`（配 `TP_OTEL_ENDPOINT`，默认 127.0.0.1:4317） |
+| `TP_COPILOT_URL` | `http://127.0.0.1:8100` | `/copilot-api/*` 反代目标（生产前端 SSE 入口收敛到 :8080；空=关闭） |
 
 Worker 可用键（YAML 键同名 snake_case；env：基础项带 `TP_WORKER_` 前缀——
 `TP_WORKER_SCHEDULER` / `TP_WORKER_CAPABILITIES` / `TP_WORKER_MAX_CONCURRENCY` 等，
@@ -191,6 +192,7 @@ GET|POST /cases             GET|PUT|DELETE /cases/{id}
 GET|POST /plans             GET|PUT|DELETE /plans/{id}
 POST /plans/{id}/run        GET  /runs  GET /runs/{id}
 POST /import/openapi        POST /import/curl   GET /export/openapi?project_id=
+GET  /export/curl?project_id=
 GET  /workers               GET  /artifacts/{id}/content
 GET|POST /stress-plans      GET|PUT|DELETE /stress-plans/{id}
 POST /stress-plans/{id}/run GET  /stress-runs  GET /stress-runs/{id}
@@ -219,15 +221,15 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 | `TP_COPILOT_MODEL` | `deepseek-v4-flash` | 主模型 |
 | `TP_COPILOT_SUMMARIZER_MODEL` | 同主模型 | 上下文压缩摘要器 |
 | `TP_COPILOT_CONTEXT_WINDOW` | `64000` | 压缩阈值基准（fraction 0.7 触发） |
-| `TP_COPILOT_SCHEDULER_GRPC` | `127.0.0.1:9090` | CopilotToolService |
-| `TP_COPILOT_SCHEDULER_REST` | `http://127.0.0.1:8080` | 会话持久化 / /me 解析 |
-| `TP_COPILOT_HTTP_ADDR` | `0.0.0.0:8100` | 对外 SSE 服务 |
+| `TP_SCHEDULER_GRPC` | `127.0.0.1:9090` | CopilotToolService |
+| `TP_SCHEDULER_REST` | `http://127.0.0.1:8080` | 会话持久化 / /me 解析 |
+| `TP_COPILOT_ADDR` | `0.0.0.0:8100` | 对外 SSE 服务 |
 | `TP_COPILOT_HTTP_TIMEOUT` | `15` | 调 Scheduler REST 超时（秒） |
-| `TP_COPILOT_OTEL_EXPORTER` / `TP_COPILOT_OTEL_ENDPOINT` | 空 / `127.0.0.1:4317` | 链路（同 Scheduler 语义） |
+| `TP_OTEL_EXPORTER` / `TP_OTEL_ENDPOINT` | 空 / `127.0.0.1:4317` | 链路（与 Scheduler/Worker 同键，分进程互不影响） |
 
 ## MVP 边界（未含）
 
 - 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）、gRPC 调用步骤
 - OAuth2（非 OIDC）登录、对象存储制品后端
 - suite 引用展开（PlanItem ref_type=2）
-- Copilot：ApplyOpenApiDiff 未实现（proto 占位）；生产部署时 :8100 需反向代理（dev 走 vite proxy）
+- Copilot：ApplyOpenApiDiff 未实现（proto 占位）
