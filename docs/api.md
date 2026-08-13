@@ -29,6 +29,7 @@
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
 | POST | /auth/login | 公开 | `{username,password}` → `{token,user,tenant_id,role}` |
+| POST | /auth/register | 公开* | `{username,password,display_name?,tenant_name?}` → 同 login。注册即自建租户（owner）；*需配置开关 `registration_enabled=true`，否则 403 `REGISTRATION_DISABLED`；用户名重复 409 `USERNAME_TAKEN` |
 | GET | /me | viewer | 当前用户/租户/角色 |
 | POST | /auth/switch-tenant | viewer | `{tenant_id}` 换签到另一租户（落审计） |
 | POST | /tenants | viewer | `{name}` 自助建租户，创建者为 owner |
@@ -102,6 +103,9 @@
 | PUT/DELETE | /notifications/{id} | admin | |
 | GET | /tenant/quotas | admin | 全部 metric 的 limit+used |
 | PUT | /tenant/quotas/{metric} | admin | `{limit}`；≤0 删除（=不限） |
+| GET | /tenant/settings | admin | 租户配置开关列表（key-value） |
+| PUT | /tenant/settings/{key} | admin | `{value}` upsert；key 限 `[A-Za-z0-9_.-]{1,64}` |
+| DELETE | /tenant/settings/{key} | admin | 删除（不存在 404） |
 | GET/POST | /tenant/members | admin | addMember 可按需创建用户（默认密码 changeme123） |
 | PUT/DELETE | /tenant/members/{userID} | admin | 最后 owner 不可降级/移除（409 LAST_OWNER） |
 | GET/POST | /identity-providers | admin | OIDC 身份源（issuer/client_id/client_secret） |

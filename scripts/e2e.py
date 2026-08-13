@@ -32,6 +32,28 @@ print("✓ login")
 
 stamp = int(time.time())
 
+# ---- v2：公开注册（配置开关 registration_enabled；关闭时 403 优雅跳过）----
+reg_user = f"e2e-reg-{stamp}"
+reg = api.post("/api/v1/auth/register", json={
+    "username": reg_user, "password": "register-pass-1",
+    "display_name": "e2e registrant", "tenant_name": f"e2e-tenant-{stamp}"})
+if reg.status_code == 403:
+    print("— registration disabled by config, register flow skipped —")
+elif reg.status_code == 200:
+    regd = reg.json()
+    assert regd["token"] and regd["role"] == 1, regd
+    # 独立会话验证新账号登录 + 自建租户可见
+    c2 = httpx.Client(base_url=args.base, timeout=15)
+    r2 = c2.post("/api/v1/auth/login", json={"username": reg_user, "password": "register-pass-1"})
+    assert r2.status_code == 200, r2.text
+    c2.headers["Authorization"] = f"Bearer {r2.json()['token']}"
+    me = c2.get("/api/v1/me")
+    assert me.status_code == 200 and me.json()["user"]["username"] == reg_user, me.text
+    print(f"✓ register+login ok（新租户 {me.json()['tenant_id']}，owner）")
+else:
+    print(f"✗ register unexpected {reg.status_code} {reg.text}")
+    sys.exit(1)
+
 # ---- 项目 / 环境 / 变量 ----
 proj = api.post("/api/v1/projects", json={"name": f"e2e-{stamp}", "description": "e2e"}).json()
 pid = proj["id"]
@@ -256,6 +278,16 @@ if ui_case is not None:
     if 1 not in kinds or 3 not in kinds:
         print(f"✗ ui case artifacts missing screenshot/trace: kinds={kinds}")
         ok = False
+
+# ---- v2：租户配置开关（tenant_settings，admin+）----
+r = api.put("/api/v1/tenant/settings/e2e_flag", json={"value": "on"})
+assert r.status_code == 200, r.text
+settings = api.get("/api/v1/tenant/settings").json()
+assert any(s["key"] == "e2e_flag" and s["value"] == "on" for s in settings["items"]), settings
+r = api.put("/api/v1/tenant/settings/e2e_flag", json={"value": "off"})
+assert r.status_code == 200 and r.json()["value"] == "off", r.text
+assert api.delete("/api/v1/tenant/settings/e2e_flag").status_code == 200
+print("✓ tenant settings CRUD（upsert/list/delete）")
 
 # ---- 压测：对 /json 阶梯发压（Locust 子进程）----
 print("— stress —")

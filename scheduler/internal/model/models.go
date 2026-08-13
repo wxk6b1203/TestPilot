@@ -246,6 +246,16 @@ type TestSuite struct {
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
+// TenantSetting 租户级配置开关（key-value）。当前为预留落点，用于未来特性
+// 开关/租户级配置的读写；REST：GET|PUT|DELETE /tenant/settings。
+type TenantSetting struct {
+	ID        int64     `json:"id" gorm:"primaryKey"`
+	TenantID  int64     `json:"tenant_id" gorm:"uniqueIndex:idx_tsetting_tk"`
+	Key       string    `json:"key" gorm:"uniqueIndex:idx_tsetting_tk"`
+	Value     string    `json:"value" gorm:"type:text"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 // Script 低代码脚本资产（v2：LowCodeCase.script_ref 引用目标）。
 // 与 Artifact（run 产物）分离：脚本是长期复用的资产库条目，不随 run 清理。
 type Script struct {
@@ -499,6 +509,7 @@ func AllModels() []any {
 		&HttpApi{}, &TreeNode{},
 		&TestCase{}, &TestPlan{}, &TestPlanItem{},
 		&TestSuite{}, &TestSuiteItem{}, &Script{},
+		&TenantSetting{},
 		&TestRun{}, &TestCaseResult{}, &TestStepResult{}, &Artifact{},
 		&StressTestPlan{}, &StressRun{}, &StressMetricPoint{},
 		&CopilotSession{}, &CopilotMessage{}, &AuditLog{},

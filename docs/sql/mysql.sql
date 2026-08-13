@@ -447,6 +447,15 @@ CREATE TABLE copilot_messages (
 
 -- ---- 审计 / 配额 ----
 
+CREATE TABLE tenant_settings (
+    id         BIGINT PRIMARY KEY,
+    tenant_id  BIGINT NOT NULL,
+    `key`      VARCHAR(64) NOT NULL,
+    value      TEXT    NOT NULL,
+    updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    UNIQUE KEY uq_tsetting_tk (tenant_id, `key`),
+    CONSTRAINT fk_tsetting_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 CREATE TABLE audit_logs (
     id            BIGINT PRIMARY KEY,
     tenant_id     BIGINT       NOT NULL,

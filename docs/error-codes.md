@@ -33,6 +33,8 @@
 | `CONFLICT` | 409 | 冲突 | 重复创建 |
 | `AUTH_INVALID_CREDENTIALS` | 401 | 用户名或密码错误 | login |
 | `AUTH_NO_MEMBERSHIP` | 403 | 用户不属于任何租户 | login |
+| `REGISTRATION_DISABLED` | 403 | 公开注册被配置关闭 | `registration_enabled=false` |
+| `USERNAME_TAKEN` | 409 | 用户名已存在 | 重复注册 |
 | `PLAN_NOT_FOUND` | 404 | 测试计划不存在 | 触发运行 |
 | `PLAN_NO_ITEMS` | 400 | 计划无启用项 | 触发运行 |
 | `NO_WORKER_AVAILABLE` | 503 | 无匹配能力的在线 Worker | 触发运行/压测 |

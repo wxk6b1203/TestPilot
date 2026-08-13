@@ -2,6 +2,9 @@ package httpserver
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
+
 	"github.com/gofiber/fiber/v3"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -34,6 +37,92 @@ func (s *Server) login(ctx fiber.Ctx) error {
 	var m model.TenantMember
 	if err := s.db.Where("user_id = ?", u.ID).Order("id asc").First(&m).Error; err != nil {
 		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeNoMembership, "user has no tenant membership"))
+	}
+	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
+	if err != nil {
+		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{
+		"token":     token,
+		"user":      u,
+		"tenant_id": m.TenantID,
+		"role":      m.Role,
+	})
+}
+
+// registerReq 公开注册请求：注册即自助建租户（创建者为 owner）。
+type registerReq struct {
+	Username    string `json:"username"`
+	Password    string `json:"password"`
+	DisplayName string `json:"display_name"`
+	TenantName  string `json:"tenant_name"`
+}
+
+// register 公开注册：建用户（bcrypt）+ 建租户 + owner 成员，成功即签发 token。
+// 由配置开关 registration_enabled 控制（默认关闭 → 403 REGISTRATION_DISABLED）。
+func (s *Server) register(ctx fiber.Ctx) error {
+	if !s.cfg.RegistrationEnabled {
+		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeRegistrationDisabled,
+			"registration is disabled by config (registration_enabled)"))
+	}
+	var in registerReq
+	if !decode(ctx, &in) {
+		return nil
+	}
+	username := strings.TrimSpace(in.Username)
+	if len(username) < 3 || len(username) > 64 {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"username must be 3-64 characters"))
+	}
+	if len(in.Password) < 8 || len(in.Password) > 128 {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"password must be 8-128 characters"))
+	}
+	tenantName := strings.TrimSpace(in.TenantName)
+	if tenantName == "" {
+		tenantName = username
+	}
+
+	var u model.User
+	var m model.TenantMember
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var n int64
+		if err := tx.Model(&model.User{}).Where("username = ?", username).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return apperr.Conflict(apperr.CodeUsernameTaken, "username already taken")
+		}
+		hash, err := auth.HashPassword(in.Password)
+		if err != nil {
+			return err
+		}
+		u = model.User{
+			ID: model.NextID(), Username: username,
+			DisplayName: in.DisplayName, PasswordHash: hash, Status: 1,
+		}
+		if err := tx.Create(&u).Error; err != nil {
+			return err
+		}
+		t := model.Tenant{ID: model.NextID(), Name: tenantName, Status: 1}
+		if err := tx.Create(&t).Error; err != nil {
+			return err
+		}
+		m = model.TenantMember{ID: model.NextID(), TenantID: t.ID, UserID: u.ID, Role: auth.RoleOwner}
+		if err := tx.Create(&m).Error; err != nil {
+			return err
+		}
+		// 注册不经 auth 中间件，审计手动落库（actor=1 human）
+		return tx.Create(&model.AuditLog{
+			ID: model.NextID(), TenantID: t.ID,
+			Actor: 1, ActorID: strconv.FormatInt(u.ID, 10),
+			Action: "register", ResourceType: "user",
+			ResourceID: strconv.FormatInt(u.ID, 10),
+			Detail:     model.JSON(`{"tenant_name":"` + tenantName + `"}`),
+		}).Error
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.From(err))
 	}
 	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {

@@ -393,6 +393,14 @@ CREATE INDEX idx_copilot_messages_ts ON copilot_messages (tenant_id, session_id)
 
 -- ---- 审计 / 配额 ----
 
+CREATE TABLE tenant_settings (
+    id         BIGINT PRIMARY KEY,
+    tenant_id  BIGINT NOT NULL REFERENCES tenants (id),
+    key        VARCHAR(64) NOT NULL,
+    value      TEXT    NOT NULL DEFAULT '',
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (tenant_id, key)
+);
 CREATE TABLE audit_logs (
     id            BIGINT PRIMARY KEY,
     tenant_id     BIGINT       NOT NULL REFERENCES tenants (id),

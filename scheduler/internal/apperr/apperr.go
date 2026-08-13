@@ -31,6 +31,8 @@ const (
 	// 认证
 	CodeInvalidCredentials = "AUTH_INVALID_CREDENTIALS" // 401 用户名或密码错误
 	CodeNoMembership       = "AUTH_NO_MEMBERSHIP"       // 403 用户不属于任何租户
+	CodeRegistrationDisabled = "REGISTRATION_DISABLED" // 403 注册未开放（配置开关）
+	CodeUsernameTaken        = "USERNAME_TAKEN"         // 409 用户名已存在
 
 	// 运行
 	CodePlanNotFound = "PLAN_NOT_FOUND"      // 404 计划不存在

@@ -286,6 +286,17 @@ UNIQUE `(project_id, environment_id, category, key)`（COALESCE environment_id�
 > 注：DDL 中 test_suite_items 无 tenant_id 列（跟随套件）；GORM 模型对齐此形态。
 > v2 已落地（套件展开见 `docs/v2-features.md`）。
 
+### tenant_settings（租户配置开关，v2 落地）
+| 列 | 类型 | 说明 |
+|----|------|------|
+| id | BIGINT PK | |
+| tenant_id | BIGINT FK | UNIQUE `(tenant_id, key)` |
+| key | VARCHAR(64) | 特性开关/配置键（`[A-Za-z0-9_.-]`） |
+| value | TEXT | 字符串值 |
+| updated_at | TIMESTAMPTZ | upsert 更新 |
+
+> 未来特性开关/租户级配置的统一落点；REST `GET|PUT|DELETE /tenant/settings`（admin+）。
+
 ### scripts（低代码脚本资产，v2 落地）
 | 列 | 类型 | 说明 |
 |----|------|------|

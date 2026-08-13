@@ -32,6 +32,8 @@ type Config struct {
 	JWTSecret      string `yaml:"jwt_secret"`       // HS256 密钥（生产必改）
 	JWTExpireHours int    `yaml:"jwt_expire_hours"` // token 有效期
 
+	RegistrationEnabled bool `yaml:"registration_enabled"` // 公开注册（POST /auth/register）；默认关闭
+
 	LogLevel  string `yaml:"log_level"`  // debug/info/warn/error
 	LogFormat string `yaml:"log_format"` // text（默认彩色行）| json
 

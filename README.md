@@ -86,7 +86,11 @@ worker/venv/bin/python scripts/e2e_phase9.py
   + **OIDC** 授权码流程（可插拔 identity_providers，租户级；RS256 JWKS / HS256 验签，
   外部用户首次登录自动建档并落 viewer）。角色 owner=1 / admin=2 / member=3 / viewer=4
   （小=高），路由约定：GET→viewer、领域写→member、租户治理（成员/配额/通知/身份源/审计）→admin；
-  自助建租户（POST /tenants）+ switch-tenant 换签；最后一名 owner 不可降级/移除
+  自助建租户（POST /tenants）+ switch-tenant 换签；最后一名 owner 不可降级/移除。
+  **公开注册（v2）**：`POST /auth/register`（配置开关 `registration_enabled`，默认关）——
+  注册即自建租户并成为 owner，成功直接签发 token；用户名唯一（409 `USERNAME_TAKEN`）
+- **租户配置开关表（v2）**：`tenant_settings`（key-value，UNIQUE(tenant_id,key)）——
+  未来特性开关/租户级配置的落点；REST `GET|PUT|DELETE /tenant/settings`（admin+）
 - **配额（Phase 8）**：tenant_quota（metric 维度上限，0/缺省=不限，用量实时从事实表计算）——
   concurrent_runs / monthly_runs / artifact_bytes / ai_calls / worker_slots；超限 429 `QUOTA_EXCEEDED`
 - **定时调度（Phase 8）**：robfig/cron 5 段表达式，overlap_policy（跳过/并发），
@@ -122,8 +126,8 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **制品后端（v2）**：`artifact_backend=local|s3` 双实现（S3 兼容对象存储，键 `{prefix}{tenant}/{uri}`；
   上报时同步上传、读取/retention 走后端）
 - **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（32 表；其中 3 张为 v2 预留——
-  grpc_apis / proto_files / api_tokens，GORM AutoMigrate 当前迁移 29 张）
+- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表；其中 3 张为 v2 预留——
+  grpc_apis / proto_files / api_tokens，GORM AutoMigrate 当前迁移 30 张）
 
 ## 代码生成
 
@@ -169,6 +173,7 @@ testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key
 | `TP_DB_MAX_OPEN_CONNS` / `TP_DB_MAX_IDLE_CONNS` / `TP_DB_CONN_MAX_LIFETIME_MIN` | `0` | 连接池（0=驱动默认；PG 生产建议 20/5/30） |
 | `TP_JWT_SECRET` | `dev-secret-change-me` | JWT 签名密钥（生产必改） |
 | `TP_JWT_EXPIRE_HOURS` | `24` | 令牌有效期 |
+| `TP_REGISTRATION_ENABLED` | `false` | 公开注册开关（`POST /auth/register`：注册即自建租户，创建者为 owner） |
 | `TP_LOG_LEVEL` | `info` | debug/info/warn/error |
 | `TP_LOG_FORMAT` | `text` | `json` = 生产格式日志 |
 | `TP_ARTIFACT_DIR` | `.data/artifacts` | 产物根目录（Worker 与 Scheduler 须一致；s3 后端下为暂存目录） |
@@ -201,7 +206,8 @@ Worker 出口控制（SSRF）：`TP_EGRESS_ALLOW`（逗号分隔 host 白名单�
 
 ```
 POST /auth/login            GET  /me
-POST /auth/switch-tenant    POST /tenants          # 自助建租户（创建者为 owner）
+POST /auth/register         POST /auth/switch-tenant   # register 公开注册（开关控制）
+POST /tenants          # 自助建租户（创建者为 owner）
 GET|POST /projects          GET|PUT|DELETE /projects/{id}
 GET|POST /environments      PUT|DELETE /environments/{id}
 GET|POST /variables         PUT|DELETE /variables/{id}
@@ -221,6 +227,7 @@ GET|POST /copilot/sessions/{id}/messages      GET /audit-logs
 # 租户治理（admin+）
 GET|POST /tenant/members    PUT|DELETE /tenant/members/{userID}
 GET  /tenant/quotas         PUT  /tenant/quotas/{metric}
+GET  /tenant/settings       PUT|DELETE /tenant/settings/{key}   # 租户配置开关表
 GET|POST /schedules         PUT|DELETE /schedules/{id}
 GET|POST /notifications     PUT|DELETE /notifications/{id}
 GET|POST /identity-providers  PUT|DELETE /identity-providers/{id}

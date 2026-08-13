@@ -72,6 +72,7 @@ func (s *Server) App() *fiber.App {
 		return writeJSON(c, fiber.StatusOK, map[string]any{"ok": true})
 	})
 	app.Post("/api/v1/auth/login", s.login)
+	app.Post("/api/v1/auth/register", s.register)
 	// OIDC 登录链路（公开）
 	app.Get("/api/v1/auth/oidc/providers", s.listOIDCProvidersPublic)
 	app.Get("/api/v1/auth/oidc/:id/login", s.oidcLogin)
@@ -171,6 +172,9 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPost, "/auth/switch-tenant", auth.RoleViewer, s.switchTenant)
 	h(fiber.MethodPost, "/tenants", auth.RoleViewer, s.createTenant)
 	h(fiber.MethodGet, "/tenant/quotas", auth.RoleAdmin, s.listQuotas)
+	h(fiber.MethodGet, "/tenant/settings", auth.RoleAdmin, s.listTenantSettings)
+	h(fiber.MethodPut, "/tenant/settings/:key", auth.RoleAdmin, s.upsertTenantSetting)
+	h(fiber.MethodDelete, "/tenant/settings/:key", auth.RoleAdmin, s.deleteTenantSetting)
 	h(fiber.MethodGet, "/schedules", auth.RoleViewer, s.listSchedules)
 	h(fiber.MethodPost, "/schedules", auth.RoleMember, s.createSchedule)
 	h(fiber.MethodPut, "/schedules/:id", auth.RoleMember, s.updateSchedule)
