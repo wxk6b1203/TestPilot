@@ -2,7 +2,6 @@
 package logging
 
 import (
-	"os"
 	"strings"
 
 	"go.uber.org/zap"
@@ -13,13 +12,13 @@ import (
 var L = zap.NewNop().Sugar()
 
 // Init 初始化全局日志。
-// level: debug/info/warn/error；dev 模式输出彩色行文本，否则 JSON。
-func Init(level string) {
+// level: debug/info/warn/error；format: json=生产格式，其余为 dev 彩色行文本。
+func Init(level, format string) {
 	lv, err := zapcore.ParseLevel(strings.ToLower(level))
 	if err != nil {
 		lv = zapcore.InfoLevel
 	}
-	dev := os.Getenv("TP_LOG_FORMAT") != "json"
+	dev := format != "json"
 
 	var cfg zap.Config
 	if dev {

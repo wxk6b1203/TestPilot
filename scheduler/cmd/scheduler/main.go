@@ -24,13 +24,17 @@ import (
 
 func main() {
 	cfg := config.Load()
-	logging.Init(cfg.LogLevel)
+	logging.Init(cfg.LogLevel, cfg.LogFormat)
 	defer logging.Sync()
 
-	shutdownTrace := tracing.Init("testpilot-scheduler")
+	shutdownTrace := tracing.Init("testpilot-scheduler", cfg.OTelExporter, cfg.OTelEndpoint)
 	defer shutdownTrace(context.Background())
 
-	gormDB, err := db.Open(cfg.DBPath, cfg.DBDSN)
+	gormDB, err := db.Open(cfg.DBPath, cfg.DBDSN, db.Pool{
+		MaxOpenConns:       cfg.DBMaxOpenConns,
+		MaxIdleConns:       cfg.DBMaxIdleConns,
+		ConnMaxLifetimeMin: cfg.DBConnMaxLifetimeMin,
+	})
 	if err != nil {
 		logging.L.Fatalw("open db failed", "err", err)
 	}
@@ -41,7 +45,7 @@ func main() {
 	cron := cronsched.New(gormDB, run)
 	cron.Start()
 	defer cron.Stop()
-	retention.Start(gormDB, cfg.ArtifactDir, cfg.RetentionDays)
+	retention.Start(gormDB, cfg.ArtifactDir, cfg.RetentionDays, cfg.RetentionIntervalMin)
 
 	// gRPC（Worker 双向流 + Copilot 工具面同端口）
 	gs := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))

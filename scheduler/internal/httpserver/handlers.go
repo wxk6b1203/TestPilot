@@ -35,7 +35,7 @@ func (s *Server) login(ctx fiber.Ctx) error {
 	if err := s.db.Where("user_id = ?", u.ID).Order("id asc").First(&m).Error; err != nil {
 		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeNoMembership, "user has no tenant membership"))
 	}
-	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role)
+	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
 		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
 	}

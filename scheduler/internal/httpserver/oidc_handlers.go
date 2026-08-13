@@ -116,7 +116,7 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	if linkErr != nil {
 		return writeAppErr(ctx, linkErr)
 	}
-	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role)
+	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}

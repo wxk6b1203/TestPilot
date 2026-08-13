@@ -34,14 +34,17 @@ func CheckPassword(hash, pw string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(pw)) == nil
 }
 
-// IssueToken 签发 JWT（24h）。
-func IssueToken(secret string, userID, tenantID int64, role int16) (string, error) {
+// IssueToken 签发 JWT（expireHours<=0 时按 24h）。
+func IssueToken(secret string, userID, tenantID int64, role int16, expireHours int) (string, error) {
+	if expireHours <= 0 {
+		expireHours = 24
+	}
 	c := Claims{
 		UserID:   userID,
 		TenantID: tenantID,
 		Role:     role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Duration(expireHours) * time.Hour)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 			Issuer:    "testpilot",
 		},

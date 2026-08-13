@@ -1,14 +1,14 @@
-"""TestPilot Worker 入口：解析参数，启动 gRPC 客户端。"""
+"""TestPilot Worker 入口：三级配置（CLI > env > YAML）解析，启动 gRPC 客户端。"""
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import logging
 import sys
 
 from testpilot.common.v1 import types_pb2 as pb
 
+from . import config
 from .client import WorkerClient
 
 _CAP_MAP = {
@@ -19,44 +19,34 @@ _CAP_MAP = {
 }
 
 
-def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="testpilot-worker", description="TestPilot Worker")
-    p.add_argument("--scheduler", default="127.0.0.1:9090", help="scheduler gRPC 地址")
-    p.add_argument("--capabilities", default="functional",
-                   help="逗号分隔: functional,lowcode,playwright,stress")
-    p.add_argument("--tags", default="", help="逗号分隔标签，如 region=cn,env=dev")
-    p.add_argument("--max-concurrency", type=int, default=4)
-    p.add_argument("--tenant-id", type=int, default=0, help="独占租户 ID；0=共享")
-    p.add_argument("--log-level", default="INFO")
-    return p.parse_args(argv)
-
-
 def entry(argv: list[str] | None = None):
-    args = _parse_args(argv)
+    s = config.load(argv)
+    config.apply_environ(s)  # 回写 env：沙箱子进程/egress/tracing/ui 沿用原约定
     logging.basicConfig(
-        level=args.log_level.upper(),
+        level=s.log_level.upper(),
         format="%(asctime)s %(levelname)s %(name)s [%(trace_id)s] %(message)s",
         stream=sys.stdout,
     )
     from . import tracing
 
-    tracing.init()  # TP_OTEL_EXPORTER 控制；默认关闭
+    tracing.init()  # otel_exporter（env 已回写）控制；默认关闭
     tracing.attach_log_filter()  # basicConfig 之后挂到 root handlers
     caps = []
-    for name in args.capabilities.split(","):
+    for name in s.capabilities.split(","):
         name = name.strip()
         if not name:
             continue
         if name not in _CAP_MAP:
             raise SystemExit(f"unknown capability: {name} (valid: {','.join(_CAP_MAP)})")
         caps.append(_CAP_MAP[name])
-    tags = [t.strip() for t in args.tags.split(",") if t.strip()]
+    tags = [t.strip() for t in s.tags.split(",") if t.strip()]
     client = WorkerClient(
-        addr=args.scheduler,
+        addr=s.scheduler,
         tags=tags,
-        max_concurrency=args.max_concurrency,
+        max_concurrency=s.max_concurrency,
         capabilities=caps,
-        tenant_id=args.tenant_id,
+        tenant_id=s.tenant_id,
+        name=s.name,
     )
     try:
         asyncio.run(client.run())

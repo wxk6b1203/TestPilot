@@ -29,6 +29,7 @@ from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 
 from . import tracing
 from .agent import build_agent
+from .config import apply_environ as config_apply
 from .config import load
 from .scheduler_client import SchedulerClient
 from .tools import CopilotDeps
@@ -43,7 +44,8 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.agent = build_agent(settings)
     app.state.sched = SchedulerClient(settings.scheduler_grpc)
-    app.state.http = httpx.AsyncClient(base_url=settings.scheduler_rest, timeout=15.0)
+    app.state.http = httpx.AsyncClient(base_url=settings.scheduler_rest,
+                                       timeout=settings.http_timeout)
     log.info("copilot ready: provider=%s model=%s", settings.provider, settings.model)
     yield
     await app.state.sched.close()
@@ -188,14 +190,15 @@ def _short(content: Any, limit: int = 4000) -> str:
     return s[:limit]
 
 
-def entry() -> None:
-    settings = load()
+def entry(argv: list[str] | None = None) -> None:
+    settings = load(argv)
+    config_apply(settings)  # CLI 覆盖提升为 env 层，lifespan 重解析得同值；tracing 亦读 env
     host, _, port = settings.http_addr.partition(":")
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s [%(trace_id)s] %(message)s",
     )
-    tracing.init()  # TP_OTEL_EXPORTER 控制；默认关闭
+    tracing.init()  # otel_exporter（env 已回写）控制；默认关闭
     tracing.attach_log_filter()
     uvicorn.run("testpilot_copilot.main:app", host=host or "0.0.0.0",
                 port=int(port or 8100), log_level="info")

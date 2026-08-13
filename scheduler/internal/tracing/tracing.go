@@ -1,18 +1,12 @@
 // Package tracing OpenTelemetry 链路：三进程统一 trace_id（design 14）。
 //
-// 环境变量：
-//
-//	TP_OTEL_EXPORTER  "" 关闭（默认）| "stdout" 开发调试 | "otlp" 发 Collector
-//	TP_OTEL_ENDPOINT  otlp gRPC 地址（默认 127.0.0.1:4317，dev 一律 insecure）
-//
 // 传播：Scheduler REST 入口由下方 fiber 中间件起 span、gRPC 由 otelgrpc 起 span；
 // 派发给 Worker 时 traceparent 写入 TaskAssignment（Worker 侧提取续链）；
-// Copilot 经 gRPC metadata 注入。关闭时 InjectTraceparent 返回 ""，全链路零开销。
+// Copilot 经 gRPC metadata 注入。exporter 为空时 InjectTraceparent 返回 ""，全链路零开销。
 package tracing
 
 import (
 	"context"
-	"os"
 
 	"github.com/gofiber/fiber/v3"
 	"go.opentelemetry.io/otel"
@@ -33,9 +27,10 @@ func init() {
 		propagation.TraceContext{}, propagation.Baggage{}))
 }
 
-// Init 按环境初始化 TracerProvider；返回 shutdown（main defer 调用）。关闭时为 no-op。
-func Init(serviceName string) func(context.Context) {
-	switch os.Getenv("TP_OTEL_EXPORTER") {
+// Init 按配置初始化 TracerProvider；返回 shutdown（main defer 调用）。关闭时为 no-op。
+// exporter："" 关闭 | "stdout" 开发调试 | "otlp" 发 Collector（endpoint 默认 127.0.0.1:4317，insecure）。
+func Init(serviceName, exporter, endpoint string) func(context.Context) {
+	switch exporter {
 	case "stdout", "otlp":
 	default:
 		return func(context.Context) {}
@@ -48,15 +43,11 @@ func Init(serviceName string) func(context.Context) {
 	if err != nil {
 		res = resource.Default()
 	}
-	if err != nil {
-		res = resource.Default()
-	}
 
 	var exp sdktrace.SpanExporter
-	if os.Getenv("TP_OTEL_EXPORTER") == "stdout" {
+	if exporter == "stdout" {
 		exp, err = stdouttrace.New()
 	} else {
-		endpoint := os.Getenv("TP_OTEL_ENDPOINT")
 		if endpoint == "" {
 			endpoint = "127.0.0.1:4317"
 		}

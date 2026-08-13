@@ -15,15 +15,18 @@ import (
 	"gorm.io/gorm"
 )
 
-// Start 启动后台清理（days<=0 不启动）；立即先跑一轮，之后每小时一轮。
-func Start(db *gorm.DB, artifactDir string, days int) {
+// Start 启动后台清理（days<=0 不启动）；立即先跑一轮，之后每 intervalMin 分钟一轮。
+func Start(db *gorm.DB, artifactDir string, days, intervalMin int) {
 	if days <= 0 {
 		return
 	}
-	logging.L.Infow("retention enabled", "run_days", days)
+	if intervalMin <= 0 {
+		intervalMin = 60
+	}
+	logging.L.Infow("retention enabled", "run_days", days, "interval_min", intervalMin)
 	go func() {
 		cleanup(db, artifactDir, days)
-		for range time.Tick(time.Hour) {
+		for range time.Tick(time.Duration(intervalMin) * time.Minute) {
 			cleanup(db, artifactDir, days)
 		}
 	}()

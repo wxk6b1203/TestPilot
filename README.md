@@ -21,14 +21,12 @@ LLM 驱动的自动化集成测试平台 —— Phase 0–9（Copilot、压测�
 前置：Go 1.25+ · Python 3.13 + uv · Node 24 + pnpm。
 
 ```bash
-# 1. Worker 依赖（editable 安装）
-cd worker && uv sync && cd ..
+# 1. Worker 依赖（uv 环境落在 worker/venv，python 版本见 .python-version）
+cd worker && uv sync --extra playwright \
+  && venv/bin/python -m playwright install chromium && cd ..
+#   （playwright 为可选 extra，不跑 UI 用例可去掉 --extra playwright 与浏览器安装）
 
-# 1b. （可选）UI 测试变体：Playwright + Chromium
-cd worker && uv pip install --python .venv/bin/python playwright \
-  && .venv/bin/python -m playwright install chromium && cd ..
-
-# 1c. Copilot 依赖 + 密钥（DeepSeek 等 OpenAI 兼容端点）
+# 1b. Copilot 依赖 + 密钥（DeepSeek 等 OpenAI 兼容端点）
 #     （pydantic-ai-extensions 未发布公共 PyPI，经 tool.uv.sources 解析 copilot/vendor/ 内 wheel）
 cd copilot && uv sync && cp .env.example .env  # 编辑填入 TP_COPILOT_API_KEY（勿提交） && cd ..
 
@@ -39,13 +37,13 @@ cd web && pnpm install && pnpm build && cd ..
 scripts/dev.sh start
 
 # 4. 端到端闭环验证（声明式 + 低代码沙箱 + UI 用例 + 压测）
-worker/.venv/bin/python scripts/e2e.py
+worker/venv/bin/python scripts/e2e.py
 # 4b. Copilot E2E（真实 LLM 调用：HITL 生成接口+用例、审计校验）
-worker/.venv/bin/python scripts/e2e_copilot.py
+worker/venv/bin/python scripts/e2e_copilot.py
 # 4c. Phase 8 E2E（RBAC / 跨租户隔离 / 配额 429 / OIDC 登录 / 定时+通知）
-worker/.venv/bin/python scripts/e2e_phase8.py
+worker/venv/bin/python scripts/e2e_phase8.py
 # 4d. Phase 9 E2E（Prometheus 指标 / 审计留痕）
-worker/.venv/bin/python scripts/e2e_phase9.py
+worker/venv/bin/python scripts/e2e_phase9.py
 ```
 
 打开 http://localhost:5173 （dev 热更新）或 http://localhost:8080 （托管构建产物），
@@ -122,10 +120,26 @@ protoc -I proto --go_out=scheduler/gen --go_opt=module=github.com/testpilot/test
   proto/testpilot/copilot/v1/copilot.proto
 
 # Python（worker/src/）
-cd worker && .venv/bin/python -m grpc_tools.protoc -I ../proto \
+cd worker && venv/bin/python -m grpc_tools.protoc -I ../proto \
   --python_out=src --pyi_out=src --grpc_python_out=src \
   ../proto/testpilot/common/v1/types.proto ../proto/testpilot/worker/v1/worker.proto \
   ../proto/testpilot/copilot/v1/copilot.proto
+```
+
+## 启动配置（YAML / 环境变量 / 命令行）
+
+三个服务统一三级覆盖：**显式 CLI flag > 环境变量 > YAML 配置文件 > 内置默认**
+（Copilot 在 env 与 YAML 之间多一层 `.env`）。
+YAML 路径：`--config` 指定 > `TP_CONFIG` / `TP_WORKER_CONFIG` / `TP_COPILOT_CONFIG` >
+当前目录 `<service>.yaml` 自动发现。键名 = flag 的 snake_case 形态
+（`--http-addr` ↔ `http_addr` ↔ `TP_HTTP_ADDR`）。逐键注释示例见
+`deploy/scheduler.yaml.example` / `worker.yaml.example` / `copilot.yaml.example`。
+
+```bash
+scheduler --config scheduler.yaml          # 或全 flag：scheduler --http-addr :8080 --jwt-secret xxx
+testpilot-worker --scheduler 127.0.0.1:9090 --capabilities functional,lowcode,playwright \
+  --tags region=local --max-concurrency 4 --tenant-id 0
+testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key 不走 CLI（进程列表可见）
 ```
 
 ## 环境变量（Scheduler）
@@ -134,16 +148,28 @@ cd worker && .venv/bin/python -m grpc_tools.protoc -I ../proto \
 |---|---|---|
 | `TP_HTTP_ADDR` | `:8080` | REST + 前端托管 |
 | `TP_GRPC_ADDR` | `:9090` | gRPC（Worker/Copilot） |
+| `TP_STATIC_DIR` | 空 | 前端 dist 目录（空则不托管） |
 | `TP_DB_PATH` | `testpilot.db` | SQLite 文件 |
 | `TP_DB_DSN` | 空 | 非空切 PostgreSQL（`postgres://user:pass@host:5432/db?sslmode=disable`），优先于 TP_DB_PATH |
+| `TP_DB_MAX_OPEN_CONNS` / `TP_DB_MAX_IDLE_CONNS` / `TP_DB_CONN_MAX_LIFETIME_MIN` | `0` | 连接池（0=驱动默认；PG 生产建议 20/5/30） |
 | `TP_JWT_SECRET` | `dev-secret-change-me` | JWT 签名密钥（生产必改） |
-| `TP_STATIC_DIR` | 空 | 前端 dist 目录（空则不托管） |
+| `TP_JWT_EXPIRE_HOURS` | `24` | 令牌有效期 |
+| `TP_LOG_LEVEL` | `info` | debug/info/warn/error |
+| `TP_LOG_FORMAT` | `text` | `json` = 生产格式日志 |
 | `TP_ARTIFACT_DIR` | `.data/artifacts` | 产物根目录（Worker 与 Scheduler 须一致；生产换对象存储） |
-| `TP_RETENTION_RUN_DAYS` | `0` | 运行数据保留天数（0=永久；>0 时每小时级联清理） |
+| `TP_RETENTION_RUN_DAYS` | `0` | 运行数据保留天数（0=永久；>0 时级联清理） |
+| `TP_RETENTION_INTERVAL_MIN` | `60` | 保留清理轮询间隔 |
+| `TP_BODY_LIMIT_MB` | `64` | 请求体上限（OpenAPI 导入需要较大值） |
+| `TP_READ_TIMEOUT_SEC` / `TP_WRITE_TIMEOUT_SEC` / `TP_IDLE_TIMEOUT_SEC` | `0` | HTTP 超时（0=不限） |
 | `TP_OTEL_EXPORTER` | 空 | 空=关 / `stdout` 调试 / `otlp`（配 `TP_OTEL_ENDPOINT`，默认 127.0.0.1:4317） |
-| `TP_LOG_FORMAT` | 空 | `json` = 生产格式日志 |
 
-Worker：`testpilot-worker --scheduler 127.0.0.1:9090 --capabilities functional,lowcode,playwright --tags region=local --max-concurrency 4 --tenant-id 0`
+Worker 可用键（YAML 键同名 snake_case；env：基础项带 `TP_WORKER_` 前缀——
+`TP_WORKER_SCHEDULER` / `TP_WORKER_CAPABILITIES` / `TP_WORKER_MAX_CONCURRENCY` 等，
+产物/egress/沙箱/链路沿用文档化旧键 `TP_ARTIFACT_DIR` / `TP_EGRESS_*` / `TP_SANDBOX_*` /
+`TP_OTEL_*`，与沙箱子进程继承约定一致）：
+`scheduler` `name` `capabilities` `tags` `max_concurrency` `tenant_id` `log_level`
+`artifact_dir` `egress_allow` `egress_block_private` `sandbox_*`（cpu/mem_mb/nproc/nofile/fsize_mb/net）
+`otel_exporter` `otel_endpoint`。
 
 Worker 出口控制（SSRF）：`TP_EGRESS_ALLOW`（逗号分隔 host 白名单，支持 `.后缀`；空=不限）、
 `TP_EGRESS_BLOCK_PRIVATE=1`（解析目标后拦截私网/环回/链路本地地址）。
@@ -193,6 +219,11 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 | `TP_COPILOT_MODEL` | `deepseek-v4-flash` | 主模型 |
 | `TP_COPILOT_SUMMARIZER_MODEL` | 同主模型 | 上下文压缩摘要器 |
 | `TP_COPILOT_CONTEXT_WINDOW` | `64000` | 压缩阈值基准（fraction 0.7 触发） |
+| `TP_COPILOT_SCHEDULER_GRPC` | `127.0.0.1:9090` | CopilotToolService |
+| `TP_COPILOT_SCHEDULER_REST` | `http://127.0.0.1:8080` | 会话持久化 / /me 解析 |
+| `TP_COPILOT_HTTP_ADDR` | `0.0.0.0:8100` | 对外 SSE 服务 |
+| `TP_COPILOT_HTTP_TIMEOUT` | `15` | 调 Scheduler REST 超时（秒） |
+| `TP_COPILOT_OTEL_EXPORTER` / `TP_COPILOT_OTEL_ENDPOINT` | 空 / `127.0.0.1:4317` | 链路（同 Scheduler 语义） |
 
 ## MVP 边界（未含）
 

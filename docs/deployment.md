@@ -2,6 +2,18 @@
 
 两种本地调试形态 + 生产 compose 模板（design 13.4；首期不引入 k8s）。
 
+## 启动配置（YAML / env / flag）
+
+三服务统一：**显式 CLI flag > 环境变量 > YAML > 内置默认**（Copilot 在 env 与 YAML 之间多一层
+`.env`；`api_key` 不提供 CLI 入口，避免进程列表泄漏）。YAML 发现顺序：
+`--config` > `TP_CONFIG` / `TP_WORKER_CONFIG` / `TP_COPILOT_CONFIG` > 当前目录 `<service>.yaml`。
+键名 = flag 的 snake_case（`--http-addr` ↔ `http_addr` ↔ `TP_HTTP_ADDR`）。
+
+逐键注释模板：`deploy/scheduler.yaml.example`、`deploy/worker.yaml.example`、
+`deploy/copilot.yaml.example`（含 DB 连接池、JWT 有效期、HTTP 超时/BodyLimit、保留间隔、
+沙箱限额、egress、OTel 等细化参数）。compose 形态仍以环境变量注入（见 `.env.example`），
+YAML 适合裸机/虚拟机部署。
+
 ## 单机开发（scripts/dev.sh）
 
 ```bash

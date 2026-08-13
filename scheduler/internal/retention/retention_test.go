@@ -14,7 +14,7 @@ import (
 // TestCleanup 级联删除 30 天前的 run/stress run（含产物文件），保留近期数据。
 func TestCleanup(t *testing.T) {
 	tmp := t.TempDir()
-	d, err := db.Open(filepath.Join(tmp, "test.db"), "")
+	d, err := db.Open(filepath.Join(tmp, "test.db"), "", db.Pool{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,5 +90,5 @@ func TestCleanup(t *testing.T) {
 // TestStartDisabled days<=0 时不启动清理（零副作用保障）。
 func TestStartDisabled(t *testing.T) {
 	var d *gorm.DB // nil db：若 Start 误启动 goroutine 会在首次 cleanup 时 panic
-	Start(d, t.TempDir(), 0)
+	Start(d, t.TempDir(), 0, 60)
 }

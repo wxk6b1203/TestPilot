@@ -27,9 +27,10 @@ HEARTBEAT_INTERVAL = 10
 
 class WorkerClient:
     def __init__(self, addr: str, tags: list[str], max_concurrency: int,
-                 capabilities: list[int], tenant_id: int = 0):
+                 capabilities: list[int], tenant_id: int = 0, name: str = ""):
         self.addr = addr
-        self.worker_id = f"{socket.gethostname()}-{os.getpid()}"
+        # name 为空回退 主机名-pid（容器内主机名即容器 ID，天然唯一）
+        self.worker_id = name or f"{socket.gethostname()}-{os.getpid()}"
         self.tags = tags
         self.max_concurrency = max_concurrency
         self.capabilities = capabilities

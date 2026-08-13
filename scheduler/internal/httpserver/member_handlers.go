@@ -170,7 +170,7 @@ func (s *Server) switchTenant(ctx fiber.Ctx) error {
 	if err := s.db.Where("user_id = ? AND tenant_id = ?", c.UserID, in.TenantID).First(&m).Error; err != nil {
 		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeNoMembership, "not a member of that tenant"))
 	}
-	token, err := auth.IssueToken(s.cfg.JWTSecret, c.UserID, m.TenantID, m.Role)
+	token, err := auth.IssueToken(s.cfg.JWTSecret, c.UserID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
 		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
 	}

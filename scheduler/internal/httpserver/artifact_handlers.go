@@ -10,14 +10,6 @@ import (
 	"github.com/testpilot/testpilot/internal/model"
 )
 
-// artifactRoot 产物存储根（Worker 与 Scheduler 须指向同一目录；生产换对象存储）。
-func artifactRoot() string {
-	if v := os.Getenv("TP_ARTIFACT_DIR"); v != "" {
-		return v
-	}
-	return ".data/artifacts"
-}
-
 // getArtifactContent 提供产物文件下载/预览（截图/trace/har 等）。
 func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
@@ -29,7 +21,8 @@ func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, c.TenantID).First(&art).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "artifact not found"))
 	}
-	root, err := filepath.Abs(artifactRoot())
+	// 产物根（Worker 与 Scheduler 须指向同一目录；生产换对象存储）
+	root, err := filepath.Abs(s.cfg.ArtifactDir)
 	if err != nil {
 		return writeAppErr(ctx, apperr.Internal("artifact root resolve failed"))
 	}

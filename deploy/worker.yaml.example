@@ -1,0 +1,30 @@
+# TestPilot Worker 配置示例（worker.yaml）
+# 优先级：显式 CLI > 环境变量 > 本文件 > 内置默认。
+# 使用：--config worker.yaml | TP_WORKER_CONFIG=worker.yaml | ./worker.yaml（自动发现）。
+# 解析后回写进程环境：沙箱子进程（sandbox_*）、egress、tracing 按既有 env 约定继承。
+
+scheduler: 127.0.0.1:9090       # Scheduler gRPC 地址
+name: ""                        # Worker 名（空=主机名-pid；容器内主机名即容器 ID）
+capabilities: functional        # 逗号分隔：functional,lowcode,playwright,stress
+tags: ""                        # 逗号分隔标签，如 region=cn,env=dev
+max_concurrency: 4
+tenant_id: 0                    # 独占租户 ID；0=共享
+log_level: INFO
+
+artifact_dir: .data/artifacts   # 与 Scheduler artifact_dir 一致
+
+# —— SSRF 出口控制 ——
+egress_allow: ""                # 逗号分隔 host 白名单（支持 .后缀；空=不限）
+egress_block_private: false     # true=解析后拦截私网/环回/链路本地
+
+# —— 低代码沙箱限额 ——
+sandbox_cpu: 30                 # 秒
+sandbox_mem_mb: 1024
+sandbox_nproc: 128
+sandbox_nofile: 128
+sandbox_fsize_mb: 32
+sandbox_net: deny               # deny|allow
+
+# —— 链路 ——
+otel_exporter: ""               # "" 关闭 | stdout | otlp
+otel_endpoint: 127.0.0.1:4317

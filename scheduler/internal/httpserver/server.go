@@ -2,8 +2,8 @@ package httpserver
 
 import (
 	"errors"
-	"os"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
@@ -40,8 +40,11 @@ func New(db *gorm.DB, cfg config.Config, disp *dispatch.Dispatcher, run *runner.
 // 未匹配路径不再经过 auth（net/http 时期经 /api/v1/ 子树兜底会 401 后再 404，此处直接 404）。
 func (s *Server) App() *fiber.App {
 	app := fiber.New(fiber.Config{
-		CaseSensitive: true,     // 对齐 net/http 大小写敏感语义
-		BodyLimit:     64 << 20, // OpenAPI YAML 导入可超 fiber 默认 4MB；net/http 时期无限制
+		CaseSensitive: true, // 对齐 net/http 大小写敏感语义
+		BodyLimit:     s.cfg.BodyLimitMB << 20,
+		ReadTimeout:   time.Duration(s.cfg.ReadTimeoutSec) * time.Second,
+		WriteTimeout:  time.Duration(s.cfg.WriteTimeoutSec) * time.Second,
+		IdleTimeout:   time.Duration(s.cfg.IdleTimeoutSec) * time.Second,
 		ErrorHandler:  errorHandler,
 	})
 	app.Use(recover.New())
@@ -157,10 +160,10 @@ func (s *Server) App() *fiber.App {
 	// Worker 在线状态（调试/管理）
 	h(fiber.MethodGet, "/workers", auth.RoleViewer, s.listWorkers)
 
-	// 可选：托管前端构建产物（TP_STATIC_DIR；HashRouter，无需 history 回退）。
+	// 可选：托管前端构建产物（static_dir；HashRouter，无需 history 回退）。
 	// 注册在最后：API 路由先匹配，静态中间件只在无 API 命中时尝试文件。
-	if dir := os.Getenv("TP_STATIC_DIR"); dir != "" {
-		app.Use(static.New(dir))
+	if s.cfg.StaticDir != "" {
+		app.Use(static.New(s.cfg.StaticDir))
 	}
 
 	return app

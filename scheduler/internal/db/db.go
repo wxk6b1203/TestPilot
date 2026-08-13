@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/testpilot/testpilot/internal/model"
@@ -11,9 +12,16 @@ import (
 	gormlogger "gorm.io/gorm/logger"
 )
 
+// Pool 连接池参数（0=保持驱动默认；SQLite 一般无需设置）。
+type Pool struct {
+	MaxOpenConns       int
+	MaxIdleConns       int
+	ConnMaxLifetimeMin int
+}
+
 // Open 打开数据库并自动迁移 + 种子默认租户与 admin 账号。
 // dsn 非空 → PostgreSQL（生产）；否则 SQLite（dev 默认）。
-func Open(path, dsn string) (*gorm.DB, error) {
+func Open(path, dsn string, pool Pool) (*gorm.DB, error) {
 	cfg := &gorm.Config{Logger: gormlogger.Default.LogMode(gormlogger.Warn)}
 	var d *gorm.DB
 	var err error
@@ -24,6 +32,21 @@ func Open(path, dsn string) (*gorm.DB, error) {
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)
+	}
+	if pool.MaxOpenConns > 0 || pool.MaxIdleConns > 0 || pool.ConnMaxLifetimeMin > 0 {
+		sqlDB, err := d.DB()
+		if err != nil {
+			return nil, fmt.Errorf("db handle: %w", err)
+		}
+		if pool.MaxOpenConns > 0 {
+			sqlDB.SetMaxOpenConns(pool.MaxOpenConns)
+		}
+		if pool.MaxIdleConns > 0 {
+			sqlDB.SetMaxIdleConns(pool.MaxIdleConns)
+		}
+		if pool.ConnMaxLifetimeMin > 0 {
+			sqlDB.SetConnMaxLifetime(time.Duration(pool.ConnMaxLifetimeMin) * time.Minute)
+		}
 	}
 	if err := d.AutoMigrate(model.AllModels()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)

@@ -38,11 +38,11 @@ start() {
   _start scheduler env TP_DB_PATH="$DB" TP_HTTP_ADDR=127.0.0.1:8080 TP_GRPC_ADDR=127.0.0.1:9090 \
     TP_STATIC_DIR="$ROOT/web/dist" "$ROOT/.data/bin/scheduler"
   sleep 2
-  (cd "$ROOT/worker" && PYTHONPATH=src exec .venv/bin/python -m testpilot_worker \
+  (cd "$ROOT/worker" && PYTHONPATH=src exec venv/bin/python -m testpilot_worker \
       --scheduler 127.0.0.1:9090 --capabilities functional,lowcode,playwright,stress --tags region=local) > "$LOG_DIR/worker.log" 2>&1 &
   echo $! > "$PID_DIR/worker.pid"
   echo "▶ worker 启动 (pid $!，日志 .data/logs/worker.log)"
-  _start copilot "$ROOT/copilot/.venv/bin/python" -m testpilot_copilot.main
+  _start copilot "$ROOT/copilot/venv/bin/python" -m testpilot_copilot.main
   _start vite pnpm --dir "$ROOT/web" dev
   sleep 2
   echo ""
@@ -52,7 +52,7 @@ start() {
   echo "Copilot:     http://localhost:8100/api  (聊天页 /copilot)"
   echo "gRPC:        127.0.0.1:9090"
   echo "echo 服务:   http://127.0.0.1:18080"
-  echo "E2E 验证:    worker/.venv/bin/python scripts/e2e.py"
+  echo "E2E 验证:    worker/venv/bin/python scripts/e2e.py"
 }
 
 stop() {
