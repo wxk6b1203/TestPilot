@@ -1,0 +1,146 @@
+syntax = "proto3";
+
+// TestPilot Worker 服务契约（Scheduler ↔ Worker）
+// Worker 作为 gRPC 客户端主动连接 Scheduler 的 gRPC server。
+package testpilot.worker.v1;
+
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "testpilot/common/v1/types.proto";
+
+option go_package = "github.com/testpilot/testpilot/gen/worker/v1;workerv1";
+option java_multiple_files = true;
+option java_package = "com.testpilot.worker.v1";
+
+// Worker 生命周期：启动 -> Connect(register) -> 双向流（任务/心跳/结果） -> 断开。
+service WorkerService {
+  // Worker 建立长连接。连接后第一条 WorkerEvent 必须是 register。
+  // 之后 Worker 上行 heartbeat/进度/日志/结果/指标，Scheduler 下行 task/cancel/config。
+  rpc Connect(stream WorkerEvent) returns (stream SchedulerCommand);
+}
+
+// ---------------------------------------------------------------------------
+// 上行：Worker -> Scheduler
+// ---------------------------------------------------------------------------
+
+message WorkerEvent {
+  oneof event {
+    RegisterRequest register = 1;
+    Heartbeat heartbeat = 2;
+    StepProgress step_progress = 3;
+    LogBatch log_batch = 4;
+    TaskResult task_result = 5;
+    StressMetricBatch stress_metrics = 6;
+    testpilot.common.v1.ArtifactRef artifact = 7;
+  }
+}
+
+message RegisterRequest {
+  string worker_id = 1;                          // Worker 生成的唯一标识（hostname-pid 或 UUID）
+  string worker_name = 2;                        // 可选可读名
+  repeated testpilot.common.v1.Capability capabilities = 3;
+  string python_version = 4;
+  string sdk_version = 5;                        // testpilot-sdk 版本，供兼容性校验
+  string worker_version = 6;                     // Worker 包版本
+  repeated string tags = 7;                      // 如 region=cn、env=prod
+  int32 max_concurrency = 8;
+  int64 tenant_id = 9;                           // 独占模式绑定租户；0 = 共享
+}
+
+message Heartbeat {
+  int32 current_concurrency = 1;   // 当前负载（用于负载均衡）
+  google.protobuf.Timestamp ts = 2;
+}
+
+// 步骤级实时进度（驱动前端实时视图）
+message StepProgress {
+  string task_id = 1;
+  string run_id = 2;
+  string case_id = 3;
+  string step_path = 4;
+  testpilot.common.v1.StepStatus status = 5;
+  google.protobuf.Struct detail = 6;
+}
+
+message LogBatch {
+  string task_id = 1;
+  string run_id = 2;
+  string case_id = 3;
+  string step_path = 4;
+  repeated string lines = 5;
+}
+
+// 任务最终结果（结构化；实时进度经 step_progress 已上报）
+message TaskResult {
+  string task_id = 1;
+  string run_id = 2;
+  testpilot.common.v1.RunStatus status = 3;
+  string error = 4;
+  repeated testpilot.common.v1.TestCaseResult case_results = 5;
+  repeated testpilot.common.v1.TestStepResult step_results = 6;
+  google.protobuf.Duration duration = 7;
+}
+
+message StressMetricBatch {
+  string task_id = 1;
+  string run_id = 2;
+  repeated testpilot.common.v1.StressMetricPoint points = 3;
+}
+
+// ---------------------------------------------------------------------------
+// 下行：Scheduler -> Worker
+// ---------------------------------------------------------------------------
+
+message SchedulerCommand {
+  oneof command {
+    TaskAssignment task = 1;
+    CancelTask cancel = 2;
+    ConfigUpdate config = 3;
+  }
+}
+
+// 执行环境：环境 + 变量（敏感项为 secret_ref，不含明文；Worker 执行期解析）
+message ExecutionEnv {
+  testpilot.common.v1.Environment environment = 1;
+  repeated testpilot.common.v1.Variable variables = 2;   // 项目级 + 环境级合并
+  string base_url = 3;
+}
+
+// 功能/低代码/E2E 任务（task_type 决定路由与执行模式）
+message FunctionalTask {
+  testpilot.common.v1.TestCase case = 1;
+  string case_result_id = 2;   // 预分配的结果 ID（幂等）
+}
+
+// 压测任务（Scheduler 为 master，拆分总负载到 N 个 Worker）
+message StressTask {
+  testpilot.common.v1.StressTestPlan plan = 1;
+  int32 worker_index = 2;           // 本 Worker 分担序号
+  int32 assigned_concurrency = 3;   // 分摊到的并发
+  string metrics_label = 4;         // 写入 VictoriaMetrics 的标签/标识
+  testpilot.common.v1.HttpApi inline_api = 5;  // target=api_id 时 Scheduler 解析内联（Worker 无 DB）
+}
+
+message TaskAssignment {
+  string task_id = 1;
+  string run_id = 2;
+  int64 tenant_id = 3;
+  testpilot.common.v1.TaskType task_type = 4;
+  google.protobuf.Duration timeout = 5;
+  oneof payload {
+    FunctionalTask functional = 6;   // declarative / lowcode / playwright
+    StressTask stress = 7;
+  }
+  ExecutionEnv env = 8;
+  string traceparent = 9;           // W3C traceparent（Scheduler→Worker 链路传递；空=无链路）
+}
+
+message CancelTask {
+  string task_id = 1;
+  string reason = 2;
+}
+
+message ConfigUpdate {
+  google.protobuf.Struct config = 1;
+}

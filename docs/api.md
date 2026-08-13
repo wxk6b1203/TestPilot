@@ -1,0 +1,85 @@
+# TestPilot REST API 参考
+
+基准：`/api/v1`；除 login 与 OIDC 链路外均需 `Authorization: Bearer <token>`。
+错误统一 `{"error":{"code","message"}}`，码表见 `docs/error-codes.md`。
+**ID 约定**：响应中 id/*_id 为字符串（雪花 ID 超 JS 安全整数）；请求两种形态都收。
+**分页**：`?page=&page_size=`（默认 1/20，上限 500）→ `{items, total, page, page_size}`。
+**角色**：viewer=4 只读；member=3 领域写；admin=2 租户治理；owner=1 全部（含最后-owner 保护）。
+
+## 认证 / 租户
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| POST | /auth/login | 公开 | `{username,password}` → `{token,user,tenant_id,role}` |
+| GET | /me | viewer | 当前用户/租户/角色 |
+| POST | /auth/switch-tenant | viewer | `{tenant_id}` 换签到另一租户（落审计） |
+| POST | /tenants | viewer | `{name}` 自助建租户，创建者为 owner |
+| GET | /auth/oidc/providers | 公开 | 启用的 OIDC 身份源列表 |
+| GET | /auth/oidc/{id}/login | 公开 | 302 跳 IdP |
+| GET | /auth/oidc/{id}/callback | 公开 | 回调 → `{token,user,tenant_id,role}` |
+
+## 领域资源（projects/environments/variables/apis/cases/plans 同构）
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET | /projects · /environments · /variables · /apis · /cases · /plans | viewer | 分页列表；支持 `?project_id=` 过滤（variables 另有 `?environment_id=`） |
+| POST | 同上 | member | 创建（plans 体含 `items[]`，item 需 `ref_type:1` + `ref_id`） |
+| GET/PUT/DELETE | `/{资源}/{id}` | GET viewer / 写 member | 单资源操作 |
+
+- `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
+- `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
+
+## 运行结果
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET | /runs | viewer | `?plan_id=` 过滤 |
+| GET | /runs/{id} | viewer | run + cases + steps（含请求/响应快照/断言明细） |
+| GET | /artifacts/{id}/content | viewer | 产物文件内容（截图/trace/har） |
+
+## 压测
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET/POST | /stress-plans | viewer/member | load_profile JSON（concurrency/duration/ramp） |
+| GET/PUT/DELETE | /stress-plans/{id} | viewer/member | |
+| POST | /stress-plans/{id}/run | member | → `{run_id}` |
+| GET | /stress-runs · /stress-runs/{id} | viewer | 详情含时序指标点 |
+
+## 导入导出 / Worker
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| POST | /import/openapi | member | OpenAPI 3 JSON/YAML（幂等跳过重复） |
+| POST | /import/curl | member | curl 命令文本 → 接口 |
+| GET | /export/openapi?project_id= | viewer | 导出 OpenAPI 3 |
+| GET | /workers | viewer | 在线 Worker（能力/负载/标签） |
+
+## 定时调度 / 通知 / 配额 / 成员 / 身份源 / 审计
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET/POST | /schedules | viewer/member | `{plan_id,env_id,cron_expr,overlap_policy,enabled}` |
+| PUT/DELETE | /schedules/{id} | member | |
+| GET/POST | /notifications | admin | type 1=webhook 2=dingtalk 3=feishu；events 逗号分隔 |
+| PUT/DELETE | /notifications/{id} | admin | |
+| GET | /tenant/quotas | admin | 全部 metric 的 limit+used |
+| PUT | /tenant/quotas/{metric} | admin | `{limit}`；≤0 删除（=不限） |
+| GET/POST | /tenant/members | admin | addMember 可按需创建用户（默认密码 changeme123） |
+| PUT/DELETE | /tenant/members/{userID} | admin | 最后 owner 不可降级/移除（409 LAST_OWNER） |
+| GET/POST | /identity-providers | admin | OIDC 身份源（issuer/client_id/client_secret） |
+| PUT/DELETE | /identity-providers/{id} | admin | |
+| GET | /audit-logs | admin | actor 1=human 2=copilot |
+
+## Copilot 会话持久化
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET/POST | /copilot/sessions | viewer/member | |
+| GET/POST | /copilot/sessions/{id}/messages | viewer/member | role 1=user 2=assistant 3=tool |
+
+## 其他端点（不在 /api/v1 下）
+
+- `GET /healthz`：存活探针。
+- `GET /metrics`：Prometheus 指标（公开，生产收敛到内网）。
+- Copilot 服务（:8100）：`POST /api/chat`（Vercel AI SSE；头 `X-Session-Id` 续会话）、`GET /api/healthz`。

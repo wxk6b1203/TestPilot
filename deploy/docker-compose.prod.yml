@@ -1,0 +1,134 @@
+# TestPilot 生产形态编排模板（首期不引入 k8s，见 design 13.4）。
+#
+#   cp deploy/.env.example deploy/.env   # 填密钥
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
+#
+# 入口：http://localhost:8080（REST+前端托管）；Jaeger UI http://localhost:16686；
+# Prometheus http://localhost:9091。Worker 扩缩：--scale worker=4（或 .env WORKER_REPLICAS）。
+
+name: testpilot
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: testpilot
+      POSTGRES_PASSWORD: ${PG_PASSWORD:?set in .env}
+      POSTGRES_DB: testpilot
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"   # 本机工具/迁移冒烟便利；仅回环，生产可删
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U testpilot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  scheduler:
+    build:
+      context: ..
+      dockerfile: deploy/scheduler.Dockerfile
+    environment:
+      TP_DB_DSN: postgres://testpilot:${PG_PASSWORD}@postgres:5432/testpilot?sslmode=disable
+      TP_JWT_SECRET: ${TP_JWT_SECRET:?set in .env}
+      TP_RETENTION_RUN_DAYS: ${TP_RETENTION_RUN_DAYS:-0}
+      TP_ARTIFACT_DIR: /data/artifacts
+      TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
+      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_LOG_FORMAT: json
+    volumes:
+      - artifacts:/data/artifacts
+    ports:
+      - "8080:8080"   # REST + 前端
+      - "9090:9090"   # gRPC（仅编排外 Worker/Copilot 需要时才暴露）
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    command: ["--scheduler", "scheduler:9090",
+              "--capabilities", "functional,lowcode,playwright",
+              "--tags", "region=local", "--max-concurrency", "4"]
+    environment:
+      TP_ARTIFACT_DIR: /data/artifacts
+      TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
+      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
+      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-}
+      PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
+    volumes:
+      - artifacts:/data/artifacts
+    deploy:
+      replicas: ${WORKER_REPLICAS:-2}
+    depends_on:
+      - scheduler
+    restart: unless-stopped
+
+  # 压测 Worker 独立编排（独占式调度，压测期间不接功能任务）
+  worker-stress:
+    build:
+      context: ..
+      dockerfile: deploy/worker.Dockerfile
+    command: ["--scheduler", "scheduler:9090", "--capabilities", "stress",
+              "--tags", "region=local", "--max-concurrency", "1"]
+    environment:
+      TP_ARTIFACT_DIR: /data/artifacts
+      TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
+      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
+      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-}
+    volumes:
+      - artifacts:/data/artifacts
+    deploy:
+      replicas: ${STRESS_WORKER_REPLICAS:-1}
+    depends_on:
+      - scheduler
+    restart: unless-stopped
+
+  copilot:
+    build:
+      context: ..
+      dockerfile: deploy/copilot.Dockerfile
+    environment:
+      TP_COPILOT_PROVIDER: ${TP_COPILOT_PROVIDER:-deepseek}
+      TP_COPILOT_API_KEY: ${TP_COPILOT_API_KEY:?set in .env}
+      TP_COPILOT_BASE_URL: ${TP_COPILOT_BASE_URL:-}
+      TP_COPILOT_MODEL: ${TP_COPILOT_MODEL:-deepseek-v4-flash}
+      TP_SCHEDULER_GRPC: scheduler:9090
+      TP_SCHEDULER_REST: http://scheduler:8080
+      TP_COPILOT_ADDR: 0.0.0.0:8100
+      TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
+      TP_OTEL_ENDPOINT: jaeger:4317
+    ports:
+      - "8100:8100"
+    depends_on:
+      - scheduler
+    restart: unless-stopped
+
+  # 链路：OTLP gRPC 直收（4317），UI :16686。大规模部署可在中间加 otel-collector。
+  jaeger:
+    image: jaegertracing/jaeger:2.12.0
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:v3.9.1
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    depends_on:
+      - scheduler
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  artifacts:

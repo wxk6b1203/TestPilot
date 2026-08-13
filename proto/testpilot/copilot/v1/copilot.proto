@@ -1,0 +1,265 @@
+syntax = "proto3";
+
+// TestPilot Copilot 工具服务契约（Copilot ↔ Scheduler）
+// Copilot 作为 gRPC 客户端调用 Scheduler；不直连 DB。
+// 所有请求携带 RequestContext（租户 + 用户 + actor），受 RBAC 约束。
+// 读类工具免审批；写/触发类工具由 Copilot 层做人机协同（HITL）审批后调用。
+package testpilot.copilot.v1;
+
+import "testpilot/common/v1/types.proto";
+
+option go_package = "github.com/testpilot/testpilot/gen/copilot/v1;copilotv1";
+option java_multiple_files = true;
+option java_package = "com.testpilot.copilot.v1";
+
+service CopilotToolService {
+  // ---- 只读工具（免审批） ----
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse);
+  rpc ListApis(ListApisRequest) returns (ListApisResponse);
+  rpc GetApi(GetApiRequest) returns (GetApiResponse);
+  rpc ListEnvironments(ListEnvironmentsRequest) returns (ListEnvironmentsResponse);
+  rpc ListTestCases(ListTestCasesRequest) returns (ListTestCasesResponse);
+  rpc GetTestCase(GetTestCaseRequest) returns (GetTestCaseResponse);
+  rpc QuerySchema(QuerySchemaRequest) returns (QuerySchemaResponse);
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
+  rpc GetRun(GetRunRequest) returns (GetRunResponse);
+  rpc QueryCoverage(QueryCoverageRequest) returns (QueryCoverageResponse);
+
+  // ---- 写工具（默认 HITL 审批） ----
+  rpc CreateApi(CreateApiRequest) returns (CreateApiResponse);
+  rpc UpdateApi(UpdateApiRequest) returns (UpdateApiResponse);
+  rpc CreateTestCase(CreateTestCaseRequest) returns (CreateTestCaseResponse);
+  rpc CreateTestPlan(CreateTestPlanRequest) returns (CreateTestPlanResponse);
+  rpc ImportOpenApi(ImportOpenApiRequest) returns (ImportOpenApiResponse);
+  rpc ApplyOpenApiDiff(ApplyOpenApiDiffRequest) returns (ApplyOpenApiDiffResponse);
+
+  // ---- 触发工具（默认 HITL 审批） ----
+  rpc TriggerRun(TriggerRunRequest) returns (TriggerRunResponse);
+  rpc TriggerStress(TriggerStressRequest) returns (TriggerStressResponse);
+}
+
+enum ApiKind {
+  API_KIND_UNSPECIFIED = 0;
+  API_KIND_HTTP = 1;
+  API_KIND_GRPC = 2;
+}
+
+// ---------------------------------------------------------------------------
+// 只读
+// ---------------------------------------------------------------------------
+
+message ListProjectsRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  testpilot.common.v1.PageRequest page = 2;
+  string query = 3;
+}
+message ListProjectsResponse {
+  repeated testpilot.common.v1.Project projects = 1;
+  testpilot.common.v1.PageResponse page = 2;
+}
+
+message ListApisRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  testpilot.common.v1.PageRequest page = 3;
+  string query = 4;
+}
+message ListApisResponse {
+  repeated testpilot.common.v1.HttpApi http_apis = 1;
+  repeated testpilot.common.v1.GrpcApi grpc_apis = 2;
+  testpilot.common.v1.PageResponse page = 3;
+}
+
+message GetApiRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string api_id = 2;
+  ApiKind kind = 3;
+}
+message GetApiResponse {
+  oneof api {
+    testpilot.common.v1.HttpApi http = 1;
+    testpilot.common.v1.GrpcApi grpc = 2;
+  }
+}
+
+message ListEnvironmentsRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+}
+message ListEnvironmentsResponse {
+  repeated testpilot.common.v1.Environment environments = 1;
+}
+
+message ListTestCasesRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  testpilot.common.v1.PageRequest page = 3;
+  string query = 4;
+  repeated string tags = 5;
+}
+message ListTestCasesResponse {
+  repeated testpilot.common.v1.TestCase cases = 1;
+  testpilot.common.v1.PageResponse page = 2;
+}
+
+message GetTestCaseRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string case_id = 2;
+}
+message GetTestCaseResponse {
+  testpilot.common.v1.TestCase case = 1;
+}
+
+// 领域 schema / 数据字典（Copilot grounding，见 7.4）
+message QuerySchemaRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string topic = 2;   // 可选：限定主题（如 http_api、test_step、lowcode_sdk）
+}
+message QuerySchemaResponse {
+  string schema_json = 1;   // 领域模型 JSON Schema / 数据字典
+  string version = 2;
+}
+
+message ListRunsRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string plan_id = 3;
+  testpilot.common.v1.RunStatus status = 4;
+  testpilot.common.v1.PageRequest page = 5;
+}
+message ListRunsResponse {
+  repeated testpilot.common.v1.TestRun runs = 1;
+  testpilot.common.v1.PageResponse page = 2;
+}
+
+message GetRunRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string run_id = 2;
+  bool include_steps = 3;
+}
+message GetRunResponse {
+  testpilot.common.v1.TestRun run = 1;
+  repeated testpilot.common.v1.TestCaseResult case_results = 2;
+  repeated testpilot.common.v1.TestStepResult step_results = 3;   // include_steps 时返回
+}
+
+// 覆盖率分析：接口 vs 用例覆盖缺口
+message QueryCoverageRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+}
+message QueryCoverageResponse {
+  int32 total_apis = 1;
+  int32 covered_apis = 2;
+  repeated string uncovered_api_ids = 3;
+  double coverage_ratio = 4;
+}
+
+// ---------------------------------------------------------------------------
+// 写
+// ---------------------------------------------------------------------------
+
+message CreateApiRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  oneof api {
+    testpilot.common.v1.HttpApi http = 3;
+    testpilot.common.v1.GrpcApi grpc = 4;
+  }
+  string parent_node_id = 5;   // 目录树挂载点（可选）
+}
+message CreateApiResponse {
+  string api_id = 1;
+  string node_id = 2;
+}
+
+message UpdateApiRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string api_id = 2;
+  ApiKind kind = 3;
+  oneof api {
+    testpilot.common.v1.HttpApi http = 4;
+    testpilot.common.v1.GrpcApi grpc = 5;
+  }
+}
+message UpdateApiResponse {
+  string api_id = 1;
+}
+
+message CreateTestCaseRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  testpilot.common.v1.TestCase case = 3;
+  string parent_node_id = 4;
+}
+message CreateTestCaseResponse {
+  string case_id = 1;
+  string node_id = 2;
+}
+
+message CreateTestPlanRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  testpilot.common.v1.TestPlan plan = 3;
+  string parent_node_id = 4;
+}
+message CreateTestPlanResponse {
+  string plan_id = 1;
+  string node_id = 2;
+}
+
+message ImportOpenApiRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  oneof spec {
+    string openapi_url = 3;
+    string openapi_document = 4;   // 原文
+  }
+  string parent_node_id = 5;
+  bool generate_cases = 6;         // 是否同时批量生成用例
+}
+message ImportOpenApiResponse {
+  repeated string api_ids = 1;
+  int32 imported_count = 2;
+  repeated string case_ids = 3;    // generate_cases 时
+}
+
+message DiffEntry {
+  string api_id = 1;
+  string kind = 2;      // added | removed | changed | breaking
+  string summary = 3;
+}
+
+message ApplyOpenApiDiffRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string openapi_document = 3;     // 新 spec
+  bool auto_update_cases = 4;
+}
+message ApplyOpenApiDiffResponse {
+  repeated DiffEntry diffs = 1;
+  repeated string updated_api_ids = 2;
+  repeated string updated_case_ids = 3;
+}
+
+// ---------------------------------------------------------------------------
+// 触发
+// ---------------------------------------------------------------------------
+
+message TriggerRunRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string plan_id = 2;
+  string env_id = 3;   // 可覆盖 plan 默认环境
+}
+message TriggerRunResponse {
+  string run_id = 1;
+}
+
+message TriggerStressRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string stress_plan_id = 2;
+  string env_id = 3;
+}
+message TriggerStressResponse {
+  string run_id = 1;
+}

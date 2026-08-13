@@ -1,0 +1,644 @@
+syntax = "proto3";
+
+// TestPilot 共享领域类型（Scheduler / Worker / Copilot 三方共用契约）
+// 单一事实源：本文件生成 Go 结构与 Python 模型（经 JSON Schema → datamodel-code-generator → Pydantic）。
+package testpilot.common.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "google/protobuf/struct.proto";
+
+option go_package = "github.com/testpilot/testpilot/gen/common/v1;commonv1";
+option java_multiple_files = true;
+option java_package = "com.testpilot.common.v1";
+
+// ---------------------------------------------------------------------------
+// 上下文与分页
+// ---------------------------------------------------------------------------
+
+// 租户与调用者上下文。生产环境通常经 gRPC metadata 注入；
+// 此处显式携带以便工具层/审计记录统一获取。
+message RequestContext {
+  int64 tenant_id = 1;        // 租户（long/number，snowflake）
+  string user_id = 2;         // 调用者用户 ID（Copilot 代表的用户）
+  string actor = 3;           // human | copilot | ci | scheduler
+  string request_id = 4;      // 链路追踪 ID
+}
+
+message PageRequest {
+  int32 page = 1;
+  int32 page_size = 2;
+}
+
+message PageResponse {
+  int32 total = 1;
+  int32 page = 2;
+  int32 page_size = 3;
+}
+
+// ---------------------------------------------------------------------------
+// 枚举
+// ---------------------------------------------------------------------------
+
+enum VariableScope {
+  VARIABLE_SCOPE_UNSPECIFIED = 0;
+  VARIABLE_SCOPE_PROJECT = 1;
+  VARIABLE_SCOPE_ENVIRONMENT = 2;
+}
+
+enum VariableCategory {
+  VARIABLE_CATEGORY_UNSPECIFIED = 0;
+  VARIABLE_CATEGORY_HEADER = 1;
+  VARIABLE_CATEGORY_COOKIE = 2;
+  VARIABLE_CATEGORY_QUERY = 3;
+  VARIABLE_CATEGORY_BODY = 4;   // 仅 form-data / x-www-form-urlencoded 有效
+  VARIABLE_CATEGORY_CUSTOM = 5;
+}
+
+enum HttpMethod {
+  HTTP_METHOD_UNSPECIFIED = 0;
+  HTTP_METHOD_GET = 1;
+  HTTP_METHOD_POST = 2;
+  HTTP_METHOD_PUT = 3;
+  HTTP_METHOD_DELETE = 4;
+  HTTP_METHOD_PATCH = 5;
+  HTTP_METHOD_HEAD = 6;
+  HTTP_METHOD_OPTIONS = 7;
+}
+
+enum BodyContentType {
+  BODY_CONTENT_TYPE_UNSPECIFIED = 0;
+  BODY_CONTENT_TYPE_NONE = 1;
+  BODY_CONTENT_TYPE_FORM_DATA = 2;
+  BODY_CONTENT_TYPE_X_WWW_FORM_URLENCODED = 3;
+  BODY_CONTENT_TYPE_JSON = 4;
+  BODY_CONTENT_TYPE_XML = 5;                 // v2（见 15.3）
+  BODY_CONTENT_TYPE_BINARY = 6;              // v2（见 15.3）
+  BODY_CONTENT_TYPE_GRAPHQL = 7;             // v2（见 15.3）
+}
+
+enum NodeType {
+  NODE_TYPE_UNSPECIFIED = 0;
+  NODE_TYPE_FOLDER = 1;
+  NODE_TYPE_HTTP_API = 2;
+  NODE_TYPE_GRPC_API = 3;
+  NODE_TYPE_TEST_CASE = 4;
+  NODE_TYPE_TEST_SUITE = 5;
+  NODE_TYPE_TEST_PLAN = 6;
+}
+
+enum TestCaseType {
+  TEST_CASE_TYPE_UNSPECIFIED = 0;
+  TEST_CASE_TYPE_DECLARATIVE = 1;
+  TEST_CASE_TYPE_LOWCODE = 2;
+}
+
+enum TriggerType {
+  TRIGGER_TYPE_UNSPECIFIED = 0;
+  TRIGGER_TYPE_MANUAL = 1;
+  TRIGGER_TYPE_SCHEDULED = 2;
+  TRIGGER_TYPE_CI = 3;
+}
+
+enum OverlapPolicy {
+  OVERLAP_POLICY_UNSPECIFIED = 0;
+  OVERLAP_POLICY_SKIP = 1;
+  OVERLAP_POLICY_QUEUE = 2;
+  OVERLAP_POLICY_RUN = 3;
+}
+
+enum RunStatus {
+  RUN_STATUS_UNSPECIFIED = 0;
+  RUN_STATUS_RUNNING = 1;
+  RUN_STATUS_PASSED = 2;
+  RUN_STATUS_FAILED = 3;
+  RUN_STATUS_ABORTED = 4;
+  RUN_STATUS_TIMEOUT = 5;
+}
+
+enum CaseStatus {
+  CASE_STATUS_UNSPECIFIED = 0;
+  CASE_STATUS_RUNNING = 1;
+  CASE_STATUS_PASSED = 2;
+  CASE_STATUS_FAILED = 3;
+  CASE_STATUS_SKIPPED = 4;
+}
+
+enum StepStatus {
+  STEP_STATUS_UNSPECIFIED = 0;
+  STEP_STATUS_RUNNING = 1;
+  STEP_STATUS_PASSED = 2;
+  STEP_STATUS_FAILED = 3;
+  STEP_STATUS_SKIPPED = 4;
+}
+
+// Worker 能力声明
+enum Capability {
+  CAPABILITY_UNSPECIFIED = 0;
+  CAPABILITY_FUNCTIONAL = 1;
+  CAPABILITY_LOWCODE = 2;
+  CAPABILITY_PLAYWRIGHT = 3;
+  CAPABILITY_STRESS = 4;
+}
+
+// 任务类型（决定路由到具备相应能力的 Worker）
+enum TaskType {
+  TASK_TYPE_UNSPECIFIED = 0;
+  TASK_TYPE_FUNCTIONAL_DECLARATIVE = 1;
+  TASK_TYPE_FUNCTIONAL_LOWCODE = 2;
+  TASK_TYPE_PLAYWRIGHT = 3;
+  TASK_TYPE_STRESS = 4;
+}
+
+// ---------------------------------------------------------------------------
+// 通用结构
+// ---------------------------------------------------------------------------
+
+message KeyValue {
+  string key = 1;
+  string value = 2;
+  string description = 3;
+  bool enabled = 4;
+}
+
+message CookieParam {
+  string name = 1;
+  string value = 2;
+  string type = 3;
+  string description = 4;
+}
+
+message FormField {
+  string key = 1;
+  string value = 2;
+  string type = 3;          // text | file
+  string description = 4;
+}
+
+message FormData {
+  repeated FormField fields = 1;
+}
+
+message BodySpec {
+  BodyContentType content_type = 1;
+  oneof content {
+    string raw = 2;               // json / xml / graphql 原文
+    FormData form = 3;            // form-data / x-www-form-urlencoded
+    string binary_ref = 4;        // artifact 引用
+  }
+}
+
+message ApiSettings {
+  bool tls_verify = 1;
+  bool follow_redirects = 2;
+  bool comment_tolerant_json = 3;   // 兼容带注释 JSON
+  google.protobuf.Duration timeout = 4;
+}
+
+message TlsSettings {
+  bool enabled = 1;
+  bool skip_verify = 2;
+  string certificate_id = 3;
+}
+
+// 前置/后置脚本（受限 Python 片段）
+message Script {
+  string id = 1;
+  string lang = 2;      // python
+  string source = 3;
+  bool enabled = 4;
+}
+
+// ---------------------------------------------------------------------------
+// 项目 / 环境 / 变量 / 证书 / 目录树
+// ---------------------------------------------------------------------------
+
+message Project {
+  string id = 1;
+  int64 tenant_id = 2;
+  string name = 3;
+  string description = 4;
+  google.protobuf.Struct config = 5;   // 项目级配置（默认超时/并发等）
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+}
+
+message Variable {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string environment_id = 4;    // 空 = 项目级
+  VariableScope scope = 5;
+  VariableCategory category = 6;
+  string key = 7;
+  string value = 8;             // 非敏感时明文；敏感时为空
+  bool sensitive = 9;
+  string secret_ref = 10;       // vault://tenant/{tid}/... 或 tink 引用
+  string description = 11;
+}
+
+message Environment {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string icon = 4;
+  string name = 5;
+  string description = 6;
+  string base_url = 7;          // 前置 URL；实际 URL = base_url + uri
+  repeated Variable variables = 8;
+}
+
+message Certificate {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string name = 4;
+  string description = 5;
+  string type = 6;              // pem | p12
+  string cert_ref = 7;          // artifact 引用或密文
+  string key_ref = 8;
+  string password_secret_ref = 9;
+}
+
+message TreeNode {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string parent_id = 4;         // 空 = 根
+  NodeType node_type = 5;
+  string ref_id = 6;            // 指向对应实体；folder 为空
+  string name = 7;
+  string icon = 8;
+  int32 order = 9;
+  string path = 10;             // 物化路径，便于子树查询
+}
+
+// ---------------------------------------------------------------------------
+// 接口
+// ---------------------------------------------------------------------------
+
+message HttpApi {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  HttpMethod method = 4;
+  string uri = 5;                 // 可含 {{var}}
+  repeated KeyValue params = 6;
+  BodySpec body = 7;
+  repeated KeyValue headers = 8;
+  repeated CookieParam cookies = 9;
+  repeated Script pre_scripts = 10;
+  repeated Script post_scripts = 11;
+  ApiSettings settings = 12;
+  string certificate_id = 13;
+}
+
+message GrpcApi {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string proto_ref = 4;                          // proto_file id 或 server reflection
+  string full_service = 5;                       // package.Service
+  string method = 6;
+  google.protobuf.Struct request_message = 7;    // JSON 表示
+  repeated KeyValue metadata = 8;
+  google.protobuf.Duration deadline = 9;
+  TlsSettings tls_settings = 10;
+  repeated Script pre_scripts = 11;
+  repeated Script post_scripts = 12;
+  string certificate_id = 13;
+}
+
+// ---------------------------------------------------------------------------
+// 断言
+// ---------------------------------------------------------------------------
+
+enum AssertionTarget {
+  ASSERTION_TARGET_UNSPECIFIED = 0;
+  ASSERTION_TARGET_STATUS = 1;
+  ASSERTION_TARGET_HEADER = 2;
+  ASSERTION_TARGET_BODY = 3;
+  ASSERTION_TARGET_JSONPATH = 4;
+  ASSERTION_TARGET_ELAPSED = 5;
+  ASSERTION_TARGET_CUSTOM = 6;
+}
+
+enum AssertionOp {
+  ASSERTION_OP_UNSPECIFIED = 0;
+  ASSERTION_OP_EQ = 1;
+  ASSERTION_OP_NE = 2;
+  ASSERTION_OP_EXISTS = 3;
+  ASSERTION_OP_NOT_EXISTS = 4;
+  ASSERTION_OP_CONTAINS = 5;
+  ASSERTION_OP_MATCHES = 6;
+  ASSERTION_OP_GT = 7;
+  ASSERTION_OP_LT = 8;
+  ASSERTION_OP_GE = 9;
+  ASSERTION_OP_LE = 10;
+  ASSERTION_OP_TYPE_IS = 11;
+}
+
+message Assertion {
+  AssertionTarget target = 1;
+  string path = 2;        // header 名 / jsonpath
+  AssertionOp op = 3;
+  string expected = 4;
+}
+
+message AssertionResult {
+  Assertion assertion = 1;
+  bool passed = 2;
+  string actual = 3;
+  string message = 4;
+}
+
+// ---------------------------------------------------------------------------
+// 声明式测试步骤（递归）
+// ---------------------------------------------------------------------------
+
+enum StepType {
+  STEP_TYPE_UNSPECIFIED = 0;
+  STEP_TYPE_API_CALL = 1;
+  STEP_TYPE_GRPC_CALL = 2;
+  STEP_TYPE_ASSERTION = 3;
+  STEP_TYPE_SET_VAR = 4;
+  STEP_TYPE_IF = 5;
+  STEP_TYPE_LOOP = 6;
+  STEP_TYPE_RETRY = 7;
+  STEP_TYPE_CODE_BLOCK = 8;
+  STEP_TYPE_DELAY = 9;
+  STEP_TYPE_UI_ACTION = 10;
+}
+
+// HTTP 覆盖（proto3 optional 提供字段存在性，区分"未覆盖"与"覆盖为空"）
+message HttpOverride {
+  optional HttpMethod method = 1;
+  optional string uri = 2;
+  repeated KeyValue headers = 3;
+  repeated KeyValue params = 4;
+  BodySpec body = 5;
+}
+
+message ApiCallStep {
+  string api_id = 1;          // 引用既有 HttpApi；为空则取 inline
+  HttpOverride override = 2;  // 覆盖
+  HttpApi inline = 3;         // 内联定义（不引用既有接口时）
+}
+
+message GrpcCallStep {
+  string grpc_api_id = 1;
+  google.protobuf.Struct request_override = 2;
+  repeated KeyValue metadata_override = 3;
+}
+
+message AssertionStep {
+  repeated Assertion assertions = 1;
+}
+
+message SetVarStep {
+  string key = 1;
+  string value_expr = 2;      // 受限表达式（JSONPath + 安全求值器）
+}
+
+message IfStep {
+  string condition_expr = 1;
+  repeated TestStep then_steps = 2;
+  repeated TestStep else_steps = 3;
+}
+
+message IntRange {
+  int32 start = 1;
+  int32 end = 2;
+}
+
+message LoopStep {
+  string iterator = 1;
+  oneof bounds {
+    int32 count = 2;
+    IntRange range = 3;
+  }
+  bool parallel = 4;          // 默认顺序执行；true 并发
+  repeated TestStep body_steps = 5;
+}
+
+message RetryStep {
+  TestStep body_step = 1;     // 包装并重试单步
+  int32 max_attempts = 2;
+  google.protobuf.Duration backoff = 3;
+}
+
+message CodeBlockStep {
+  string lang = 1;            // python
+  string source = 2;
+}
+
+message DelayStep {
+  google.protobuf.Duration duration = 1;
+}
+
+enum UiAction {
+  UI_ACTION_UNSPECIFIED = 0;
+  UI_ACTION_GOTO = 1;
+  UI_ACTION_CLICK = 2;
+  UI_ACTION_FILL = 3;
+  UI_ACTION_SELECT = 4;
+  UI_ACTION_CHECK = 5;
+  UI_ACTION_HOVER = 6;
+  UI_ACTION_PRESS = 7;
+  UI_ACTION_EXPECT_TEXT = 8;
+  UI_ACTION_EXPECT_VISIBLE = 9;
+  UI_ACTION_SCREENSHOT = 10;
+  UI_ACTION_WAIT = 11;
+  UI_ACTION_UPLOAD = 12;
+  UI_ACTION_DOWNLOAD = 13;
+}
+
+message UiActionStep {
+  UiAction action = 1;
+  string target = 2;          // Playwright locator 表达式
+  string value = 3;
+}
+
+message TestStep {
+  string id = 1;              // 用于 step_path 定址（嵌套点路径，如 3.then.1）
+  StepType type = 2;
+  string name = 3;
+  oneof params {
+    ApiCallStep api_call = 4;
+    GrpcCallStep grpc_call = 5;
+    AssertionStep assertion = 6;
+    SetVarStep set_var = 7;
+    IfStep if_step = 8;
+    LoopStep loop_step = 9;
+    RetryStep retry_step = 10;
+    CodeBlockStep code_block = 11;
+    DelayStep delay = 12;
+    UiActionStep ui_action = 13;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 测试用例 / 套件 / 计划
+// ---------------------------------------------------------------------------
+
+message DeclarativeCase {
+  repeated TestStep steps = 1;
+}
+
+message LowCodeCase {
+  oneof script {
+    string script_ref = 1;    // artifact 引用
+    string source = 2;        // 内联脚本
+  }
+  string entry = 3;           // 入口函数，默认 run
+  google.protobuf.Struct parameters = 4;
+}
+
+message TestCase {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  TestCaseType type = 4;
+  string name = 5;
+  string description = 6;
+  oneof definition {
+    DeclarativeCase declarative = 7;
+    LowCodeCase lowcode = 8;
+  }
+  repeated string tags = 9;
+  string created_by = 10;     // human | copilot
+}
+
+message TestSuite {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string name = 4;
+  string description = 5;
+  repeated string case_ids = 6;   // 有序
+}
+
+message NotificationRule {
+  repeated string channels = 1;   // webhook | email | dingtalk | feishu | slack
+  repeated string recipients = 2;
+  bool on_success = 3;
+  bool on_failure = 4;
+  string webhook_url = 5;
+}
+
+message PlanItem {
+  oneof ref {
+    string case_id = 1;
+    string suite_id = 2;
+  }
+  bool enabled = 3;
+  google.protobuf.Struct param_overrides = 4;
+}
+
+message TestPlan {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string env_id = 4;
+  string name = 5;
+  repeated PlanItem items = 6;
+  int32 concurrency = 7;                 // 用例间并发度
+  bool retry_on_failure = 8;
+  OverlapPolicy overlap_policy = 9;      // 定时任务重叠策略
+  string schedule_cron = 10;
+  google.protobuf.Duration timeout = 11;
+  NotificationRule notifications = 12;
+}
+
+// ---------------------------------------------------------------------------
+// 运行结果
+// ---------------------------------------------------------------------------
+
+message RunSummary {
+  int32 total = 1;
+  int32 passed = 2;
+  int32 failed = 3;
+  int32 skipped = 4;
+}
+
+message TestRun {
+  string id = 1;
+  int64 tenant_id = 2;
+  string plan_id = 3;
+  string env_id = 4;
+  RunStatus status = 5;
+  TriggerType trigger = 6;
+  string triggered_by = 7;   // user_id | token | scheduler
+  google.protobuf.Timestamp started_at = 8;
+  google.protobuf.Timestamp finished_at = 9;
+  RunSummary summary = 10;
+}
+
+message TestCaseResult {
+  string id = 1;
+  string run_id = 2;
+  string case_id = 3;
+  CaseStatus status = 4;
+  google.protobuf.Duration duration = 5;
+  string error = 6;
+}
+
+message ArtifactRef {
+  string id = 1;
+  string kind = 2;      // screenshot | video | trace | har | download | log
+  string uri = 3;       // 存储位置（S3/本地 FS）
+  int64 size = 4;
+}
+
+message TestStepResult {
+  string id = 1;
+  string case_result_id = 2;
+  string step_path = 3;                 // 点路径定址
+  StepStatus status = 4;
+  google.protobuf.Duration duration = 5;
+  google.protobuf.Struct request = 6;   // 请求快照
+  google.protobuf.Struct response = 7;  // 响应快照
+  repeated AssertionResult assertions = 8;
+  repeated string logs = 9;
+  repeated ArtifactRef artifacts = 10;
+}
+
+// ---------------------------------------------------------------------------
+// 压力测试
+// ---------------------------------------------------------------------------
+
+message RampStage {
+  google.protobuf.Duration at = 1;
+  int32 target = 2;          // rps 或用户数
+}
+
+message LoadProfile {
+  repeated RampStage ramp = 1;
+  google.protobuf.Duration duration = 2;
+  int32 concurrency_per_worker = 3;
+}
+
+message StressTestPlan {
+  string id = 1;
+  int64 tenant_id = 2;
+  string project_id = 3;
+  string env_id = 4;
+  oneof target {
+    string api_id = 5;              // 单接口
+    string behavior_case_id = 6;    // 低代码"用户行为"脚本
+  }
+  LoadProfile load_profile = 7;
+  int32 worker_count = 8;
+  google.protobuf.Duration metrics_interval = 9;
+}
+
+// 压测时序指标点（Worker 流式回传）
+message StressMetricPoint {
+  google.protobuf.Timestamp ts = 1;
+  double rps = 2;
+  double latency_p50_ms = 3;
+  double latency_p95_ms = 4;
+  double latency_p99_ms = 5;
+  double error_rate = 6;
+  int32 concurrency = 7;
+}

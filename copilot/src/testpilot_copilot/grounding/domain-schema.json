@@ -1,0 +1,821 @@
+{
+ "version": "v1",
+ "source": "proto/testpilot/common/v1/types.proto",
+ "messages": {
+  "HttpApi": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "method",
+    "type": "HttpMethod"
+   },
+   {
+    "name": "uri",
+    "type": "string",
+    "doc": "可含 {{var}}"
+   },
+   {
+    "name": "params",
+    "type": "repeated KeyValue"
+   },
+   {
+    "name": "body",
+    "type": "BodySpec"
+   },
+   {
+    "name": "headers",
+    "type": "repeated KeyValue"
+   },
+   {
+    "name": "cookies",
+    "type": "repeated CookieParam"
+   },
+   {
+    "name": "pre_scripts",
+    "type": "repeated Script"
+   },
+   {
+    "name": "post_scripts",
+    "type": "repeated Script"
+   },
+   {
+    "name": "settings",
+    "type": "ApiSettings"
+   },
+   {
+    "name": "certificate_id",
+    "type": "string"
+   }
+  ],
+  "KeyValue": [
+   {
+    "name": "key",
+    "type": "string"
+   },
+   {
+    "name": "value",
+    "type": "string"
+   },
+   {
+    "name": "description",
+    "type": "string"
+   },
+   {
+    "name": "enabled",
+    "type": "bool"
+   }
+  ],
+  "BodySpec": [
+   {
+    "name": "content_type",
+    "type": "BodyContentType"
+   },
+   {
+    "name": "content",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "raw",
+    "type": "string",
+    "doc": "json / xml / graphql 原文"
+   },
+   {
+    "name": "form",
+    "type": "FormData",
+    "doc": "form-data / x-www-form-urlencoded"
+   },
+   {
+    "name": "binary_ref",
+    "type": "string",
+    "doc": "artifact 引用"
+   }
+  ],
+  "Assertion": [
+   {
+    "name": "target",
+    "type": "AssertionTarget"
+   },
+   {
+    "name": "path",
+    "type": "string",
+    "doc": "header 名 / jsonpath"
+   },
+   {
+    "name": "op",
+    "type": "AssertionOp"
+   },
+   {
+    "name": "expected",
+    "type": "string"
+   }
+  ],
+  "TestStep": [
+   {
+    "name": "id",
+    "type": "string",
+    "doc": "用于 step_path 定址（嵌套点路径，如 3.then.1）"
+   },
+   {
+    "name": "type",
+    "type": "StepType"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "name": "params",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "api_call",
+    "type": "ApiCallStep"
+   },
+   {
+    "name": "grpc_call",
+    "type": "GrpcCallStep"
+   },
+   {
+    "name": "assertion",
+    "type": "AssertionStep"
+   },
+   {
+    "name": "set_var",
+    "type": "SetVarStep"
+   },
+   {
+    "name": "if_step",
+    "type": "IfStep"
+   },
+   {
+    "name": "loop_step",
+    "type": "LoopStep"
+   },
+   {
+    "name": "retry_step",
+    "type": "RetryStep"
+   },
+   {
+    "name": "code_block",
+    "type": "CodeBlockStep"
+   },
+   {
+    "name": "delay",
+    "type": "DelayStep"
+   },
+   {
+    "name": "ui_action",
+    "type": "UiActionStep"
+   }
+  ],
+  "ApiCallStep": [
+   {
+    "name": "api_id",
+    "type": "string",
+    "doc": "引用既有 HttpApi；为空则取 inline"
+   },
+   {
+    "name": "override",
+    "type": "HttpOverride",
+    "doc": "覆盖"
+   },
+   {
+    "name": "inline",
+    "type": "HttpApi",
+    "doc": "内联定义（不引用既有接口时）"
+   }
+  ],
+  "AssertionStep": [
+   {
+    "name": "assertions",
+    "type": "repeated Assertion"
+   }
+  ],
+  "SetVarStep": [
+   {
+    "name": "key",
+    "type": "string"
+   },
+   {
+    "name": "value_expr",
+    "type": "string",
+    "doc": "受限表达式（JSONPath + 安全求值器）"
+   }
+  ],
+  "IfStep": [
+   {
+    "name": "condition_expr",
+    "type": "string"
+   },
+   {
+    "name": "then_steps",
+    "type": "repeated TestStep"
+   },
+   {
+    "name": "else_steps",
+    "type": "repeated TestStep"
+   }
+  ],
+  "LoopStep": [
+   {
+    "name": "iterator",
+    "type": "string"
+   },
+   {
+    "name": "bounds",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "count",
+    "type": "int32"
+   },
+   {
+    "name": "range",
+    "type": "IntRange"
+   },
+   {
+    "name": "parallel",
+    "type": "bool",
+    "doc": "默认顺序执行；true 并发"
+   },
+   {
+    "name": "body_steps",
+    "type": "repeated TestStep"
+   }
+  ],
+  "RetryStep": [
+   {
+    "name": "body_step",
+    "type": "TestStep",
+    "doc": "包装并重试单步"
+   },
+   {
+    "name": "max_attempts",
+    "type": "int32"
+   },
+   {
+    "name": "backoff",
+    "type": "google.protobuf.Duration"
+   }
+  ],
+  "DelayStep": [
+   {
+    "name": "duration",
+    "type": "google.protobuf.Duration"
+   }
+  ],
+  "CodeBlockStep": [
+   {
+    "name": "lang",
+    "type": "string",
+    "doc": "python"
+   },
+   {
+    "name": "source",
+    "type": "string"
+   }
+  ],
+  "UiActionStep": [
+   {
+    "name": "action",
+    "type": "UiAction"
+   },
+   {
+    "name": "target",
+    "type": "string",
+    "doc": "Playwright locator 表达式"
+   },
+   {
+    "name": "value",
+    "type": "string"
+   }
+  ],
+  "DeclarativeCase": [
+   {
+    "name": "steps",
+    "type": "repeated TestStep"
+   }
+  ],
+  "LowCodeCase": [
+   {
+    "name": "script",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "script_ref",
+    "type": "string",
+    "doc": "artifact 引用"
+   },
+   {
+    "name": "source",
+    "type": "string",
+    "doc": "内联脚本"
+   },
+   {
+    "name": "entry",
+    "type": "string",
+    "doc": "入口函数，默认 run"
+   },
+   {
+    "name": "parameters",
+    "type": "google.protobuf.Struct"
+   }
+  ],
+  "TestCase": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "type",
+    "type": "TestCaseType"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "name": "description",
+    "type": "string"
+   },
+   {
+    "name": "definition",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "declarative",
+    "type": "DeclarativeCase"
+   },
+   {
+    "name": "lowcode",
+    "type": "LowCodeCase"
+   },
+   {
+    "name": "tags",
+    "type": "repeated string"
+   },
+   {
+    "name": "created_by",
+    "type": "string",
+    "doc": "human | copilot"
+   }
+  ],
+  "TestPlan": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "env_id",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "name": "items",
+    "type": "repeated PlanItem"
+   },
+   {
+    "name": "concurrency",
+    "type": "int32",
+    "doc": "用例间并发度"
+   },
+   {
+    "name": "retry_on_failure",
+    "type": "bool"
+   },
+   {
+    "name": "overlap_policy",
+    "type": "OverlapPolicy",
+    "doc": "定时任务重叠策略"
+   },
+   {
+    "name": "schedule_cron",
+    "type": "string"
+   },
+   {
+    "name": "timeout",
+    "type": "google.protobuf.Duration"
+   },
+   {
+    "name": "notifications",
+    "type": "NotificationRule"
+   }
+  ],
+  "PlanItem": [
+   {
+    "name": "ref",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "case_id",
+    "type": "string"
+   },
+   {
+    "name": "suite_id",
+    "type": "string"
+   },
+   {
+    "name": "enabled",
+    "type": "bool"
+   },
+   {
+    "name": "param_overrides",
+    "type": "google.protobuf.Struct"
+   }
+  ],
+  "Environment": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "icon",
+    "type": "string"
+   },
+   {
+    "name": "name",
+    "type": "string"
+   },
+   {
+    "name": "description",
+    "type": "string"
+   },
+   {
+    "name": "base_url",
+    "type": "string",
+    "doc": "前置 URL；实际 URL = base_url + uri"
+   },
+   {
+    "name": "variables",
+    "type": "repeated Variable"
+   }
+  ],
+  "Variable": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "environment_id",
+    "type": "string",
+    "doc": "空 = 项目级"
+   },
+   {
+    "name": "scope",
+    "type": "VariableScope"
+   },
+   {
+    "name": "category",
+    "type": "VariableCategory"
+   },
+   {
+    "name": "key",
+    "type": "string"
+   },
+   {
+    "name": "value",
+    "type": "string",
+    "doc": "非敏感时明文；敏感时为空"
+   },
+   {
+    "name": "sensitive",
+    "type": "bool"
+   },
+   {
+    "name": "secret_ref",
+    "type": "string",
+    "doc": "vault://tenant/{tid}/... 或 tink 引用"
+   },
+   {
+    "name": "description",
+    "type": "string"
+   }
+  ],
+  "TestRun": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "plan_id",
+    "type": "string"
+   },
+   {
+    "name": "env_id",
+    "type": "string"
+   },
+   {
+    "name": "status",
+    "type": "RunStatus"
+   },
+   {
+    "name": "trigger",
+    "type": "TriggerType"
+   },
+   {
+    "name": "triggered_by",
+    "type": "string",
+    "doc": "user_id | token | scheduler"
+   },
+   {
+    "name": "started_at",
+    "type": "google.protobuf.Timestamp"
+   },
+   {
+    "name": "finished_at",
+    "type": "google.protobuf.Timestamp"
+   },
+   {
+    "name": "summary",
+    "type": "RunSummary"
+   }
+  ],
+  "TestCaseResult": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "run_id",
+    "type": "string"
+   },
+   {
+    "name": "case_id",
+    "type": "string"
+   },
+   {
+    "name": "status",
+    "type": "CaseStatus"
+   },
+   {
+    "name": "duration",
+    "type": "google.protobuf.Duration"
+   },
+   {
+    "name": "error",
+    "type": "string"
+   }
+  ],
+  "TestStepResult": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "case_result_id",
+    "type": "string"
+   },
+   {
+    "name": "step_path",
+    "type": "string",
+    "doc": "点路径定址"
+   },
+   {
+    "name": "status",
+    "type": "StepStatus"
+   },
+   {
+    "name": "duration",
+    "type": "google.protobuf.Duration"
+   },
+   {
+    "name": "request",
+    "type": "google.protobuf.Struct",
+    "doc": "请求快照"
+   },
+   {
+    "name": "response",
+    "type": "google.protobuf.Struct",
+    "doc": "响应快照"
+   },
+   {
+    "name": "assertions",
+    "type": "repeated AssertionResult"
+   },
+   {
+    "name": "logs",
+    "type": "repeated string"
+   },
+   {
+    "name": "artifacts",
+    "type": "repeated ArtifactRef"
+   }
+  ],
+  "StressTestPlan": [
+   {
+    "name": "id",
+    "type": "string"
+   },
+   {
+    "name": "tenant_id",
+    "type": "int64"
+   },
+   {
+    "name": "project_id",
+    "type": "string"
+   },
+   {
+    "name": "env_id",
+    "type": "string"
+   },
+   {
+    "name": "target",
+    "type": "oneof",
+    "doc": "见 proto"
+   },
+   {
+    "name": "api_id",
+    "type": "string",
+    "doc": "单接口"
+   },
+   {
+    "name": "behavior_case_id",
+    "type": "string",
+    "doc": "低代码\"用户行为\"脚本"
+   },
+   {
+    "name": "load_profile",
+    "type": "LoadProfile"
+   },
+   {
+    "name": "worker_count",
+    "type": "int32"
+   },
+   {
+    "name": "metrics_interval",
+    "type": "google.protobuf.Duration"
+   }
+  ],
+  "LoadProfile": [
+   {
+    "name": "ramp",
+    "type": "repeated RampStage"
+   },
+   {
+    "name": "duration",
+    "type": "google.protobuf.Duration"
+   },
+   {
+    "name": "concurrency_per_worker",
+    "type": "int32"
+   }
+  ],
+  "RampStage": [
+   {
+    "name": "at",
+    "type": "google.protobuf.Duration"
+   },
+   {
+    "name": "target",
+    "type": "int32",
+    "doc": "rps 或用户数"
+   }
+  ]
+ },
+ "enums": {
+  "HttpMethod": {
+   "HTTP_METHOD_UNSPECIFIED": 0,
+   "HTTP_METHOD_GET": 1,
+   "HTTP_METHOD_POST": 2,
+   "HTTP_METHOD_PUT": 3,
+   "HTTP_METHOD_DELETE": 4,
+   "HTTP_METHOD_PATCH": 5,
+   "HTTP_METHOD_HEAD": 6,
+   "HTTP_METHOD_OPTIONS": 7
+  },
+  "StepType": {
+   "STEP_TYPE_UNSPECIFIED": 0,
+   "STEP_TYPE_API_CALL": 1,
+   "STEP_TYPE_GRPC_CALL": 2,
+   "STEP_TYPE_ASSERTION": 3,
+   "STEP_TYPE_SET_VAR": 4,
+   "STEP_TYPE_IF": 5,
+   "STEP_TYPE_LOOP": 6,
+   "STEP_TYPE_RETRY": 7,
+   "STEP_TYPE_CODE_BLOCK": 8,
+   "STEP_TYPE_DELAY": 9,
+   "STEP_TYPE_UI_ACTION": 10
+  },
+  "UiAction": {
+   "UI_ACTION_UNSPECIFIED": 0,
+   "UI_ACTION_GOTO": 1,
+   "UI_ACTION_CLICK": 2,
+   "UI_ACTION_FILL": 3,
+   "UI_ACTION_SELECT": 4,
+   "UI_ACTION_CHECK": 5,
+   "UI_ACTION_HOVER": 6,
+   "UI_ACTION_PRESS": 7,
+   "UI_ACTION_EXPECT_TEXT": 8,
+   "UI_ACTION_EXPECT_VISIBLE": 9,
+   "UI_ACTION_SCREENSHOT": 10,
+   "UI_ACTION_WAIT": 11,
+   "UI_ACTION_UPLOAD": 12,
+   "UI_ACTION_DOWNLOAD": 13
+  },
+  "AssertionTarget": {
+   "ASSERTION_TARGET_UNSPECIFIED": 0,
+   "ASSERTION_TARGET_STATUS": 1,
+   "ASSERTION_TARGET_HEADER": 2,
+   "ASSERTION_TARGET_BODY": 3,
+   "ASSERTION_TARGET_JSONPATH": 4,
+   "ASSERTION_TARGET_ELAPSED": 5,
+   "ASSERTION_TARGET_CUSTOM": 6
+  },
+  "AssertionOp": {
+   "ASSERTION_OP_UNSPECIFIED": 0,
+   "ASSERTION_OP_EQ": 1,
+   "ASSERTION_OP_NE": 2,
+   "ASSERTION_OP_EXISTS": 3,
+   "ASSERTION_OP_NOT_EXISTS": 4,
+   "ASSERTION_OP_CONTAINS": 5,
+   "ASSERTION_OP_MATCHES": 6,
+   "ASSERTION_OP_GT": 7,
+   "ASSERTION_OP_LT": 8,
+   "ASSERTION_OP_GE": 9,
+   "ASSERTION_OP_LE": 10,
+   "ASSERTION_OP_TYPE_IS": 11
+  },
+  "TestCaseType": {
+   "TEST_CASE_TYPE_UNSPECIFIED": 0,
+   "TEST_CASE_TYPE_DECLARATIVE": 1,
+   "TEST_CASE_TYPE_LOWCODE": 2
+  },
+  "RunStatus": {
+   "RUN_STATUS_UNSPECIFIED": 0,
+   "RUN_STATUS_RUNNING": 1,
+   "RUN_STATUS_PASSED": 2,
+   "RUN_STATUS_FAILED": 3,
+   "RUN_STATUS_ABORTED": 4,
+   "RUN_STATUS_TIMEOUT": 5
+  },
+  "CaseStatus": {
+   "CASE_STATUS_UNSPECIFIED": 0,
+   "CASE_STATUS_RUNNING": 1,
+   "CASE_STATUS_PASSED": 2,
+   "CASE_STATUS_FAILED": 3,
+   "CASE_STATUS_SKIPPED": 4
+  },
+  "StepStatus": {
+   "STEP_STATUS_UNSPECIFIED": 0,
+   "STEP_STATUS_RUNNING": 1,
+   "STEP_STATUS_PASSED": 2,
+   "STEP_STATUS_FAILED": 3,
+   "STEP_STATUS_SKIPPED": 4
+  }
+ }
+}
