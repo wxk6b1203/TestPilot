@@ -159,6 +159,34 @@ case5 = api.post("/api/v1/cases", json={
     "definition": {"script_ref": str(script1["id"]), "entry": "run"}}).json()
 print(f"✓ script1={script1['id']} case5={case5['id']} (script_ref)")
 
+# ---- v2：api_id 派发期解析（api_call 引用 + override 合并）----
+api_echo = api.post("/api/v1/apis", json={
+    "project_id": pid, "method": 1, "uri": "/echo",
+    "params": [{"key": "page", "value": ""}]}).json()
+case6 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-api-ref", "type": 1,
+    "definition": {"steps": [
+        {"id": "1", "type": 1, "name": "call by api_id",
+         "api_call": {"api_id": str(api_echo["id"]),
+                      "override": {"params": [{"key": "page", "value": "42"}]}}},
+        {"id": "2", "type": 3, "name": "assert page",
+         "assertion": {"assertions": [
+             {"target": 4, "path": "$.query.page", "op": 1, "expected": "42"}]}},
+    ]}}).json()
+print(f"✓ api_echo={api_echo['id']} case6={case6['id']} (api_id inline at dispatch)")
+
+# ---- v2：plan item param_overrides（模板变量最高优先级）----
+case7 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-param-overrides", "type": 1,
+    "definition": {"steps": [
+        {"id": "1", "type": 1, "name": "templated call",
+         "api_call": {"inline": {"method": 1, "uri": "/echo?n={{n}}"}}},
+        {"id": "2", "type": 3, "name": "assert n from override",
+         "assertion": {"assertions": [
+             {"target": 4, "path": "$.query.n", "op": 1, "expected": "7"}]}},
+    ]}}).json()
+print(f"✓ case7={case7['id']} (param_overrides)")
+
 # ---- 计划 + 触发 ----
 plan = api.post("/api/v1/plans", json={
     "project_id": pid, "env_id": eid, "name": f"e2e-plan-{stamp}",
@@ -169,6 +197,9 @@ plan = api.post("/api/v1/plans", json={
         {"ref_type": 1, "ref_id": case4["id"], "enabled": True, "order": 4},
         {"ref_type": 2, "ref_id": suite1["id"], "enabled": True, "order": 5},
         {"ref_type": 1, "ref_id": case5["id"], "enabled": True, "order": 6},
+        {"ref_type": 1, "ref_id": case6["id"], "enabled": True, "order": 7},
+        {"ref_type": 1, "ref_id": case7["id"], "enabled": True, "order": 8,
+         "param_overrides": {"n": 7}},
     ]}).json()
 r = api.post(f"/api/v1/plans/{plan['id']}/run", json={})
 if r.status_code != 200:
@@ -192,7 +223,8 @@ else:
 # ---- 校验闭环 ----
 ok = True
 expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2,
-          case4["name"]: 2, case5["name"]: 2}  # suite 展开使 case1/case3 各出现两次
+          case4["name"]: 2, case5["name"]: 2, case6["name"]: 2,
+          case7["name"]: 2}  # suite 展开使 case1/case3 各出现两次
 summary = run.get("summary") or {}
 print(f"run status={run['status']} summary={json.dumps(summary)}")
 if run["status"] != 3:  # 一个 case 失败 → run FAILED

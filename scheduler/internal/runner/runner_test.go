@@ -16,6 +16,7 @@ import (
 	"github.com/testpilot/testpilot/internal/dispatch"
 	"github.com/testpilot/testpilot/internal/model"
 	"github.com/testpilot/testpilot/internal/quota"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 )
 
@@ -490,6 +491,196 @@ func TestMaterializeScriptRef(t *testing.T) {
 	}
 	if _, err := r.materializeCase(&decl); err != nil {
 		t.Fatalf("declarative should pass through: %v", err)
+	}
+}
+
+func TestMaterializeAPIRefs(t *testing.T) {
+	d := openTestDB(t)
+	r := New(d, dispatch.New(d))
+
+	api := model.HttpApi{ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Method: int16(commonv1.HttpMethod_HTTP_METHOD_GET), URI: "/echo",
+		Params: model.JSON(`[{"key":"page","value":""}]`)}
+	if err := d.Create(&api).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 顶层 + loop 嵌套 + override：inline 解析、api_id/override 保留
+	decl := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "api-ref",
+		Definition: model.JSON(`{"steps": [
+			{"name": "top", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `", "override": {"params": [{"key": "page", "value": "2"}]}}},
+			{"name": "loop", "type": 6, "loop_step": {"iterator": "i", "count": 1, "body_steps": [
+				{"name": "nested", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `"}}]}}
+		]}`),
+	}
+	pcase, err := r.materializeCase(&decl)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	steps := pcase.GetDeclarative().GetSteps()
+	top := steps[0].GetApiCall()
+	if top.GetApiId() != idStr(api.ID) {
+		t.Fatalf("api_id should be preserved, got %q", top.GetApiId())
+	}
+	if top.Inline == nil || top.Inline.GetUri() != "/echo" ||
+		top.Inline.GetMethod() != commonv1.HttpMethod_HTTP_METHOD_GET {
+		t.Fatalf("inline not resolved: %+v", top.Inline)
+	}
+	if len(top.Inline.GetParams()) != 1 || top.Inline.GetParams()[0].GetKey() != "page" {
+		t.Fatalf("inline params mismatch: %+v", top.Inline.GetParams())
+	}
+	if len(top.GetOverride().GetParams()) != 1 {
+		t.Fatal("override should be preserved")
+	}
+	nested := steps[1].GetLoopStep().GetBodySteps()[0].GetApiCall()
+	if nested.Inline == nil {
+		t.Fatal("nested api_id should be resolved")
+	}
+
+	// 已有 inline 的步骤不覆盖
+	own := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "inline-own",
+		Definition: model.JSON(`{"steps": [
+			{"name": "own", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `", "inline": {"method": 2, "uri": "/mine"}}}
+		]}`),
+	}
+	p2, err := r.materializeCase(&own)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p2.GetDeclarative().GetSteps()[0].GetApiCall().Inline.GetUri(); got != "/mine" {
+		t.Fatalf("explicit inline should win, got %q", got)
+	}
+
+	// 缺失接口 / 非法 id → 报错
+	missing := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "missing-api",
+		Definition: model.JSON(`{"steps": [
+			{"name": "x", "type": 1, "api_call": {"api_id": "999999"}}
+		]}`),
+	}
+	if _, err := r.materializeCase(&missing); err == nil {
+		t.Fatal("missing api should error")
+	}
+	badID := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "bad-id",
+		Definition: model.JSON(`{"steps": [
+			{"name": "x", "type": 1, "api_call": {"api_id": "not-a-number"}}
+		]}`),
+	}
+	if _, err := r.materializeCase(&badID); err == nil {
+		t.Fatal("invalid api_id should error")
+	}
+
+	// 跨租户接口不可见
+	foreign := model.HttpApi{ID: model.NextID(), TenantID: 2, ProjectID: 1,
+		Method: int16(commonv1.HttpMethod_HTTP_METHOD_GET), URI: "/foreign"}
+	if err := d.Create(&foreign).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreignCase := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "foreign-api",
+		Definition: model.JSON(`{"steps": [
+			{"name": "x", "type": 1, "api_call": {"api_id": "` + idStr(foreign.ID) + `"}}
+		]}`),
+	}
+	if _, err := r.materializeCase(&foreignCase); err == nil {
+		t.Fatal("cross-tenant api_id should error")
+	}
+}
+
+func TestApplyOverrides(t *testing.T) {
+	baseEnv := &workerv1.ExecutionEnv{BaseUrl: "http://b"}
+	baseEnv.Variables = append(baseEnv.Variables, &commonv1.Variable{Key: "n", Value: "1"})
+
+	// 声明式：覆盖追加为任务级模板变量（排在 env 变量之后，取末值优先）
+	decl := &commonv1.TestCase{Definition: &commonv1.TestCase_Declarative{
+		Declarative: &commonv1.DeclarativeCase{}}}
+	env, err := applyOverrides(model.JSON(`{"n": 7, "flag": true, "obj": {"a": 1}}`), decl, baseEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(env.GetVariables()) != 4 {
+		t.Fatalf("vars=%v", env.GetVariables())
+	}
+	if env.GetVariables()[0].GetValue() != "1" || env.GetVariables()[1].GetValue() != "7" {
+		t.Fatalf("override should append after env vars: %+v", env.GetVariables())
+	}
+	if env.GetVariables()[2].GetValue() != "true" || env.GetVariables()[3].GetValue() != `{"a":1}` {
+		t.Fatalf("non-string overrides: %+v", env.GetVariables()[2:])
+	}
+	if env.GetBaseUrl() != "http://b" {
+		t.Fatal("base_url should be preserved")
+	}
+	// 共享 execEnv 未被修改
+	if len(baseEnv.GetVariables()) != 1 {
+		t.Fatal("shared execEnv must not be mutated")
+	}
+
+	// 低代码：深合并进 parameters（覆盖优先），同时追加模板变量
+	lc := &commonv1.TestCase{Definition: &commonv1.TestCase_Lowcode{
+		Lowcode: &commonv1.LowCodeCase{}}}
+	lc.GetLowcode().Parameters, _ = structpb.NewStruct(map[string]any{"x": 1.0, "y": map[string]any{"a": 1.0}})
+	_, err = applyOverrides(model.JSON(`{"y": {"b": 2}, "z": "v"}`), lc, baseEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := lc.GetLowcode().GetParameters().AsMap()
+	if got["x"] != 1.0 || got["z"] != "v" {
+		t.Fatalf("parameters merge mismatch: %v", got)
+	}
+	nested := got["y"].(map[string]any)
+	if nested["a"] != 1.0 || nested["b"] != 2.0 {
+		t.Fatalf("nested merge mismatch: %v", nested)
+	}
+
+	// 非法 JSON → 报错；空覆盖原样返回
+	if _, err := applyOverrides(model.JSON(`{bad`), decl, baseEnv); err == nil {
+		t.Fatal("invalid json should error")
+	}
+	if env, _ := applyOverrides(nil, decl, baseEnv); env != baseEnv {
+		t.Fatal("empty overrides should return env unchanged")
+	}
+}
+
+func TestTriggerParamOverridesDispatched(t *testing.T) {
+	d := openTestDB(t)
+	fx := seedPlanData(t, d)
+	d.Model(&model.TestPlanItem{}).Where("plan_id = ?", fx.planID).
+		Updates(map[string]any{"param_overrides": model.JSON(`{"page": "42"}`)})
+
+	disp := dispatch.New(d)
+	disp.Register(mkWorker("w1", 0, commonv1.Capability_CAPABILITY_FUNCTIONAL))
+	r := New(d, disp)
+	if _, err := r.Trigger(context.Background(), 1, fx.planID, 0,
+		int16(commonv1.TriggerType_TRIGGER_TYPE_MANUAL), "tester"); err != nil {
+		t.Fatal(err)
+	}
+	var w *dispatch.Worker
+	for _, x := range disp.Workers() {
+		if x.ID == "w1" {
+			w = x
+		}
+	}
+	if w == nil || len(w.Send) != 1 {
+		t.Fatalf("want 1 dispatched task, got %+v", w)
+	}
+	task := (<-w.Send).GetTask()
+	vars := task.GetEnv().GetVariables()
+	if len(vars) == 0 || vars[len(vars)-1].GetKey() != "page" ||
+		vars[len(vars)-1].GetValue() != "42" {
+		t.Fatalf("override var missing at tail: %+v", vars)
 	}
 }
 

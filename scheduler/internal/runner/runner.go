@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -17,6 +18,7 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"google.golang.org/protobuf/types/known/durationpb"
+	"google.golang.org/protobuf/types/known/structpb"
 	"gorm.io/gorm"
 )
 
@@ -98,15 +100,16 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	for _, item := range items {
 		switch item.RefType {
 		case 1: // case 引用
-			dispatched += r.dispatchCase(run, tenantID, item.RefID, execEnv, timeout, traceparent)
-		case 2: // suite 引用：展开为有序 case 序列（items 仅允许 case，无嵌套）
+			dispatched += r.dispatchCase(run, tenantID, item.RefID, item.ParamOverrides, execEnv, timeout, traceparent)
+		case 2: // suite 引用：展开为有序 case 序列（items 仅允许 case，无嵌套）；
+			// 条目级 param_overrides 对展开出的每个 case 一致生效
 			caseIDs, err := r.suiteCaseIDs(tenantID, item.RefID)
 			if err != nil {
 				logging.L.Warnw("suite expand failed, item skipped", "suite_id", item.RefID, "err", err)
 				continue
 			}
 			for _, cid := range caseIDs {
-				dispatched += r.dispatchCase(run, tenantID, cid, execEnv, timeout, traceparent)
+				dispatched += r.dispatchCase(run, tenantID, cid, item.ParamOverrides, execEnv, timeout, traceparent)
 			}
 		default:
 			logging.L.Warnw("plan item with unknown ref_type skipped", "ref_type", item.RefType)
@@ -125,25 +128,116 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	return run.ID, nil
 }
 
-// materializeCase 转换用例为 proto，并把低代码 script_ref 解析为内联 source
-// （Worker 引擎只接受 source；脚本内容按租户从 scripts 资产库读取，不进 TaskAssignment 之外的任何落盘）。
+// materializeCase 转换用例为 proto，并完成两类派发期解析（Worker 无 DB，只接受内联形态）：
+//  1. 低代码 script_ref → 内联 source（脚本按租户从 scripts 资产库读取）；
+//  2. 声明式 api_call 步骤的 api_id 引用 → inline 快照（保留 api_id 与 override）。
+//
+// 解析失败即报错——dispatchCase 把该 case_result 置 FAILED，不派发残缺任务。
 func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, error) {
 	pcase := ToProtoCase(tc)
-	lc := pcase.GetLowcode()
-	if lc == nil || lc.GetScriptRef() == "" {
-		return pcase, nil
+	if lc := pcase.GetLowcode(); lc != nil && lc.GetScriptRef() != "" {
+		scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+		}
+		var script model.Script
+		if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
+			First(&script).Error; err != nil {
+			return nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
+		}
+		lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
 	}
-	scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
-	if err != nil {
-		return nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+	if dc := pcase.GetDeclarative(); dc != nil {
+		if err := r.resolveAPIRefs(tc.TenantID, dc.GetSteps()); err != nil {
+			return nil, err
+		}
 	}
-	var script model.Script
-	if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
-		First(&script).Error; err != nil {
-		return nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
-	}
-	lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
 	return pcase, nil
+}
+
+// resolveAPIRefs 把步骤树（含 if/loop/retry 嵌套）中 api_id 引用批量解析为 inline 快照。
+// 已有 inline 的步骤保持原样（inline 是显式快照，不覆盖用户手写内容）。
+func (r *Runner) resolveAPIRefs(tenantID int64, steps []*commonv1.TestStep) error {
+	ids := map[string]bool{}
+	var collect func([]*commonv1.TestStep)
+	collect = func(list []*commonv1.TestStep) {
+		for _, st := range list {
+			switch p := st.Params.(type) {
+			case *commonv1.TestStep_ApiCall:
+				if id := p.ApiCall.GetApiId(); id != "" && p.ApiCall.Inline == nil {
+					ids[id] = true
+				}
+			case *commonv1.TestStep_IfStep:
+				collect(p.IfStep.GetThenSteps())
+				collect(p.IfStep.GetElseSteps())
+			case *commonv1.TestStep_LoopStep:
+				collect(p.LoopStep.GetBodySteps())
+			case *commonv1.TestStep_RetryStep:
+				if b := p.RetryStep.GetBodyStep(); b != nil {
+					collect([]*commonv1.TestStep{b})
+				}
+			}
+		}
+	}
+	collect(steps)
+	if len(ids) == 0 {
+		return nil
+	}
+
+	keys := make([]int64, 0, len(ids))
+	for raw := range ids {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return fmt.Errorf("invalid api_id %q in steps: %v", raw, err)
+		}
+		keys = append(keys, id)
+	}
+	var apis []model.HttpApi
+	if err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, keys).Find(&apis).Error; err != nil {
+		return err
+	}
+	byID := make(map[int64]*model.HttpApi, len(apis))
+	for i := range apis {
+		byID[apis[i].ID] = &apis[i]
+	}
+
+	var fill func([]*commonv1.TestStep) error
+	fill = func(list []*commonv1.TestStep) error {
+		for _, st := range list {
+			switch p := st.Params.(type) {
+			case *commonv1.TestStep_ApiCall:
+				id := p.ApiCall.GetApiId()
+				if id == "" || p.ApiCall.Inline != nil {
+					continue
+				}
+				n, _ := strconv.ParseInt(id, 10, 64) // 已在 collect 阶段校验
+				api, ok := byID[n]
+				if !ok {
+					return fmt.Errorf("api %d not found in tenant", n)
+				}
+				p.ApiCall.Inline = ToProtoHTTP(api)
+			case *commonv1.TestStep_IfStep:
+				if err := fill(p.IfStep.GetThenSteps()); err != nil {
+					return err
+				}
+				if err := fill(p.IfStep.GetElseSteps()); err != nil {
+					return err
+				}
+			case *commonv1.TestStep_LoopStep:
+				if err := fill(p.LoopStep.GetBodySteps()); err != nil {
+					return err
+				}
+			case *commonv1.TestStep_RetryStep:
+				if b := p.RetryStep.GetBodyStep(); b != nil {
+					if err := fill([]*commonv1.TestStep{b}); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		return nil
+	}
+	return fill(steps)
 }
 
 // suiteCaseIDs 展开套件为有序 case id 列表；套件不存在或不属于该租户返回错误。
@@ -163,8 +257,8 @@ func (r *Runner) suiteCaseIDs(tenantID, suiteID int64) ([]int64, error) {
 	return out, nil
 }
 
-// dispatchCase 加载用例、预建 case result 并派发；返回成功派发数（0 或 1）。
-func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64,
+// dispatchCase 加载用例、预建 case result、应用条目级参数覆盖并派发；返回成功派发数（0 或 1）。
+func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overrides model.JSON,
 	execEnv *workerv1.ExecutionEnv, timeout time.Duration, traceparent string) int {
 	var tc model.TestCase
 	if err := r.db.Where("id = ? AND tenant_id = ?", caseID, tenantID).First(&tc).Error; err != nil {
@@ -180,8 +274,16 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64,
 	}
 	r.db.Create(cr)
 
-	// 低代码 script_ref 在此解析为内联 source（Worker 无 DB，只认 source）。
+	// 派发期解析：script_ref → source；api_id → inline（Worker 无 DB，只接受内联形态）。
 	pcase, failErr := r.materializeCase(&tc)
+	if failErr != nil {
+		r.db.Model(cr).Updates(map[string]any{
+			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
+			"error":  failErr.Error(),
+		})
+		return 0
+	}
+	taskEnv, failErr := applyOverrides(overrides, pcase, execEnv)
 	if failErr != nil {
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
@@ -202,7 +304,7 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64,
 				CaseResultId: idStr(cr.ID),
 			},
 		},
-		Env:         execEnv,
+		Env:         taskEnv,
 		Traceparent: traceparent,
 	}
 	if err := r.disp.Dispatch(task); err != nil {
@@ -213,6 +315,79 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64,
 		return 0
 	}
 	return 1
+}
+
+// applyOverrides 应用计划条目级 param_overrides（JSON 对象）：
+//   - 低代码：深合并进 case `parameters`（SDK 经 `ctx.parameters` 读取；覆盖值优先于用例默认）；
+//   - 全部用例类型：追加为任务级模板变量（`{{key}}` 可渲染；非字符串值 JSON 序列化），
+//     排在共享 execEnv 变量之后——Worker 按序取末值，覆盖值优先级最高。
+//
+// 不修改共享 execEnv（每个任务独立副本）；未传覆盖时原样返回。
+func applyOverrides(raw model.JSON, pcase *commonv1.TestCase,
+	execEnv *workerv1.ExecutionEnv) (*workerv1.ExecutionEnv, error) {
+	if len(raw) == 0 {
+		return execEnv, nil
+	}
+	var ov map[string]any
+	if err := json.Unmarshal([]byte(raw), &ov); err != nil {
+		return execEnv, fmt.Errorf("invalid param_overrides: %v", err)
+	}
+	if len(ov) == 0 {
+		return execEnv, nil
+	}
+
+	if lc := pcase.GetLowcode(); lc != nil {
+		merged := mergeMaps(lc.GetParameters().AsMap(), ov)
+		s, err := structpb.NewStruct(merged)
+		if err != nil {
+			return execEnv, fmt.Errorf("param_overrides merge: %v", err)
+		}
+		lc.Parameters = s
+	}
+
+	vars := make([]*commonv1.Variable, 0, len(execEnv.GetVariables())+len(ov))
+	vars = append(vars, execEnv.GetVariables()...)
+	for k, v := range ov {
+		vars = append(vars, &commonv1.Variable{Key: k, Value: overrideString(v)})
+	}
+	return &workerv1.ExecutionEnv{
+		Environment: execEnv.GetEnvironment(),
+		BaseUrl:     execEnv.GetBaseUrl(),
+		Variables:   vars,
+	}, nil
+}
+
+// mergeMaps 深合并：ov 覆盖 base；嵌套对象递归合并。
+func mergeMaps(base, ov map[string]any) map[string]any {
+	out := make(map[string]any, len(base)+len(ov))
+	for k, v := range base {
+		out[k] = v
+	}
+	for k, v := range ov {
+		if bm, ok := out[k].(map[string]any); ok {
+			if vm, ok := v.(map[string]any); ok {
+				out[k] = mergeMaps(bm, vm)
+				continue
+			}
+		}
+		out[k] = v
+	}
+	return out
+}
+
+// overrideString 把覆盖值转字符串（模板变量形态）；复杂值 JSON 序列化。
+func overrideString(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case nil:
+		return ""
+	default:
+		if b, err := json.Marshal(v); err == nil {
+			return string(b)
+		}
+		return fmt.Sprint(v)
+	}
 }
 
 func buildExecutionEnv(env *model.Environment, exists bool, vars []model.Variable) *workerv1.ExecutionEnv {

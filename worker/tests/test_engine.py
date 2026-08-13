@@ -143,7 +143,7 @@ def test_resolve_api_inline_copy():
 
 def test_resolve_api_api_id_unsupported():
     r = _runner()
-    with pytest.raises(StepFailure, match="api_id reference"):
+    with pytest.raises(StepFailure, match="must be resolved by scheduler"):
         r._resolve_api(_api_call(api_id="api-123"))
 
 

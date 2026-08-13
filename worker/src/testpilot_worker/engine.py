@@ -224,9 +224,10 @@ class CaseRunner:
             api = pb.HttpApi()
             api.CopyFrom(spec.inline)
         elif spec.api_id:
+            # api_id 由 Scheduler 派发前解析为 inline 快照；引擎直接见到裸引用属契约破坏。
             raise StepFailure(
-                f"api_id reference ({spec.api_id}) requires console-side resolution; "
-                "use inline api in MVP")
+                f"api_id reference ({spec.api_id}) must be resolved by scheduler; "
+                "engine accepts inline only")
         else:
             raise StepFailure("api_call: neither api_id nor inline set")
         if spec.HasField("override"):
