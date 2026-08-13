@@ -162,7 +162,9 @@ def render(value: Any, scope: Mapping[str, Any]) -> Any:
     if not isinstance(value, str):
         return value
     m = _FULL_RE.match(value)
-    if m:
+    # 捕获组内不得再含模板定界符：形如 "{{a}}/api/{{b}}" 的多片段模板
+    # 首尾恰为 {{ }}，若误判为单表达式会把 "}}/api/{{" 吞进表达式。
+    if m and "{{" not in m.group(1) and "}}" not in m.group(1):
         return eval_expr(m.group(1), scope)
 
     def _sub(match: re.Match[str]) -> str:
