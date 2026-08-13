@@ -23,9 +23,9 @@
 
 > 与 `docs/design.md` 第 3/4 章领域模型、第 9 章存储、`proto/testpilot/common/v1/types.proto` 对齐。
 > 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
-> 创建/演进**（`scheduler/internal/model`，当前 29 张——含 v2 已落地的 test_suites /
-> test_suite_items / scripts）；`docs/sql/*.sql` 为生产 DDL 参考脚本
-> （32 表，含 3 张 v2 预留——grpc_apis / proto_files / api_tokens，尚未进 GORM 模型，随 v2 第三批落地）。
+> 创建/演进**（`scheduler/internal/model`，当前 31 张——含 v2 落地的 test_suites /
+> test_suite_items / scripts / grpc_apis / proto_files）；`docs/sql/*.sql` 为生产 DDL 参考脚本
+> （33 表，含 1 张 v2 预留——api_tokens，尚未进 GORM 模型）。
 
 ## 0. 约定
 
@@ -205,13 +205,14 @@ UNIQUE `(project_id, environment_id, category, key)`（COALESCE environment_id�
 | certificate_id | BIGINT NULL FK | |
 | created_at / updated_at / deleted_at | TIMESTAMPTZ | |
 
-### grpc_apis
+### grpc_apis（v2 第三批落地）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | BIGINT PK | |
 | tenant_id | BIGINT | INDEX `(tenant_id, project_id)` |
 | project_id | BIGINT FK | |
 | proto_ref | VARCHAR | proto_file id 或 reflection |
+| address | VARCHAR | host:port；空=环境 base_url |
 | full_service / method | VARCHAR | |
 | request_message | JSONB | JSON 表示 |
 | metadata | JSONB | KeyValue 列表 |
@@ -221,16 +222,18 @@ UNIQUE `(project_id, environment_id, category, key)`（COALESCE environment_id�
 | certificate_id | BIGINT NULL FK | |
 | created_at / updated_at / deleted_at | TIMESTAMPTZ | |
 
-### proto_files（gRPC proto 管理）
+### proto_files（gRPC proto 管理，v2 第三批落地）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | BIGINT PK | |
 | tenant_id | BIGINT | INDEX `(tenant_id, project_id)` |
 | project_id | BIGINT FK | |
 | filename | VARCHAR | |
-| content_ref | VARCHAR | artifact 引用（proto 源文件） |
+| content | TEXT | proto 源文件内容（v2 改为内联存储，原 content_ref 语义废弃） |
 | imports | JSONB | 依赖的其他 proto_file id |
 | created_at | TIMESTAMPTZ | |
+
+> 执行链走 server reflection（Worker 无编译桩）；本表为源文件资产与未来离线校验的落点。
 
 ---
 

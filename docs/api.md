@@ -48,6 +48,18 @@
 - `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
 - `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
 
+## gRPC 接口 / proto 文件（v2 第三批）
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET/POST | /grpc-apis | viewer/member | `{project_id, full_service, method, request_message?, metadata?, deadline_ms?, tls_settings?, proto_ref?}` |
+| GET/PUT/DELETE | /grpc-apis/{id} | viewer/member | 执行走 server reflection；目标地址取环境 base_url（host[:port]） |
+| GET/POST | /proto-files | viewer/member | `{project_id, filename, content, imports?}`——proto 源文件资产（内联存储） |
+| GET/DELETE | /proto-files/{id} | viewer/member | 内容随行返回 |
+
+- 用例步骤 `grpc_call: {"grpc_api_id": "<id>", "request_override": {...}, "metadata_override": [...]}`：
+  派发前解析进任务级 `grpc_apis` 映射；响应经 `$.字段` JSONPATH 断言（HTTP 与 gRPC 同断言体系）。
+
 ## 套件 / 脚本资产（v2）
 
 | 方法 | 路径 | 角色 | 说明 |

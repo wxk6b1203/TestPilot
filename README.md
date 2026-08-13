@@ -116,6 +116,10 @@ worker/venv/bin/python scripts/e2e_phase9.py
   派发前由 Scheduler 按租户解析内联为 `source`（沙箱零凭据不变）
 - **api_id 派发期解析（v2 补完）**：api_call 步骤的 `api_id` 引用（含 if/loop/retry 嵌套）
   派发前批量解析为 inline 快照，保留 `override`；显式 inline 优先
+- **gRPC 接口测试（v2 第三批）**：`/grpc-apis`（full_service/method/request_message/metadata/
+  deadline）+ `/proto-files`（proto 源文件资产）；GRPC_CALL 步骤经 **server reflection**
+  动态解析消息类型并 unary 调用（Worker 无编译桩），目标地址取环境 base_url，
+  请求 = request_message ⊕ request_override，JSONPATH 断言对响应消息生效
 - **参数覆盖（v2 补完）**：计划条目 `param_overrides` 深合并进低代码 `parameters`
   （`ctx.parameters`），并追加为任务级模板变量（最高优先级，不改共享环境）
 - **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、Postman Collection v2.1
@@ -127,8 +131,8 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **制品后端（v2）**：`artifact_backend=local|s3` 双实现（S3 兼容对象存储，键 `{prefix}{tenant}/{uri}`；
   上报时同步上传、读取/retention 走后端）
 - **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表；其中 3 张为 v2 预留——
-  grpc_apis / proto_files / api_tokens，GORM AutoMigrate 当前迁移 30 张）
+- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表；其中 1 张为 v2 预留——
+  api_tokens，GORM AutoMigrate 当前迁移 31 张）
 
 ## 代码生成
 
@@ -213,6 +217,8 @@ GET|POST /projects          GET|PUT|DELETE /projects/{id}
 GET|POST /environments      PUT|DELETE /environments/{id}
 GET|POST /variables         PUT|DELETE /variables/{id}
 GET|POST /apis              GET|PUT|DELETE /apis/{id}
+GET|POST /grpc-apis         GET|PUT|DELETE /grpc-apis/{id}   # gRPC 接口
+GET|POST /proto-files       GET|DELETE /proto-files/{id}     # proto 源文件资产
 GET|POST /cases             GET|PUT|DELETE /cases/{id}
 GET|POST /suites            GET|PUT|DELETE /suites/{id}      # 套件（case_ids 有序）
 GET|POST /scripts           GET|PUT|DELETE /scripts/{id}     # 低代码脚本资产
@@ -258,5 +264,5 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）、gRPC 调用步骤
+- 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）
 - OAuth2（非 OIDC）登录

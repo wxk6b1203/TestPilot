@@ -154,6 +154,27 @@ async def create_api(ctx: RunContext[CopilotDeps], project_id: str, method: str,
 
 
 @writes.tool(requires_approval=True)
+async def create_grpc_api(ctx: RunContext[CopilotDeps], project_id: str,
+                          full_service: str, method: str,
+                          request_message: dict | None = None,
+                          metadata: dict[str, str] | None = None,
+                          deadline_ms: int = 0) -> dict:
+    """创建 gRPC 接口（执行走 server reflection，无需编译桩）。
+    full_service 形如 package.Service；request_message 为 JSON 形态请求体。"""
+    g = pb.GrpcApi(full_service=full_service, method=method)
+    if request_message:
+        from google.protobuf import json_format
+        json_format.ParseDict(request_message, g.request_message)
+    for k, v in (metadata or {}).items():
+        g.metadata.add(key=k, value=v)
+    if deadline_ms > 0:
+        g.deadline.FromMilliseconds(deadline_ms)
+    r = await ctx.deps.sched.stub.CreateApi(
+        cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=project_id, grpc=g))
+    return to_dict(r)
+
+
+@writes.tool(requires_approval=True)
 async def create_test_case(ctx: RunContext[CopilotDeps], project_id: str, name: str,
                            definition: dict, case_type: str = "declarative",
                            description: str = "") -> dict:

@@ -1,0 +1,29 @@
+// TestPilot 联调用 gRPC echo 服务（测试基础设施，非产品契约）。
+// 仅生成 Python 桩（scripts/grpc_echo_server.py + worker 测试使用）。
+syntax = "proto3";
+
+package testpilot.echo.v1;
+
+service EchoService {
+  rpc Echo(EchoRequest) returns (EchoResponse);
+  rpc Add(AddRequest) returns (AddResponse);
+}
+
+message EchoRequest {
+  string message = 1;
+  int32 repeat = 2;   // >0 时消息重复次数
+}
+
+message EchoResponse {
+  string message = 1;
+  int32 length = 2;
+}
+
+message AddRequest {
+  int32 a = 1;
+  int32 b = 2;
+}
+
+message AddResponse {
+  int32 sum = 1;
+}

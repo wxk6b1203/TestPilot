@@ -276,10 +276,11 @@ func TestExportCurl(t *testing.T) {
 
 // ---- ApplyOpenAPIDiff ----
 
-func apiIDByURI(t *testing.T, d *gorm.DB, projectID int64, uri, method string) int64 {
+func apiIDByURI(t *testing.T, d *gorm.DB, projectID int64, uri string, method int16) int64 {
 	t.Helper()
 	var a model.HttpApi
-	if err := d.Where("project_id = ? AND uri = ?", projectID, uri).First(&a).Error; err != nil {
+	if err := d.Where("project_id = ? AND uri = ? AND method = ?", projectID, uri, method).
+		First(&a).Error; err != nil {
 		t.Fatal(err)
 	}
 	return a.ID
@@ -322,7 +323,7 @@ func TestApplyOpenAPIDiffMatrix(t *testing.T) {
 	if string(users.Params) != `[{"key":"q","value":""}]` {
 		t.Fatalf("params not updated: %s", users.Params)
 	}
-	if apiIDByURI(t, d, 10, "/users/{id}", "delete") == 0 {
+	if apiIDByURI(t, d, 10, "/users/{id}", 4) == 0 {
 		t.Fatal("removed api should be kept")
 	}
 
@@ -367,7 +368,7 @@ func TestApplyOpenAPIDiffAutoUpdateCases(t *testing.T) {
 	if _, err := ImportOpenAPI(d, 1, 10, []byte(openAPIJSON)); err != nil {
 		t.Fatal(err)
 	}
-	apiID := apiIDByURI(t, d, 10, "/users", "get")
+	apiID := apiIDByURI(t, d, 10, "/users", 1)
 
 	// case A：顶层 + loop 嵌套均引用该 api_id；case B：引用另一接口（不该被碰）
 	def := `{"steps": [

@@ -51,6 +51,7 @@
 | 7 | DELAY | `delay_ms` |
 | 8 | CODE_BLOCK | `code`（低代码沙箱 Python） |
 | 9 | UI_ACTION | `ui_action`（13 种浏览器动作） |
+| 11 | GRPC_CALL | `grpc_call`（`grpc_api_id` 引用 `/grpc-apis`，server reflection 动态调用） |
 
 表达式：`{{vars.x}}` / `{{response.json.user.name}}` / `{{response.status}}` / `{{env.BASE_URL}}`。
 断言：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS。
@@ -63,6 +64,10 @@
 **套件与脚本资产（v2）**：`POST /suites` 建有序用例集合，计划 item `ref_type=2` 引用后触发时
 展开；低代码脚本可存 `POST /scripts` 资产库，用例 definition `{"script_ref": "<id>"}` 引用，
 派发前内联执行。
+
+**gRPC 用例（v2 第三批）**：建接口 `POST /grpc-apis`（full_service/method/request_message），
+步骤 `{"grpc_call": {"grpc_api_id": "<id>", "request_override": {...}}}`；目标地址取环境
+base_url（host[:port]），响应经 `$.字段` JSONPATH 断言。
 
 **api_id 引用与参数覆盖（v2 补完）**：步骤 `api_call` 可只写 `api_id`（含嵌套步骤），派发前
 自动解析为接口快照；计划条目 `param_overrides` 深合并进低代码 `parameters`（`ctx.parameters`），

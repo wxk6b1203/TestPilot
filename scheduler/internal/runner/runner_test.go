@@ -442,7 +442,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "ref-case",
 		Definition: model.JSON(`{"script_ref": "` + idStr(script.ID) + `", "entry": "run"}`),
 	}
-	pcase, err := r.materializeCase(&lc)
+	pcase, _, err := r.materializeCase(&lc)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -463,7 +463,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "missing",
 		Definition: model.JSON(`{"script_ref": "999999"}`),
 	}
-	if _, err := r.materializeCase(&missing); err == nil {
+	if _, _, err := r.materializeCase(&missing); err == nil {
 		t.Fatal("missing script should error")
 	}
 
@@ -479,7 +479,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "foreign-ref",
 		Definition: model.JSON(`{"script_ref": "` + idStr(foreign.ID) + `"}`),
 	}
-	if _, err := r.materializeCase(&foreignCase); err == nil {
+	if _, _, err := r.materializeCase(&foreignCase); err == nil {
 		t.Fatal("cross-tenant script_ref should error")
 	}
 
@@ -489,7 +489,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
 		Name: "decl", Definition: model.JSON(`{"steps": []}`),
 	}
-	if _, err := r.materializeCase(&decl); err != nil {
+	if _, _, err := r.materializeCase(&decl); err != nil {
 		t.Fatalf("declarative should pass through: %v", err)
 	}
 }
@@ -516,7 +516,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 				{"name": "nested", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `"}}]}}
 		]}`),
 	}
-	pcase, err := r.materializeCase(&decl)
+	pcase, _, err := r.materializeCase(&decl)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -549,7 +549,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "own", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `", "inline": {"method": 2, "uri": "/mine"}}}
 		]}`),
 	}
-	p2, err := r.materializeCase(&own)
+	p2, _, err := r.materializeCase(&own)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +566,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "999999"}}
 		]}`),
 	}
-	if _, err := r.materializeCase(&missing); err == nil {
+	if _, _, err := r.materializeCase(&missing); err == nil {
 		t.Fatal("missing api should error")
 	}
 	badID := model.TestCase{
@@ -577,7 +577,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "not-a-number"}}
 		]}`),
 	}
-	if _, err := r.materializeCase(&badID); err == nil {
+	if _, _, err := r.materializeCase(&badID); err == nil {
 		t.Fatal("invalid api_id should error")
 	}
 
@@ -595,8 +595,66 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "` + idStr(foreign.ID) + `"}}
 		]}`),
 	}
-	if _, err := r.materializeCase(&foreignCase); err == nil {
+	if _, _, err := r.materializeCase(&foreignCase); err == nil {
 		t.Fatal("cross-tenant api_id should error")
+	}
+}
+
+func TestMaterializeGrpcRefs(t *testing.T) {
+	d := openTestDB(t)
+	r := New(d, dispatch.New(d))
+
+	api := model.GrpcApi{ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		FullService: "testpilot.echo.v1.EchoService", Method: "Echo",
+		RequestMessage: model.JSON(`{"message":"hi"}`), DeadlineMs: 5000}
+	if err := d.Create(&api).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	decl := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "grpc-ref",
+		Definition: model.JSON(`{"steps": [
+			{"name": "call", "grpc_call": {"grpc_api_id": "` + idStr(api.ID) + `"}},
+			{"name": "loop", "loop_step": {"iterator": "i", "count": 1, "body_steps": [
+				{"name": "nested", "grpc_call": {"grpc_api_id": "` + idStr(api.ID) + `"}}]}}
+		]}`),
+	}
+	pcase, grpcAPIs, err := r.materializeCase(&decl)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	if len(grpcAPIs) != 1 {
+		t.Fatalf("want 1 grpc api, got %d", len(grpcAPIs))
+	}
+	got, ok := grpcAPIs[idStr(api.ID)]
+	if !ok || got.GetFullService() != "testpilot.echo.v1.EchoService" ||
+		got.GetMethod() != "Echo" {
+		t.Fatalf("grpc api map wrong: %+v", grpcAPIs)
+	}
+	if got.GetDeadline().AsDuration().Milliseconds() != 5000 {
+		t.Fatalf("deadline not converted: %v", got.GetDeadline())
+	}
+	if got.GetRequestMessage() == nil || got.GetRequestMessage().Fields["message"].GetStringValue() != "hi" {
+		t.Fatalf("request_message not converted: %+v", got.GetRequestMessage())
+	}
+	_ = pcase
+
+	// 缺失 / 非法 id / 跨租户 → 报错
+	for name, def := range map[string]string{
+		"missing":    `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "999999"}}]}`,
+		"bad-id":     `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "nope"}}]}`,
+		"cross-tn":   `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "` + idStr(api.ID+1) + `"}}]}`,
+	} {
+		tc := model.TestCase{
+			ID: model.NextID(), TenantID: 1, ProjectID: 1,
+			Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+			Name: name, Definition: model.JSON(def),
+		}
+		if _, _, err := r.materializeCase(&tc); err == nil {
+			t.Fatalf("%s: should error", name)
+		}
 	}
 }
 

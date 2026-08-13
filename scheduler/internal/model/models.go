@@ -246,6 +246,39 @@ type TestSuite struct {
 	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
+// GrpcApi gRPC 接口定义（v2 第三批；DDL 预留表落地）。
+// Address 为空时目标地址取环境的 base_url；执行走 server reflection（Worker 无编译桩）。
+type GrpcApi struct {
+	ID             int64          `json:"id" gorm:"primaryKey"`
+	TenantID       int64          `json:"tenant_id" gorm:"index:idx_grpc_tp"`
+	ProjectID      int64          `json:"project_id" gorm:"index:idx_grpc_tp"`
+	ProtoRef       int64          `json:"proto_ref"`
+	Address        string         `json:"address"` // host:port；空=用环境 base_url
+	FullService    string         `json:"full_service"`
+	Method         string         `json:"method"`
+	RequestMessage JSON           `json:"request_message,omitempty" gorm:"type:text"`
+	Metadata       JSON           `json:"metadata,omitempty" gorm:"type:text"`
+	DeadlineMs     int            `json:"deadline_ms"`
+	TlsSettings    JSON           `json:"tls_settings,omitempty" gorm:"type:text"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// ProtoFile gRPC proto 源文件资产（v2 第三批）。与 scripts 同理，源文件内容内联存储
+// （DDL 原 content_ref 语义改为 content，避免把可复用资产挂在 run 产物生命周期上）。
+type ProtoFile struct {
+	ID        int64          `json:"id" gorm:"primaryKey"`
+	TenantID  int64          `json:"tenant_id" gorm:"index:idx_proto_tp"`
+	ProjectID int64          `json:"project_id" gorm:"index:idx_proto_tp"`
+	Filename  string         `json:"filename"`
+	Content   string         `json:"content" gorm:"type:text"`
+	Imports   JSON           `json:"imports,omitempty" gorm:"type:text"`
+	CreatedAt time.Time      `json:"created_at"`
+	UpdatedAt time.Time      `json:"updated_at"`
+	DeletedAt gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
 // TenantSetting 租户级配置开关（key-value）。当前为预留落点，用于未来特性
 // 开关/租户级配置的读写；REST：GET|PUT|DELETE /tenant/settings。
 type TenantSetting struct {
@@ -510,6 +543,7 @@ func AllModels() []any {
 		&TestCase{}, &TestPlan{}, &TestPlanItem{},
 		&TestSuite{}, &TestSuiteItem{}, &Script{},
 		&TenantSetting{},
+		&GrpcApi{}, &ProtoFile{},
 		&TestRun{}, &TestCaseResult{}, &TestStepResult{}, &Artifact{},
 		&StressTestPlan{}, &StressRun{}, &StressMetricPoint{},
 		&CopilotSession{}, &CopilotMessage{}, &AuditLog{},

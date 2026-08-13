@@ -209,6 +209,39 @@ case7 = api.post("/api/v1/cases", json={
     ]}}).json()
 print(f"✓ case7={case7['id']} (param_overrides)")
 
+# ---- v2：gRPC 接口（GRPC_CALL 步骤 + server reflection；目标地址取环境 base_url）----
+grpc_env = api.post("/api/v1/environments", json={
+    "project_id": pid, "name": "grpc-target", "base_url": "127.0.0.1:19090"}).json()
+grpc_api = api.post("/api/v1/grpc-apis", json={
+    "project_id": pid, "full_service": "testpilot.echo.v1.EchoService", "method": "Echo",
+    "request_message": {"message": "hi", "repeat": 2}, "deadline_ms": 5000}).json()
+case8 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-grpc", "type": 1,
+    "definition": {"steps": [
+        {"id": "1", "type": 11, "name": "grpc echo",
+         "grpc_call": {"grpc_api_id": str(grpc_api["id"])}},
+        {"id": "2", "type": 3, "name": "assert msg",
+         "assertion": {"assertions": [
+             {"target": 4, "path": "$.message", "op": 1, "expected": "hihi"},
+             {"target": 4, "path": "$.length", "op": 1, "expected": "4"}]}},
+    ]}}).json()
+grpc_plan = api.post("/api/v1/plans", json={
+    "project_id": pid, "env_id": grpc_env["id"], "name": f"e2e-grpc-plan-{stamp}",
+    "items": [{"ref_type": 1, "ref_id": case8["id"], "enabled": True, "order": 1}]}).json()
+r = api.post(f"/api/v1/plans/{grpc_plan['id']}/run", json={})
+assert r.status_code == 200, r.text
+grpc_run_id = r.json()["run_id"]
+deadline = time.time() + 30
+grpc_run = None
+while time.time() < deadline:
+    grpc_run = api.get(f"/api/v1/runs/{grpc_run_id}").json()
+    if grpc_run["status"] not in (0, 1):
+        break
+    time.sleep(1)
+assert grpc_run["status"] == 2, json.dumps(grpc_run.get("summary"))
+assert grpc_run["cases"][0]["status"] == 2, grpc_run["cases"]
+print(f"✓ grpc run={grpc_run_id}（reflection + GRPC_CALL + JSONPATH 断言）")
+
 # ---- 计划 + 触发 ----
 plan = api.post("/api/v1/plans", json={
     "project_id": pid, "env_id": eid, "name": f"e2e-plan-{stamp}",

@@ -349,7 +349,7 @@
 | 项 | 前置 | 说明 |
 |---|---|---|
 | Postman 导入导出 | — | ✅ 已完成：collection v2.1 解析/生成（folder 递归、`{{base_url}}` 占位导出） |
-| gRPC 接口测试 | Spike F（proto reflection / 上传） | DDL `grpc_apis/proto_files` 已预留；GrpcApi CRUD + 引擎 GRPC_CALL 步骤 + Copilot `API_KIND_GRPC` |
+| gRPC 接口测试 | Spike F（proto reflection / 上传） | ✅ 已完成：Spike F 通过 → GrpcApi/ProtoFile 模型 + `/grpc-apis` `/proto-files` CRUD + 引擎 GRPC_CALL（反射动态调用，任务级 grpc_apis 映射）+ Copilot create_grpc_api 工具 |
 | 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | 沙箱内驱动浏览器（Page pydantic 封装经能力桥转发 Playwright 操作） |
 | 压测 behavior_case | 依赖低代码 Page 能力桥 | stress target_type=2 接低代码行为脚本 |
 

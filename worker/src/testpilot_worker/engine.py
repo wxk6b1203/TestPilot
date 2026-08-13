@@ -13,7 +13,7 @@ from google.protobuf import struct_pb2
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot.worker.v1 import worker_pb2 as wpb
 
-from . import http_exec, ui
+from . import grpc_exec, http_exec, ui
 from .assertions import evaluate
 from .expr import ExprError, eval_expr, render
 from .sandbox import ExecutionBackend, SubprocessBackend, bridge_http_handler
@@ -189,10 +189,7 @@ class CaseRunner:
                 await asyncio.sleep(max(secs, 0))
                 logs.append(f"delayed {secs:g}s")
             elif kind == "grpc_call":
-                logs.append(f"{kind} not supported by MVP worker, skipped")
-                self._record(path, pb.STEP_STATUS_SKIPPED, _ms(started), logs=logs)
-                await self._progress(path, pb.STEP_STATUS_SKIPPED)
-                return
+                request, response = await self._do_grpc_call(step.grpc_call, logs)
             else:
                 raise StepFailure(f"step {path}: no params set")
             self._record(path, pb.STEP_STATUS_PASSED, _ms(started),
@@ -385,6 +382,27 @@ class CaseRunner:
             if isinstance(res, StepFailure):
                 raise StepFailure(f"loop parallel iteration {iteration} failed: {res}")
             raise res
+
+    async def _do_grpc_call(self, spec: pb.GrpcCallStep, logs: list[str]):
+        """GRPC_CALL：grpc_api_id 由 Scheduler 派发前解析进 task.grpc_apis；
+        执行走 server reflection（见 grpc_exec），响应挂在 self.last_response
+        （JSONPATH 断言对 `$.json.字段` 生效）。"""
+        task = self.task.functional
+        api = task.grpc_apis.get(spec.grpc_api_id)
+        if api is None:
+            raise StepFailure(
+                f"grpc_api_id {spec.grpc_api_id!r} must be resolved by scheduler")
+        target = grpc_exec.target_from_base_url(self.base_url)
+        try:
+            request, response = await grpc_exec.call_async(
+                target, api,
+                request_override=dict(spec.request_override) if spec.HasField("request_override") else None,
+                metadata_override=[(kv.key, kv.value) for kv in spec.metadata_override] or None)
+        except grpc_exec.GrpcCallError as e:
+            raise StepFailure(f"grpc_call: {e}") from e
+        self.last_response = response
+        logs.append(f"grpc {api.full_service}.{api.method} -> {target}")
+        return request, response
 
     async def _do_retry(self, spec: pb.RetryStep, path: str):
         if not spec.HasField("body_step"):

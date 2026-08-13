@@ -27,6 +27,7 @@ _start() {
 start() {
   echo "== TestPilot dev 环境 =="
   _start echo python3 "$ROOT/scripts/echo_server.py" 18080
+  _start grpc-echo sh -c "cd '$ROOT/worker' && PYTHONPATH=src exec venv/bin/python '$ROOT/scripts/grpc_echo_server.py' 19090"
   sleep 0.5
   # 构建到稳定路径再运行（不用 go run）：① pid 文件指向真实监听进程，stop 不留孤儿；
   # ② 配合 127.0.0.1 回环绑定，避免 macOS 应用防火墙对每次新构建的未签名二进制弹

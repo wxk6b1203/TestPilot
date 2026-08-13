@@ -112,6 +112,17 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPut, "/apis/:id", auth.RoleMember, s.updateAPI)
 	h(fiber.MethodDelete, "/apis/:id", auth.RoleMember, s.deleteAPI)
 
+	h(fiber.MethodGet, "/grpc-apis", auth.RoleViewer, s.listGrpcAPIs)
+	h(fiber.MethodPost, "/grpc-apis", auth.RoleMember, s.createGrpcAPI)
+	h(fiber.MethodGet, "/grpc-apis/:id", auth.RoleViewer, s.getGrpcAPI)
+	h(fiber.MethodPut, "/grpc-apis/:id", auth.RoleMember, s.updateGrpcAPI)
+	h(fiber.MethodDelete, "/grpc-apis/:id", auth.RoleMember, s.deleteGrpcAPI)
+
+	h(fiber.MethodGet, "/proto-files", auth.RoleViewer, s.listProtoFiles)
+	h(fiber.MethodPost, "/proto-files", auth.RoleMember, s.createProtoFile)
+	h(fiber.MethodGet, "/proto-files/:id", auth.RoleViewer, s.getProtoFile)
+	h(fiber.MethodDelete, "/proto-files/:id", auth.RoleMember, s.deleteProtoFile)
+
 	h(fiber.MethodGet, "/cases", auth.RoleViewer, s.listCases)
 	h(fiber.MethodPost, "/cases", auth.RoleMember, s.createCase)
 	h(fiber.MethodGet, "/cases/:id", auth.RoleViewer, s.getCase)

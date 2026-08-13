@@ -128,31 +128,93 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	return run.ID, nil
 }
 
-// materializeCase 转换用例为 proto，并完成两类派发期解析（Worker 无 DB，只接受内联形态）：
+// materializeCase 转换用例为 proto，并完成三类派发期解析（Worker 无 DB，只接受内联形态）：
 //  1. 低代码 script_ref → 内联 source（脚本按租户从 scripts 资产库读取）；
-//  2. 声明式 api_call 步骤的 api_id 引用 → inline 快照（保留 api_id 与 override）。
+//  2. 声明式 api_call 步骤的 api_id 引用 → inline 快照（保留 api_id 与 override）；
+//  3. grpc_call 步骤的 grpc_api_id 引用 → 收集进任务级 grpc_apis 映射（按 id 字符串键控）。
 //
 // 解析失败即报错——dispatchCase 把该 case_result 置 FAILED，不派发残缺任务。
-func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, error) {
+func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, map[string]*commonv1.GrpcApi, error) {
+	grpcAPIs := map[string]*commonv1.GrpcApi{}
 	pcase := ToProtoCase(tc)
 	if lc := pcase.GetLowcode(); lc != nil && lc.GetScriptRef() != "" {
 		scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
 		if err != nil {
-			return nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+			return nil, nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
 		}
 		var script model.Script
 		if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
 			First(&script).Error; err != nil {
-			return nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
+			return nil, nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
 		}
 		lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
 	}
 	if dc := pcase.GetDeclarative(); dc != nil {
 		if err := r.resolveAPIRefs(tc.TenantID, dc.GetSteps()); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		var err error
+		grpcAPIs, err = r.resolveGrpcRefs(tc.TenantID, dc.GetSteps())
+		if err != nil {
+			return nil, nil, err
 		}
 	}
-	return pcase, nil
+	return pcase, grpcAPIs, nil
+}
+
+// resolveGrpcRefs 收集 grpc_call 步骤的 grpc_api_id 引用并批量解析为任务级映射
+// （key = api id 字符串，Worker 执行时按步骤引用查表）。
+func (r *Runner) resolveGrpcRefs(tenantID int64, steps []*commonv1.TestStep) (map[string]*commonv1.GrpcApi, error) {
+	ids := map[string]bool{}
+	var collect func([]*commonv1.TestStep)
+	collect = func(list []*commonv1.TestStep) {
+		for _, st := range list {
+			switch p := st.Params.(type) {
+			case *commonv1.TestStep_GrpcCall:
+				if id := p.GrpcCall.GetGrpcApiId(); id != "" {
+					ids[id] = true
+				}
+			case *commonv1.TestStep_IfStep:
+				collect(p.IfStep.GetThenSteps())
+				collect(p.IfStep.GetElseSteps())
+			case *commonv1.TestStep_LoopStep:
+				collect(p.LoopStep.GetBodySteps())
+			case *commonv1.TestStep_RetryStep:
+				if b := p.RetryStep.GetBodyStep(); b != nil {
+					collect([]*commonv1.TestStep{b})
+				}
+			}
+		}
+	}
+	collect(steps)
+	if len(ids) == 0 {
+		return map[string]*commonv1.GrpcApi{}, nil
+	}
+	keys := make([]int64, 0, len(ids))
+	for raw := range ids {
+		id, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid grpc_api_id %q in steps: %v", raw, err)
+		}
+		keys = append(keys, id)
+	}
+	var rows []model.GrpcApi
+	if err := r.db.Where("tenant_id = ? AND id IN ?", tenantID, keys).Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	byID := make(map[int64]model.GrpcApi, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	out := make(map[string]*commonv1.GrpcApi, len(keys))
+	for _, key := range keys {
+		row, ok := byID[key]
+		if !ok {
+			return nil, fmt.Errorf("grpc api %d not found in tenant", key)
+		}
+		out[strconv.FormatInt(key, 10)] = ToProtoGrpc(&row)
+	}
+	return out, nil
 }
 
 // resolveAPIRefs 把步骤树（含 if/loop/retry 嵌套）中 api_id 引用批量解析为 inline 快照。
@@ -274,8 +336,8 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 	}
 	r.db.Create(cr)
 
-	// 派发期解析：script_ref → source；api_id → inline（Worker 无 DB，只接受内联形态）。
-	pcase, failErr := r.materializeCase(&tc)
+	// 派发期解析：script_ref → source；api_id → inline；grpc_api_id → 任务级映射。
+	pcase, grpcAPIs, failErr := r.materializeCase(&tc)
 	if failErr != nil {
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
@@ -302,6 +364,7 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 			Functional: &workerv1.FunctionalTask{
 				Case:         pcase,
 				CaseResultId: idStr(cr.ID),
+				GrpcApis:     grpcAPIs,
 			},
 		},
 		Env:         taskEnv,

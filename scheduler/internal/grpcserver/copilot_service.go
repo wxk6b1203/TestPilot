@@ -386,32 +386,62 @@ func (s *CopilotService) CreateApi(_ context.Context, req *copilotv1.CreateApiRe
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err
 	}
-	h := req.GetHttp()
-	if h == nil {
-		return nil, status.Error(codes.InvalidArgument, "only http api supported")
-	}
-	m := &model.HttpApi{
-		ID:        model.NextID(),
-		TenantID:  tid(req.GetCtx()),
-		ProjectID: mustID(req.GetProjectId()),
-		Method:    int16(h.GetMethod()),
-		URI:       h.GetUri(),
-		Params:    kvToJSON(h.GetParams()),
-		Headers:   kvToJSON(h.GetHeaders()),
-	}
-	if b := h.GetBody(); b != nil {
-		if raw, err := protojson.Marshal(b); err == nil {
-			m.Body = model.JSON(raw)
+	switch spec := req.GetApi().(type) {
+	case *copilotv1.CreateApiRequest_Http:
+		m := &model.HttpApi{
+			ID:        model.NextID(),
+			TenantID:  tid(req.GetCtx()),
+			ProjectID: mustID(req.GetProjectId()),
+			Method:    int16(spec.Http.GetMethod()),
+			URI:       spec.Http.GetUri(),
+			Params:    kvToJSON(spec.Http.GetParams()),
+			Headers:   kvToJSON(spec.Http.GetHeaders()),
 		}
+		if b := spec.Http.GetBody(); b != nil {
+			if raw, err := protojson.Marshal(b); err == nil {
+				m.Body = model.JSON(raw)
+			}
+		}
+		if m.ProjectID == 0 || m.URI == "" {
+			return nil, status.Error(codes.InvalidArgument, "project_id and uri required")
+		}
+		if err := s.db.Create(m).Error; err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		s.audit(req.GetCtx(), "create", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
+		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID)}, nil
+
+	case *copilotv1.CreateApiRequest_Grpc:
+		g := spec.Grpc
+		m := &model.GrpcApi{
+			ID:          model.NextID(),
+			TenantID:    tid(req.GetCtx()),
+			ProjectID:   mustID(req.GetProjectId()),
+			FullService: g.GetFullService(),
+			Method:      g.GetMethod(),
+			Metadata:    kvToJSON(g.GetMetadata()),
+		}
+		if g.GetRequestMessage() != nil {
+			if raw, err := protojson.Marshal(g.GetRequestMessage()); err == nil {
+				m.RequestMessage = model.JSON(raw)
+			}
+		}
+		if d := g.GetDeadline(); d != nil {
+			m.DeadlineMs = int(d.AsDuration().Milliseconds())
+		}
+		if m.ProjectID == 0 || m.FullService == "" || m.Method == "" {
+			return nil, status.Error(codes.InvalidArgument, "project_id, full_service and method required")
+		}
+		if err := s.db.Create(m).Error; err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		s.audit(req.GetCtx(), "create", "grpc_api", idStr(m.ID),
+			map[string]any{"service": m.FullService, "method": m.Method})
+		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID)}, nil
+
+	default:
+		return nil, status.Error(codes.InvalidArgument, "http or grpc api payload required")
 	}
-	if m.ProjectID == 0 || m.URI == "" {
-		return nil, status.Error(codes.InvalidArgument, "project_id and uri required")
-	}
-	if err := s.db.Create(m).Error; err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	s.audit(req.GetCtx(), "create", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
-	return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID)}, nil
 }
 
 func (s *CopilotService) UpdateApi(_ context.Context, req *copilotv1.UpdateApiRequest) (*copilotv1.UpdateApiResponse, error) {

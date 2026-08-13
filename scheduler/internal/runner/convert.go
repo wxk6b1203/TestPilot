@@ -3,11 +3,13 @@ package runner
 import (
 	"encoding/json"
 	"fmt"
+	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
 )
 
@@ -124,6 +126,38 @@ func ToProtoCase(m *model.TestCase) *commonv1.TestCase {
 		}
 	}
 	return c
+}
+
+// ToProtoGrpc 转换 GrpcApi（request_message/metadata/tls_settings 为 protojson 形态 JSON 列）。
+func ToProtoGrpc(m *model.GrpcApi) *commonv1.GrpcApi {
+	g := &commonv1.GrpcApi{
+		Id:          idStr(m.ID),
+		TenantId:    m.TenantID,
+		ProjectId:   idStr(m.ProjectID),
+		ProtoRef:    idStr(m.ProtoRef),
+		FullService: m.FullService,
+		Method:      m.Method,
+		Metadata:    kvList(m.Metadata),
+	}
+	if len(m.RequestMessage) > 0 {
+		s := &structpb.Struct{}
+		if protojson.Unmarshal([]byte(m.RequestMessage), s) == nil {
+			g.RequestMessage = s
+		}
+	}
+	if m.DeadlineMs > 0 {
+		g.Deadline = durationpb.New(time.Duration(m.DeadlineMs) * time.Millisecond)
+	}
+	if len(m.TlsSettings) > 0 {
+		tls := &commonv1.TlsSettings{}
+		if protojson.Unmarshal([]byte(m.TlsSettings), tls) == nil {
+			g.TlsSettings = tls
+		}
+	}
+	// Address 不在 proto GrpcApi 契约内：worker 取 env base_url；
+	// 保留列以便未来契约扩展（当前 REST 层可见，派发时以注释说明）。
+	_ = m.Address
+	return g
 }
 
 // ToProtoVariable 转换 Variable（敏感项只带 secret_ref）。
