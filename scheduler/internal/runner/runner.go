@@ -2,6 +2,8 @@ package runner
 
 import (
 	"context"
+	"fmt"
+	"strconv"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -94,45 +96,21 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 
 	dispatched := 0
 	for _, item := range items {
-		if item.RefType != 1 { // MVP：仅 case 引用（suite 展开后续）
-			continue
+		switch item.RefType {
+		case 1: // case 引用
+			dispatched += r.dispatchCase(run, tenantID, item.RefID, execEnv, timeout, traceparent)
+		case 2: // suite 引用：展开为有序 case 序列（items 仅允许 case，无嵌套）
+			caseIDs, err := r.suiteCaseIDs(tenantID, item.RefID)
+			if err != nil {
+				logging.L.Warnw("suite expand failed, item skipped", "suite_id", item.RefID, "err", err)
+				continue
+			}
+			for _, cid := range caseIDs {
+				dispatched += r.dispatchCase(run, tenantID, cid, execEnv, timeout, traceparent)
+			}
+		default:
+			logging.L.Warnw("plan item with unknown ref_type skipped", "ref_type", item.RefType)
 		}
-		var tc model.TestCase
-		if err := r.db.Where("id = ? AND tenant_id = ?", item.RefID, tenantID).First(&tc).Error; err != nil {
-			continue
-		}
-		cr := &model.TestCaseResult{
-			ID:       model.NextID(),
-			TenantID: tenantID,
-			RunID:    run.ID,
-			CaseID:   tc.ID,
-			Status:   int16(commonv1.CaseStatus_CASE_STATUS_RUNNING),
-		}
-		r.db.Create(cr)
-
-		task := &workerv1.TaskAssignment{
-			TaskId:   idStr(model.NextID()),
-			RunId:    idStr(run.ID),
-			TenantId: tenantID,
-			TaskType: taskTypeFor(tc.Type),
-			Timeout:  durationpb.New(timeout),
-			Payload: &workerv1.TaskAssignment_Functional{
-				Functional: &workerv1.FunctionalTask{
-					Case:         ToProtoCase(&tc),
-					CaseResultId: idStr(cr.ID),
-				},
-			},
-			Env:         execEnv,
-			Traceparent: traceparent,
-		}
-		if err := r.disp.Dispatch(task); err != nil {
-			r.db.Model(cr).Updates(map[string]any{
-				"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
-				"error":  err.Error(),
-			})
-			continue
-		}
-		dispatched++
 	}
 
 	if dispatched == 0 {
@@ -145,6 +123,96 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 		return run.ID, dispatch.ErrNoWorker
 	}
 	return run.ID, nil
+}
+
+// materializeCase 转换用例为 proto，并把低代码 script_ref 解析为内联 source
+// （Worker 引擎只接受 source；脚本内容按租户从 scripts 资产库读取，不进 TaskAssignment 之外的任何落盘）。
+func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, error) {
+	pcase := ToProtoCase(tc)
+	lc := pcase.GetLowcode()
+	if lc == nil || lc.GetScriptRef() == "" {
+		return pcase, nil
+	}
+	scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+	}
+	var script model.Script
+	if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
+		First(&script).Error; err != nil {
+		return nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
+	}
+	lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
+	return pcase, nil
+}
+
+// suiteCaseIDs 展开套件为有序 case id 列表；套件不存在或不属于该租户返回错误。
+func (r *Runner) suiteCaseIDs(tenantID, suiteID int64) ([]int64, error) {
+	var s model.TestSuite
+	if err := r.db.Where("id = ? AND tenant_id = ?", suiteID, tenantID).First(&s).Error; err != nil {
+		return nil, err
+	}
+	var items []model.TestSuiteItem
+	if err := r.db.Where("suite_id = ?", s.ID).Order("\"order\" asc").Find(&items).Error; err != nil {
+		return nil, err
+	}
+	out := make([]int64, 0, len(items))
+	for _, it := range items {
+		out = append(out, it.CaseID)
+	}
+	return out, nil
+}
+
+// dispatchCase 加载用例、预建 case result 并派发；返回成功派发数（0 或 1）。
+func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64,
+	execEnv *workerv1.ExecutionEnv, timeout time.Duration, traceparent string) int {
+	var tc model.TestCase
+	if err := r.db.Where("id = ? AND tenant_id = ?", caseID, tenantID).First(&tc).Error; err != nil {
+		logging.L.Warnw("case not found, item skipped", "case_id", caseID, "err", err)
+		return 0
+	}
+	cr := &model.TestCaseResult{
+		ID:       model.NextID(),
+		TenantID: tenantID,
+		RunID:    run.ID,
+		CaseID:   tc.ID,
+		Status:   int16(commonv1.CaseStatus_CASE_STATUS_RUNNING),
+	}
+	r.db.Create(cr)
+
+	// 低代码 script_ref 在此解析为内联 source（Worker 无 DB，只认 source）。
+	pcase, failErr := r.materializeCase(&tc)
+	if failErr != nil {
+		r.db.Model(cr).Updates(map[string]any{
+			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
+			"error":  failErr.Error(),
+		})
+		return 0
+	}
+
+	task := &workerv1.TaskAssignment{
+		TaskId:   idStr(model.NextID()),
+		RunId:    idStr(run.ID),
+		TenantId: tenantID,
+		TaskType: taskTypeFor(tc.Type),
+		Timeout:  durationpb.New(timeout),
+		Payload: &workerv1.TaskAssignment_Functional{
+			Functional: &workerv1.FunctionalTask{
+				Case:         pcase,
+				CaseResultId: idStr(cr.ID),
+			},
+		},
+		Env:         execEnv,
+		Traceparent: traceparent,
+	}
+	if err := r.disp.Dispatch(task); err != nil {
+		r.db.Model(cr).Updates(map[string]any{
+			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
+			"error":  err.Error(),
+		})
+		return 0
+	}
+	return 1
 }
 
 func buildExecutionEnv(env *model.Environment, exists bool, vars []model.Variable) *workerv1.ExecutionEnv {

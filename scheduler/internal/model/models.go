@@ -234,6 +234,41 @@ type TestPlanItem struct {
 	Order          int   `json:"order"`
 }
 
+// TestSuite 用例套件（v2：PlanItem ref_type=2 引用，按 items 有序展开为 case 序列）。
+type TestSuite struct {
+	ID          int64          `json:"id" gorm:"primaryKey"`
+	TenantID    int64          `json:"tenant_id" gorm:"index:idx_suite_tp"`
+	ProjectID   int64          `json:"project_id" gorm:"index:idx_suite_tp"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// Script 低代码脚本资产（v2：LowCodeCase.script_ref 引用目标）。
+// 与 Artifact（run 产物）分离：脚本是长期复用的资产库条目，不随 run 清理。
+type Script struct {
+	ID          int64          `json:"id" gorm:"primaryKey"`
+	TenantID    int64          `json:"tenant_id" gorm:"index:idx_script_tp"`
+	ProjectID   int64          `json:"project_id" gorm:"index:idx_script_tp"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	Language    string         `json:"language"`
+	Content     string         `json:"content" gorm:"type:text"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// TestSuiteItem 套件成员（仅允许 case 引用，无嵌套套件，故展开无环）。
+type TestSuiteItem struct {
+	ID      int64 `json:"id" gorm:"primaryKey"`
+	SuiteID int64 `json:"suite_id" gorm:"index:idx_suite_items"`
+	CaseID  int64 `json:"case_id"`
+	Order   int   `json:"order"`
+}
+
 // ---- 运行结果 ----
 
 type TestRun struct {
@@ -463,6 +498,7 @@ func AllModels() []any {
 		&Project{}, &Environment{}, &Variable{}, &Certificate{},
 		&HttpApi{}, &TreeNode{},
 		&TestCase{}, &TestPlan{}, &TestPlanItem{},
+		&TestSuite{}, &TestSuiteItem{}, &Script{},
 		&TestRun{}, &TestCaseResult{}, &TestStepResult{}, &Artifact{},
 		&StressTestPlan{}, &StressRun{}, &StressMetricPoint{},
 		&CopilotSession{}, &CopilotMessage{}, &AuditLog{},

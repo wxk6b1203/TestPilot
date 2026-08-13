@@ -371,14 +371,86 @@ func TestQuerySchema(t *testing.T) {
 	}
 }
 
-// ApplyOpenApiDiff 为 v2 占位：既定行为 codes.Unimplemented。
-func TestApplyOpenApiDiffUnimplemented(t *testing.T) {
-	cli, _ := newCopilotClient(t)
-	_, err := cli.ApplyOpenApiDiff(context.Background(), &copilotv1.ApplyOpenApiDiffRequest{
-		Ctx: copilotCtx(1, "u-1"), ProjectId: "100", OpenapiDocument: "{}",
+// ApplyOpenApiDiff：新增/变更/缺失/破坏性变更分类 + 落库 + 审计。
+func TestApplyOpenApiDiff(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+
+	// 存量：GET /users（带 query 参数 page）、GET /legacy（spec 中将被移除）
+	for _, seed := range []*commonv1.HttpApi{
+		{Method: commonv1.HttpMethod_HTTP_METHOD_GET, Uri: "/users",
+			Params: []*commonv1.KeyValue{{Key: "page", Value: ""}}},
+		{Method: commonv1.HttpMethod_HTTP_METHOD_GET, Uri: "/legacy"},
+	} {
+		if _, err := cli.CreateApi(ctx, &copilotv1.CreateApiRequest{
+			Ctx: copilotCtx(1, "u-1"), ProjectId: "100",
+			Api: &copilotv1.CreateApiRequest_Http{Http: seed},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// 新 spec：/users 参数变化（page 移除→breaking）、/users/{id} 新增、/legacy 消失
+	doc := `{"openapi":"3.0.0","paths":{
+		"/users": {"get": {"parameters": [{"name":"q","in":"query"}]}},
+		"/users/{id}": {"get": {}}}}`
+	resp, err := cli.ApplyOpenApiDiff(ctx, &copilotv1.ApplyOpenApiDiffRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100", OpenapiDocument: doc,
 	})
-	if status.Code(err) != codes.Unimplemented {
-		t.Fatalf("want Unimplemented, got %v", err)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]string{}
+	for _, df := range resp.GetDiffs() {
+		kinds[df.GetKind()] = df.GetSummary()
+	}
+	if _, ok := kinds["added"]; !ok {
+		t.Fatalf("want added entry, got %v", resp.GetDiffs())
+	}
+	if _, ok := kinds["breaking"]; !ok {
+		t.Fatalf("want breaking entry (param key removed), got %v", resp.GetDiffs())
+	}
+	if _, ok := kinds["removed"]; !ok {
+		t.Fatalf("want removed entry, got %v", resp.GetDiffs())
+	}
+	if len(resp.GetUpdatedApiIds()) != 2 { // 新增 + 变更
+		t.Fatalf("want 2 updated api ids, got %v", resp.GetUpdatedApiIds())
+	}
+
+	// /users 行已更新为新参数；/legacy 行保留（仅报告不删除）
+	var users, legacy model.HttpApi
+	if err := d.Where("project_id = 100 AND uri = '/users'").First(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	if string(users.Params) != `[{"key":"q","value":""}]` {
+		t.Fatalf("params not updated: %s", users.Params)
+	}
+	if err := d.Where("project_id = 100 AND uri = '/legacy'").First(&legacy).Error; err != nil {
+		t.Fatalf("removed api should be kept: %v", err)
+	}
+
+	// 审计落库
+	var n int64
+	d.Model(&model.AuditLog{}).Where("action = 'apply_openapi_diff'").Count(&n)
+	if n == 0 {
+		t.Fatal("audit log missing")
+	}
+}
+
+// ApplyOpenApiDiff 参数校验：空文档 / 空项目 → InvalidArgument。
+func TestApplyOpenApiDiffInvalidArgument(t *testing.T) {
+	cli, _ := newCopilotClient(t)
+	ctx := context.Background()
+
+	if _, err := cli.ApplyOpenApiDiff(ctx, &copilotv1.ApplyOpenApiDiffRequest{
+		Ctx: copilotCtx(1, "u-1"), OpenapiDocument: "{}",
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty project: want InvalidArgument, got %v", err)
+	}
+	if _, err := cli.ApplyOpenApiDiff(ctx, &copilotv1.ApplyOpenApiDiffRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100",
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty document: want InvalidArgument, got %v", err)
 	}
 }
 

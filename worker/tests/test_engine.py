@@ -184,8 +184,85 @@ def test_loop_without_bounds_fails():
         asyncio.run(r._do_loop(pb.LoopStep(), "1"))
 
 
-def test_loop_parallel_unsupported():
+# ---- loop parallel ----
+
+def _set_var_step(key: str, value_expr: str) -> pb.TestStep:
+    return pb.TestStep(name=f"set {key}",
+                       set_var=pb.SetVarStep(key=key, value_expr=value_expr))
+
+
+def _delay_step(secs: float) -> pb.TestStep:
+    step = pb.TestStep(name="delay")
+    step.delay.duration.FromMilliseconds(int(secs * 1000))
+    return step
+
+
+def test_loop_parallel_var_isolation():
     r = _runner()
-    spec = pb.LoopStep(count=2, parallel=True)
-    with pytest.raises(StepFailure, match="parallel"):
+    r.vars["base"] = 10
+    spec = pb.LoopStep(iterator="i", count=3, parallel=True,
+                       body_steps=[_set_var_step("local", "{{ i }} * 2")])
+    asyncio.run(r._do_loop(spec, "1"))
+    # 父作用域不被迭代写入（仅快照读取）；结果按迭代顺序合并
+    assert "local" not in r.vars
+    assert r.vars["base"] == 10
+    paths = [sr.step_path for sr in r.step_results]
+    assert paths == ["1.loop.1.1", "1.loop.2.1", "1.loop.3.1"]
+    assert all(sr.status == pb.STEP_STATUS_PASSED for sr in r.step_results)
+
+
+def test_loop_parallel_uses_iterator_snapshot():
+    # 每个迭代看到的 vars 是进入 loop 时的快照 + iterator 变量（不串扰）
+    r = _runner()
+    spec = pb.LoopStep(iterator="i", count=2, parallel=True,
+                       body_steps=[_set_var_step("seen", "{{ i }} + 100")])
+    asyncio.run(r._do_loop(spec, "1"))
+    assert "seen" not in r.vars  # 写入被隔离
+    assert len(r.step_results) == 2
+
+
+def test_loop_parallel_failure_reports_iteration():
+    r = _runner()
+    bad = pb.TestStep(name="bad")  # 无 params → StepFailure
+    only_iter2 = pb.TestStep(
+        name="guard",
+        if_step=pb.IfStep(condition_expr="i == 1", then_steps=[bad], else_steps=[]))
+    spec = pb.LoopStep(iterator="i", count=3, parallel=True,
+                       body_steps=[_set_var_step("ok", "1"), only_iter2])
+    with pytest.raises(StepFailure, match="iteration 2"):
+        asyncio.run(r._do_loop(spec, "1"))
+
+
+def test_loop_parallel_all_iterations_complete_before_failure():
+    # 不 fail-fast：失败在 gather 结束后统一抛出，其余迭代的步骤结果仍被保留。
+    r = _runner()
+    bad = pb.TestStep(name="bad")
+    only_iter2 = pb.TestStep(
+        name="guard",
+        if_step=pb.IfStep(condition_expr="i == 1", then_steps=[bad], else_steps=[]))
+    spec = pb.LoopStep(iterator="i", count=3, parallel=True,
+                       body_steps=[_set_var_step("ok", "1"), only_iter2])
+    with pytest.raises(StepFailure):
+        asyncio.run(r._do_loop(spec, "1"))
+    # 迭代 1、3 的 set_var 结果仍在（结果已合并到 self.step_results）
+    ok_paths = [sr.step_path for sr in r.step_results]
+    assert "1.loop.1.1" in ok_paths
+    assert "1.loop.3.1" in ok_paths
+
+
+def test_loop_parallel_runs_concurrently():
+    import time
+    r = _runner()
+    spec = pb.LoopStep(iterator="i", count=3, parallel=True,
+                       body_steps=[_delay_step(0.15)])
+    started = time.perf_counter()
+    asyncio.run(r._do_loop(spec, "1"))
+    elapsed = time.perf_counter() - started
+    assert elapsed < 0.35, f"parallel loop too slow: {elapsed:.2f}s (serial ≈0.45s)"
+
+
+def test_loop_parallel_no_bounds_fails():
+    r = _runner()
+    spec = pb.LoopStep(parallel=True)
+    with pytest.raises(StepFailure, match="no bounds"):
         asyncio.run(r._do_loop(spec, "1"))

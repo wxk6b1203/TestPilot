@@ -3895,7 +3895,7 @@ type isLowCodeCase_Script interface {
 }
 
 type LowCodeCase_ScriptRef struct {
-	ScriptRef string `protobuf:"bytes,1,opt,name=script_ref,json=scriptRef,proto3,oneof"` // artifact 引用
+	ScriptRef string `protobuf:"bytes,1,opt,name=script_ref,json=scriptRef,proto3,oneof"` // 脚本资产引用（scripts 表；Scheduler 派发前内联为 source）
 }
 
 type LowCodeCase_Source struct {

@@ -318,7 +318,7 @@
    {
     "name": "script_ref",
     "type": "string",
-    "doc": "artifact 引用"
+    "doc": "脚本资产引用（scripts 表；Scheduler 派发前内联为 source）"
    },
    {
     "name": "source",

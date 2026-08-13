@@ -9,6 +9,7 @@ import (
 	"github.com/gofiber/fiber/v3/middleware/adaptor"
 	"github.com/gofiber/fiber/v3/middleware/recover"
 	"github.com/gofiber/fiber/v3/middleware/static"
+	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/audit"
 	"github.com/testpilot/testpilot/internal/auth"
 	"github.com/testpilot/testpilot/internal/config"
@@ -22,15 +23,29 @@ import (
 
 // Server 聚合 REST 层依赖。
 type Server struct {
-	db   *gorm.DB
-	cfg  config.Config
-	disp *dispatch.Dispatcher
-	run  *runner.Runner
-	cron *cronsched.Scheduler
+	db    *gorm.DB
+	cfg   config.Config
+	disp  *dispatch.Dispatcher
+	run   *runner.Runner
+	cron  *cronsched.Scheduler
+	store artifactstore.Backend
 }
 
-func New(db *gorm.DB, cfg config.Config, disp *dispatch.Dispatcher, run *runner.Runner, cron *cronsched.Scheduler) *Server {
-	return &Server{db: db, cfg: cfg, disp: disp, run: run, cron: cron}
+func New(db *gorm.DB, cfg config.Config, disp *dispatch.Dispatcher, run *runner.Runner,
+	cron *cronsched.Scheduler, store artifactstore.Backend) *Server {
+	return &Server{db: db, cfg: cfg, disp: disp, run: run, cron: cron, store: store}
+}
+
+// artifactStore 取产物后端；未注入（测试）时退回本地目录。
+func (s *Server) artifactStore() artifactstore.Backend {
+	if s.store != nil {
+		return s.store
+	}
+	local, err := artifactstore.NewLocal(s.cfg.ArtifactDir)
+	if err != nil {
+		return nil
+	}
+	return local
 }
 
 // App 构建 fiber 应用：/api/v1 下除 login/OIDC 外全部走 JWT 认证 + RBAC 最小角色。
@@ -107,6 +122,18 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/plans/:id", auth.RoleViewer, s.getPlan)
 	h(fiber.MethodPut, "/plans/:id", auth.RoleMember, s.updatePlan)
 	h(fiber.MethodDelete, "/plans/:id", auth.RoleMember, s.deletePlan)
+
+	h(fiber.MethodGet, "/suites", auth.RoleViewer, s.listSuites)
+	h(fiber.MethodPost, "/suites", auth.RoleMember, s.createSuite)
+	h(fiber.MethodGet, "/suites/:id", auth.RoleViewer, s.getSuite)
+	h(fiber.MethodPut, "/suites/:id", auth.RoleMember, s.updateSuite)
+	h(fiber.MethodDelete, "/suites/:id", auth.RoleMember, s.deleteSuite)
+
+	h(fiber.MethodGet, "/scripts", auth.RoleViewer, s.listScripts)
+	h(fiber.MethodPost, "/scripts", auth.RoleMember, s.createScript)
+	h(fiber.MethodGet, "/scripts/:id", auth.RoleViewer, s.getScript)
+	h(fiber.MethodPut, "/scripts/:id", auth.RoleMember, s.updateScript)
+	h(fiber.MethodDelete, "/scripts/:id", auth.RoleMember, s.deleteScript)
 
 	// 导入导出
 	h(fiber.MethodPost, "/import/openapi", auth.RoleMember, s.importOpenAPI)

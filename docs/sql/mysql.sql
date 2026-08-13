@@ -252,6 +252,22 @@ CREATE TABLE test_suite_items (
     CONSTRAINT fk_tsi_case FOREIGN KEY (case_id) REFERENCES test_cases (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE scripts (
+    id          BIGINT PRIMARY KEY,
+    tenant_id   BIGINT       NOT NULL,
+    project_id  BIGINT       NOT NULL,
+    name        VARCHAR(255) NOT NULL,
+    description TEXT         NOT NULL,
+    language    VARCHAR(32)  NOT NULL DEFAULT 'python',
+    content     TEXT         NOT NULL,
+    created_at  DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at  DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    deleted_at  DATETIME(3)  NULL,
+    KEY idx_scripts_tp (tenant_id, project_id),
+    CONSTRAINT fk_scripts_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_scripts_project FOREIGN KEY (project_id) REFERENCES projects (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE test_plans (
     id               BIGINT PRIMARY KEY,
     tenant_id        BIGINT       NOT NULL,

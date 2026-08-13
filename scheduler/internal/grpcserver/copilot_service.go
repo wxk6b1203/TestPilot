@@ -609,7 +609,35 @@ func fetchOpenAPIURL(rawURL string) ([]byte, error) {
 }
 
 func (s *CopilotService) ApplyOpenApiDiff(_ context.Context, req *copilotv1.ApplyOpenApiDiffRequest) (*copilotv1.ApplyOpenApiDiffResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "openapi diff is v2 scope")
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	if req.GetOpenapiDocument() == "" {
+		return nil, status.Error(codes.InvalidArgument, "openapi_document required")
+	}
+	projectID := mustID(req.GetProjectId())
+	if projectID == 0 {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	res, err := impexp.ApplyOpenAPIDiff(s.db, tid(req.GetCtx()), projectID,
+		[]byte(req.GetOpenapiDocument()), req.GetAutoUpdateCases())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "apply diff failed: "+err.Error())
+	}
+	out := &copilotv1.ApplyOpenApiDiffResponse{}
+	for _, d := range res.Diffs {
+		out.Diffs = append(out.Diffs, &copilotv1.DiffEntry{ApiId: idStr(d.APIID), Kind: d.Kind, Summary: d.Summary})
+	}
+	for _, id := range res.UpdatedAPIIDs {
+		out.UpdatedApiIds = append(out.UpdatedApiIds, idStr(id))
+	}
+	for _, id := range res.UpdatedCaseIDs {
+		out.UpdatedCaseIds = append(out.UpdatedCaseIds, idStr(id))
+	}
+	s.audit(req.GetCtx(), "apply_openapi_diff", "http_api", "", map[string]any{
+		"project_id": projectID, "diffs": len(res.Diffs),
+		"auto_update_cases": req.GetAutoUpdateCases()})
+	return out, nil
 }
 
 // ---- 触发工具 ----

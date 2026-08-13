@@ -224,6 +224,20 @@ CREATE TABLE test_suite_items (
 );
 CREATE INDEX idx_suite_items ON test_suite_items (suite_id, "order");
 
+CREATE TABLE scripts (
+    id          BIGINT PRIMARY KEY,
+    tenant_id   BIGINT       NOT NULL REFERENCES tenants (id),
+    project_id  BIGINT       NOT NULL REFERENCES projects (id),
+    name        VARCHAR(255) NOT NULL,
+    description TEXT         NOT NULL DEFAULT '',
+    language    VARCHAR(32)  NOT NULL DEFAULT 'python',
+    content     TEXT         NOT NULL,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    deleted_at  TIMESTAMPTZ
+);
+CREATE INDEX idx_scripts_tp ON scripts (tenant_id, project_id);
+
 CREATE TABLE test_plans (
     id              BIGINT PRIMARY KEY,
     tenant_id       BIGINT       NOT NULL REFERENCES tenants (id),

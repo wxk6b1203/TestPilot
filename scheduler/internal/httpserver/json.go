@@ -168,6 +168,29 @@ func claimsOf(ctx fiber.Ctx) *auth.Claims {
 	return c
 }
 
+// idList 解析 ["123", "456"] 或 [123, 456] 形式的 ID 数组（雪花 ID 超 JS 安全整数，
+// 前端回传为字符串；内部使用 json.Number 保精度）。
+type idList []int64
+
+func (l *idList) UnmarshalJSON(b []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	var arr []json.Number
+	if err := dec.Decode(&arr); err != nil {
+		return err
+	}
+	out := make([]int64, 0, len(arr))
+	for _, n := range arr {
+		id, err := strconv.ParseInt(string(n), 10, 64)
+		if err != nil {
+			return err
+		}
+		out = append(out, id)
+	}
+	*l = out
+	return nil
+}
+
 func pathID(ctx fiber.Ctx, name string) (int64, bool) {
 	id, err := strconv.ParseInt(ctx.Params(name), 10, 64)
 	if err != nil {

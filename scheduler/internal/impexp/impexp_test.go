@@ -3,6 +3,7 @@ package impexp
 import (
 	"encoding/json"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -270,5 +271,174 @@ func TestExportCurl(t *testing.T) {
 	out3, _ := ExportCurl(d, 9, 10)
 	if out3 != "" {
 		t.Fatalf("tenant leak: %q", out3)
+	}
+}
+
+// ---- ApplyOpenAPIDiff ----
+
+func apiIDByURI(t *testing.T, d *gorm.DB, projectID int64, uri, method string) int64 {
+	t.Helper()
+	var a model.HttpApi
+	if err := d.Where("project_id = ? AND uri = ?", projectID, uri).First(&a).Error; err != nil {
+		t.Fatal(err)
+	}
+	return a.ID
+}
+
+func TestApplyOpenAPIDiffMatrix(t *testing.T) {
+	d := openTestDB(t)
+	if _, err := ImportOpenAPI(d, 1, 10, []byte(openAPIJSON)); err != nil {
+		t.Fatal(err)
+	}
+	// 新 spec：/users GET 参数重命名（breaking）、/users POST 不变、
+	// /users/{id} DELETE 消失（removed）、/ping 新增（added）
+	doc := `{"openapi":"3.0.0","paths":{
+		"/users": {
+			"get": {"parameters": [{"name": "q", "in": "query"}]},
+			"post": {"requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}}}}}}}
+		},
+		"/ping": {"get": {}}
+	}}`
+	res, err := ApplyOpenAPIDiff(d, 1, 10, []byte(doc), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	kinds := map[string]int{}
+	for _, df := range res.Diffs {
+		kinds[df.Kind]++
+	}
+	if kinds["added"] != 1 || kinds["breaking"] != 1 || kinds["removed"] != 1 || kinds["changed"] != 0 {
+		t.Fatalf("kinds mismatch: %v (diffs=%+v)", kinds, res.Diffs)
+	}
+	if len(res.UpdatedAPIIDs) != 2 { // 新增 + breaking 更新
+		t.Fatalf("updated ids=%v", res.UpdatedAPIIDs)
+	}
+
+	// /users GET 行参数已更新；DELETE 行保留
+	var users model.HttpApi
+	if err := d.Where("project_id = 10 AND uri = '/users' AND method = 1").First(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	if string(users.Params) != `[{"key":"q","value":""}]` {
+		t.Fatalf("params not updated: %s", users.Params)
+	}
+	if apiIDByURI(t, d, 10, "/users/{id}", "delete") == 0 {
+		t.Fatal("removed api should be kept")
+	}
+
+	// 再跑一轮：removed 行仍保留故重复报告；其余维度稳定无新增变更
+	res2, err := ApplyOpenAPIDiff(d, 1, 10, []byte(doc), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res2.Diffs) != 1 || res2.Diffs[0].Kind != "removed" {
+		t.Fatalf("second run should only repeat removed, got %+v", res2.Diffs)
+	}
+}
+
+func TestApplyOpenAPIDiffBodyContentTypeBreaking(t *testing.T) {
+	d := openTestDB(t)
+	// 存量 POST 为 JSON body；新 spec 改为 form-urlencoded → breaking + body 更新
+	if _, err := ImportOpenAPI(d, 1, 10, []byte(`{"openapi":"3.0.0","paths":{
+		"/login": {"post": {"requestBody": {"content": {"application/json": {"schema": {"type": "object"}}}}}}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	doc := `{"openapi":"3.0.0","paths":{
+		"/login": {"post": {"requestBody": {"content": {"application/x-www-form-urlencoded": {"schema": {"type": "object"}}}}}}}
+	}`
+	res, err := ApplyOpenAPIDiff(d, 1, 10, []byte(doc), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Diffs) != 1 || res.Diffs[0].Kind != "breaking" {
+		t.Fatalf("want breaking, got %+v", res.Diffs)
+	}
+	var api model.HttpApi
+	if err := d.Where("project_id = 10 AND uri = '/login'").First(&api).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(api.Body), `"contentType":3`) { // X_WWW_FORM_URLENCODED
+		t.Fatalf("body content_type not updated: %s", api.Body)
+	}
+}
+
+func TestApplyOpenAPIDiffAutoUpdateCases(t *testing.T) {
+	d := openTestDB(t)
+	if _, err := ImportOpenAPI(d, 1, 10, []byte(openAPIJSON)); err != nil {
+		t.Fatal(err)
+	}
+	apiID := apiIDByURI(t, d, 10, "/users", "get")
+
+	// case A：顶层 + loop 嵌套均引用该 api_id；case B：引用另一接口（不该被碰）
+	def := `{"steps": [
+		{"name": "top", "type": 1, "api_call": {"api_id": "APIID", "override": {}}},
+		{"name": "loop", "type": 6, "loop_step": {"iterator": "i", "count": 2, "body_steps": [
+			{"name": "nested", "type": 1, "api_call": {"api_id": "APIID"}}]}}
+	]}`
+	def = strings.ReplaceAll(def, "APIID", strconv.FormatInt(apiID, 10))
+	ca := model.TestCase{ID: model.NextID(), TenantID: 1, ProjectID: 10,
+		Type: 1, Name: "affected", Definition: model.JSON(def)}
+	cb := model.TestCase{ID: model.NextID(), TenantID: 1, ProjectID: 10,
+		Type: 1, Name: "unaffected",
+		Definition: model.JSON(`{"steps": [{"name": "x", "type": 1, "api_call": {"api_id": "999"}}]}`)}
+	if err := d.Create(&ca).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Create(&cb).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 参数变化触发 diff + case 内联快照写回
+	doc := `{"openapi":"3.0.0","paths":{
+		"/users": {
+			"get": {"parameters": [{"name": "q", "in": "query"}]},
+			"post": {"requestBody": {"content": {"application/json": {"schema": {"type": "object", "properties": {"name": {"type": "string"}}}}}}}
+		},
+		"/users/{id}": {"delete": {}}
+	}}`
+	dr, err := ApplyOpenAPIDiff(d, 1, 10, []byte(doc), true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(dr.UpdatedCaseIDs) != 1 || dr.UpdatedCaseIDs[0] != ca.ID {
+		t.Fatalf("updated case ids=%v, want [%d]", dr.UpdatedCaseIDs, ca.ID)
+	}
+
+	var got model.TestCase
+	if err := d.First(&got, ca.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	var defMap map[string]any
+	if err := json.Unmarshal([]byte(got.Definition), &defMap); err != nil {
+		t.Fatal(err)
+	}
+	steps := defMap["steps"].([]any)
+	top := steps[0].(map[string]any)["api_call"].(map[string]any)
+	inline, ok := top["inline"].(map[string]any)
+	if !ok {
+		t.Fatalf("inline not written: %s", got.Definition)
+	}
+	if inline["method"] != "HTTP_METHOD_GET" || inline["uri"] != "/users" {
+		t.Fatalf("inline mismatch: %v", inline)
+	}
+	if top["api_id"] != strconv.FormatInt(apiID, 10) {
+		t.Fatalf("api_id should be preserved, got %v", top["api_id"])
+	}
+	if _, ok := top["override"].(map[string]any); !ok {
+		t.Fatal("override should be preserved")
+	}
+	loop := steps[1].(map[string]any)["loop_step"].(map[string]any)
+	nested := loop["body_steps"].([]any)[0].(map[string]any)["api_call"].(map[string]any)
+	if _, ok := nested["inline"].(map[string]any); !ok {
+		t.Fatal("nested api_call inline not written")
+	}
+
+	// case B 未被触碰
+	var gotB model.TestCase
+	if err := d.First(&gotB, cb.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(gotB.Definition), "inline") {
+		t.Fatalf("unrelated case should not be touched: %s", gotB.Definition)
 	}
 }

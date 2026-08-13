@@ -343,11 +343,47 @@ class CaseRunner:
             raise StepFailure("loop: no bounds set")
         var = spec.iterator or "i"
         if spec.parallel:
-            raise StepFailure("loop parallel=true not supported in MVP")
+            await self._do_loop_parallel(spec, rng, var, path)
+            return
         for iteration, i in enumerate(rng, start=1):
             self.vars[var] = i
             for idx, sub in enumerate(spec.body_steps, start=1):
                 await self._run_step(sub, f"{path}.loop.{iteration}.{idx}")
+
+    async def _do_loop_parallel(self, spec: pb.LoopStep, rng: range, var: str, path: str):
+        """并行迭代：每个迭代在独立 CaseRunner 上执行 —— 变量取进入 loop 时的快照
+        （隔离：迭代内 SET_VAR 不互相可见，也不写回父作用域），步骤结果按迭代顺序合并。
+        语义：全部迭代跑完（不 fail-fast 取消）；任一迭代失败则该 LOOP 步骤失败，
+        错误信息带迭代号。"""
+        base_vars = dict(self.vars)
+        base_response = self.last_response
+
+        async def one(i: int, iteration: int) -> list[pb.TestStepResult]:
+            clone = CaseRunner(self.task, self.on_progress)
+            clone.vars = dict(base_vars)
+            clone.vars[var] = i
+            clone.last_response = base_response
+            try:
+                await clone._run_steps(spec.body_steps, f"{path}.loop.{iteration}.")
+            finally:
+                await clone.close()
+            return clone.step_results
+
+        results = await asyncio.gather(
+            *(one(i, n) for n, i in enumerate(rng, start=1)), return_exceptions=True)
+        # 先合并全部成功迭代的结果，再统一抛第一个失败（不丢已完成迭代的产出）。
+        first_failure: tuple[int, BaseException] | None = None
+        for iteration, res in enumerate(results, start=1):
+            if isinstance(res, BaseException):
+                if first_failure is None:
+                    first_failure = (iteration, res)
+                continue
+            self.step_results.extend(res)
+        if first_failure is not None:
+            iteration, res = first_failure
+            if isinstance(res, StepFailure):
+                raise StepFailure(f"loop parallel iteration {iteration} failed: {res}")
+            raise res
 
     async def _do_retry(self, spec: pb.RetryStep, path: str):
         if not spec.HasField("body_step"):
@@ -424,7 +460,8 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
     }
 
     if lc.WhichOneof("script") != "source":
-        return (pb.CASE_STATUS_FAILED, "lowcode script_ref not supported in MVP (use source)", 0, [])
+        # script_ref 由 Scheduler 派发前解析为内联 source；引擎直接见到裸 ref 属契约破坏。
+        return (pb.CASE_STATUS_FAILED, "lowcode script_ref must be resolved by scheduler (engine accepts source only)", 0, [])
 
     async with httpx.AsyncClient(verify=True) as client:
         backend: ExecutionBackend = SubprocessBackend(

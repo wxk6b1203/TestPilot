@@ -336,10 +336,71 @@ func TestTriggerNoWorker(t *testing.T) {
 	}
 }
 
-func TestTriggerSuiteRefSkipped(t *testing.T) {
+// seedSuite 建一个 tenant 1 下含 N 个 case 的套件。
+func seedSuite(t *testing.T, d *gorm.DB, caseIDs ...int64) int64 {
+	t.Helper()
+	su := model.TestSuite{ID: model.NextID(), TenantID: 1, ProjectID: 1, Name: "suite"}
+	if err := d.Create(&su).Error; err != nil {
+		t.Fatal(err)
+	}
+	for i, cid := range caseIDs {
+		it := model.TestSuiteItem{ID: model.NextID(), SuiteID: su.ID, CaseID: cid, Order: i}
+		if err := d.Create(&it).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	return su.ID
+}
+
+func TestTriggerSuiteExpansion(t *testing.T) {
 	d := openTestDB(t)
-	// plan 只有一个 ref_type=2(suite) 的 enabled item：MVP 未实现 suite 展开，
-	// 当前代码路径是 items 非空（不报 PLAN_NO_ITEMS）→ 循环跳过 → dispatched=0 → ErrNoWorker。
+	fx := seedPlanData(t, d)
+	// 套件内两个 case（顺序 A, B），plan 改为引用该套件
+	caseB := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: fx.projID,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "second", Definition: model.JSON(`{}`),
+	}
+	if err := d.Create(&caseB).Error; err != nil {
+		t.Fatal(err)
+	}
+	suiteID := seedSuite(t, d, fx.caseID, caseB.ID)
+	d.Model(&model.TestPlanItem{}).Where("plan_id = ?", fx.planID).
+		Updates(map[string]any{"ref_type": 2, "ref_id": suiteID})
+
+	disp := dispatch.New(d)
+	disp.Register(mkWorker("w1", 0, commonv1.Capability_CAPABILITY_FUNCTIONAL))
+	r := New(d, disp)
+	runID, err := r.Trigger(context.Background(), 1, fx.planID, 0,
+		int16(commonv1.TriggerType_TRIGGER_TYPE_MANUAL), "tester")
+	if err != nil {
+		t.Fatalf("trigger: %v", err)
+	}
+
+	var crs []model.TestCaseResult
+	d.Where("run_id = ?", runID).Order("id asc").Find(&crs)
+	if len(crs) != 2 {
+		t.Fatalf("want 2 case results from suite expansion, got %d", len(crs))
+	}
+	if crs[0].CaseID != fx.caseID || crs[1].CaseID != caseB.ID {
+		t.Fatalf("case results out of suite order: %d, %d", crs[0].CaseID, crs[1].CaseID)
+	}
+
+	// 展开的 case 应与直接引用一样被派发（worker 收到 2 个任务）
+	var w *dispatch.Worker
+	for _, x := range disp.Workers() {
+		if x.ID == "w1" {
+			w = x
+		}
+	}
+	if w == nil || len(w.Send) != 2 {
+		t.Fatalf("want 2 dispatched tasks on w1, got %+v", w)
+	}
+}
+
+func TestTriggerSuiteMissing(t *testing.T) {
+	d := openTestDB(t)
+	// ref_type=2 指向不存在的套件：展开失败 → 跳过 → dispatched=0 → ErrNoWorker。
 	plan := model.TestPlan{ID: model.NextID(), TenantID: 1, Name: "suite-only"}
 	if err := d.Create(&plan).Error; err != nil {
 		t.Fatal(err)
@@ -354,19 +415,81 @@ func TestTriggerSuiteRefSkipped(t *testing.T) {
 	runID, err := r.Trigger(context.Background(), 1, plan.ID, 0,
 		int16(commonv1.TriggerType_TRIGGER_TYPE_MANUAL), "tester")
 	if !errors.Is(err, dispatch.ErrNoWorker) {
-		t.Fatalf("suite-only plan: want ErrNoWorker (dispatched=0 path), got %v", err)
-	}
-	var run model.TestRun
-	if err := d.First(&run, runID).Error; err != nil {
-		t.Fatal(err)
-	}
-	if run.Status != int16(commonv1.RunStatus_RUN_STATUS_FAILED) {
-		t.Fatalf("run status=%d, want FAILED", run.Status)
+		t.Fatalf("missing suite: want ErrNoWorker (dispatched=0 path), got %v", err)
 	}
 	var n int64
 	d.Model(&model.TestCaseResult{}).Where("run_id = ?", runID).Count(&n)
 	if n != 0 {
-		t.Fatalf("suite ref should not create case results, got %d", n)
+		t.Fatalf("missing suite should not create case results, got %d", n)
+	}
+}
+
+func TestMaterializeScriptRef(t *testing.T) {
+	d := openTestDB(t)
+	r := New(d, dispatch.New(d))
+
+	script := model.Script{ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Name: "shared-flow", Language: "python", Content: "def run(ctx):\n    return True"}
+	if err := d.Create(&script).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// script_ref 用例 → 内联 source，ref 清空，entry 保留
+	lc := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type:       int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE),
+		Name:       "ref-case",
+		Definition: model.JSON(`{"script_ref": "` + idStr(script.ID) + `", "entry": "run"}`),
+	}
+	pcase, err := r.materializeCase(&lc)
+	if err != nil {
+		t.Fatalf("materialize: %v", err)
+	}
+	if got := pcase.GetLowcode().GetSource(); got != script.Content {
+		t.Fatalf("source not inlined, got %q", got)
+	}
+	if got := pcase.GetLowcode().GetScriptRef(); got != "" {
+		t.Fatalf("script_ref should be cleared, got %q", got)
+	}
+	if got := pcase.GetLowcode().GetEntry(); got != "run" {
+		t.Fatalf("entry should be preserved, got %q", got)
+	}
+
+	// 脚本不存在 → 报错（派发侧将 case result 置 FAILED）
+	missing := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type:       int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE),
+		Name:       "missing",
+		Definition: model.JSON(`{"script_ref": "999999"}`),
+	}
+	if _, err := r.materializeCase(&missing); err == nil {
+		t.Fatal("missing script should error")
+	}
+
+	// 跨租户脚本不可见
+	foreign := model.Script{ID: model.NextID(), TenantID: 2, ProjectID: 1,
+		Name: "foreign", Content: "def run(ctx): pass"}
+	if err := d.Create(&foreign).Error; err != nil {
+		t.Fatal(err)
+	}
+	foreignCase := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type:       int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE),
+		Name:       "foreign-ref",
+		Definition: model.JSON(`{"script_ref": "` + idStr(foreign.ID) + `"}`),
+	}
+	if _, err := r.materializeCase(&foreignCase); err == nil {
+		t.Fatal("cross-tenant script_ref should error")
+	}
+
+	// 非低代码 / source 用例不受影响
+	decl := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 1,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
+		Name: "decl", Definition: model.JSON(`{"steps": []}`),
+	}
+	if _, err := r.materializeCase(&decl); err != nil {
+		t.Fatalf("declarative should pass through: %v", err)
 	}
 }
 

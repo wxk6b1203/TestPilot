@@ -213,6 +213,18 @@ async def import_openapi(ctx: RunContext[CopilotDeps], project_id: str,
 
 
 @writes.tool(requires_approval=True)
+async def apply_openapi_diff(ctx: RunContext[CopilotDeps], project_id: str,
+                             openapi_document: str, auto_update_cases: bool = False) -> dict:
+    """以新 spec 增量更新项目接口（按 method+uri 匹配）：新增→创建、变更→更新、
+    缺失→仅报告不删除（kind=breaking 表示参数键被移除或 body content_type 变化）。
+    auto_update_cases=true 时，引用变更接口的用例会把新快照内联写回 definition。"""
+    r = await ctx.deps.sched.stub.ApplyOpenApiDiff(cpb.ApplyOpenApiDiffRequest(
+        ctx=ctx.deps.ctx(), project_id=project_id,
+        openapi_document=openapi_document, auto_update_cases=auto_update_cases))
+    return to_dict(r)
+
+
+@writes.tool(requires_approval=True)
 async def trigger_run(ctx: RunContext[CopilotDeps], plan_id: str, env_id: str = "") -> dict:
     """触发一次测试计划运行，返回 run_id（可用 get_run 查询结果）。"""
     r = await ctx.deps.sched.stub.TriggerRun(

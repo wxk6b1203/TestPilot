@@ -142,6 +142,23 @@ case4 = api.post("/api/v1/cases", json={
     "project_id": pid, "name": "e2e-ui", "type": 1, "definition": case4_def}).json()
 print(f"✓ case4={case4['id']} (ui)")
 
+# ---- v2：suite 引用展开（ref_type=2）----
+suite1 = api.post("/api/v1/suites", json={
+    "project_id": pid, "name": "e2e-suite",
+    "case_ids": [case1["id"], case3["id"]]}).json()
+got = api.get(f"/api/v1/suites/{suite1['id']}").json()
+assert [str(x) for x in got["case_ids"]] == [str(case1["id"]), str(case3["id"])], \
+    f"suite case_ids roundtrip mismatch: {got['case_ids']}"
+print(f"✓ suite1={suite1['id']} case_ids={got['case_ids']}")
+
+# ---- v2：lowcode script_ref（脚本资产库 + 派发前内联）----
+script1 = api.post("/api/v1/scripts", json={
+    "project_id": pid, "name": "lc-flow", "language": "python", "content": case3_src}).json()
+case5 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-script-ref", "type": 2,
+    "definition": {"script_ref": str(script1["id"]), "entry": "run"}}).json()
+print(f"✓ script1={script1['id']} case5={case5['id']} (script_ref)")
+
 # ---- 计划 + 触发 ----
 plan = api.post("/api/v1/plans", json={
     "project_id": pid, "env_id": eid, "name": f"e2e-plan-{stamp}",
@@ -150,6 +167,8 @@ plan = api.post("/api/v1/plans", json={
         {"ref_type": 1, "ref_id": case2["id"], "enabled": True, "order": 2},
         {"ref_type": 1, "ref_id": case3["id"], "enabled": True, "order": 3},
         {"ref_type": 1, "ref_id": case4["id"], "enabled": True, "order": 4},
+        {"ref_type": 2, "ref_id": suite1["id"], "enabled": True, "order": 5},
+        {"ref_type": 1, "ref_id": case5["id"], "enabled": True, "order": 6},
     ]}).json()
 r = api.post(f"/api/v1/plans/{plan['id']}/run", json={})
 if r.status_code != 200:
@@ -172,7 +191,8 @@ else:
 
 # ---- 校验闭环 ----
 ok = True
-expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2, case4["name"]: 2}
+expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2,
+          case4["name"]: 2, case5["name"]: 2}  # suite 展开使 case1/case3 各出现两次
 summary = run.get("summary") or {}
 print(f"run status={run['status']} summary={json.dumps(summary)}")
 if run["status"] != 3:  # 一个 case 失败 → run FAILED
