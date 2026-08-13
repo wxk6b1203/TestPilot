@@ -138,7 +138,7 @@ _METHODS = {"GET": pb.HTTP_METHOD_GET, "POST": pb.HTTP_METHOD_POST, "PUT": pb.HT
 async def create_api(ctx: RunContext[CopilotDeps], project_id: str, method: str, uri: str,
                      headers: dict[str, str] | None = None,
                      params: dict[str, str] | None = None,
-                     body: str = "", description: str = "") -> dict:
+                     body: str = "") -> dict:
     """创建 HTTP 接口。method 为大写方法名；body 为原始文本（JSON 字符串）。"""
     api = pb.HttpApi(method=_METHODS.get(method.upper(), pb.HTTP_METHOD_GET), uri=uri)
     for k, v in (headers or {}).items():
@@ -146,7 +146,7 @@ async def create_api(ctx: RunContext[CopilotDeps], project_id: str, method: str,
     for k, v in (params or {}).items():
         api.params.add(key=k, value=v)
     if body:
-        api.body.content_type = pb.BODY_TYPE_JSON
+        api.body.content_type = pb.BODY_CONTENT_TYPE_JSON
         api.body.raw = body
     r = await ctx.deps.sched.stub.CreateApi(
         cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=project_id, http=api))
