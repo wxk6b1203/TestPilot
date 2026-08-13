@@ -1,8 +1,7 @@
 package httpserver
 
 import (
-	"os"
-	"path/filepath"
+	"io"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
@@ -10,7 +9,24 @@ import (
 	"github.com/testpilot/testpilot/internal/model"
 )
 
+// selfClosingReader 读尽（EOF/出错）时自动 Close 底层流：
+// fasthttp 在 handler 返回后才消费流，无法 defer Close；S3 连接必须显式释放。
+type selfClosingReader struct {
+	r      io.ReadCloser
+	closed bool
+}
+
+func (s *selfClosingReader) Read(p []byte) (int, error) {
+	n, err := s.r.Read(p)
+	if err != nil && !s.closed {
+		s.closed = true
+		_ = s.r.Close()
+	}
+	return n, err
+}
+
 // getArtifactContent 提供产物文件下载/预览（截图/trace/har 等）。
+// 内容经产物后端读取（local 本地目录 / s3 对象存储），路径穿越防护由后端负责。
 func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	id, ok := pathID(ctx, "id")
@@ -21,38 +37,31 @@ func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, c.TenantID).First(&art).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "artifact not found"))
 	}
-	// 产物根（Worker 与 Scheduler 须指向同一目录；生产换对象存储）
-	root, err := filepath.Abs(s.cfg.ArtifactDir)
-	if err != nil {
-		return writeAppErr(ctx, apperr.Internal("artifact root resolve failed"))
+	store := s.artifactStore()
+	if store == nil {
+		return writeAppErr(ctx, apperr.Internal("artifact store unavailable"))
 	}
-	path := filepath.Join(root, filepath.Clean("/"+art.URI)) // 剥前导..防穿越
-	abs, err := filepath.Abs(path)
-	if err != nil || !strings.HasPrefix(abs, root+string(os.PathSeparator)) {
-		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeForbidden, "artifact path escapes root"))
-	}
-	f, err := os.Open(abs)
+	f, err := store.Open(art.TenantID, art.URI)
 	if err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "artifact file missing"))
 	}
-	// 不能 defer Close：fasthttp 在 handler 返回后才读流，读完自行 Close。
+	// 不能 defer Close：fasthttp 在 handler 返回后才读流；selfClosingReader 在 EOF 自关。
 
-	switch strings.ToLower(filepath.Ext(abs)) {
-	case ".png":
+	name := art.URI
+	if i := strings.LastIndexAny(name, "/\\"); i >= 0 {
+		name = name[i+1:]
+	}
+	switch {
+	case strings.HasSuffix(strings.ToLower(name), ".png"):
 		ctx.Set(fiber.HeaderContentType, "image/png")
-	case ".zip":
+	case strings.HasSuffix(strings.ToLower(name), ".zip"):
 		ctx.Set(fiber.HeaderContentType, "application/zip")
-	case ".har":
+	case strings.HasSuffix(strings.ToLower(name), ".har"):
 		ctx.Set(fiber.HeaderContentType, "application/json")
 	default:
 		ctx.Set(fiber.HeaderContentType, "application/octet-stream")
 	}
 	ctx.Set(fiber.HeaderContentDisposition,
-		`inline; filename="`+strings.ReplaceAll(filepath.Base(abs), `"`, "")+`"`)
-	size := -1
-	if st, err := f.Stat(); err == nil {
-		size = int(st.Size())
-	}
-	// 注：net/http 时期的 Range/Last-Modified 支持随 ServeContent 一并移除（预览场景无需）。
-	return ctx.SendStream(f, size)
+		`inline; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
+	return ctx.SendStream(&selfClosingReader{r: f}, int(art.Size))
 }

@@ -6,17 +6,17 @@
 package retention
 
 import (
-	"os"
-	"path/filepath"
 	"time"
 
+	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
 )
 
 // Start 启动后台清理（days<=0 不启动）；立即先跑一轮，之后每 intervalMin 分钟一轮。
-func Start(db *gorm.DB, artifactDir string, days, intervalMin int) {
+// 产物文件经 store 删除（local 删磁盘 / s3 删对象）。
+func Start(db *gorm.DB, store artifactstore.Backend, days, intervalMin int) {
 	if days <= 0 {
 		return
 	}
@@ -25,14 +25,14 @@ func Start(db *gorm.DB, artifactDir string, days, intervalMin int) {
 	}
 	logging.L.Infow("retention enabled", "run_days", days, "interval_min", intervalMin)
 	go func() {
-		cleanup(db, artifactDir, days)
+		cleanup(db, store, days)
 		for range time.Tick(time.Duration(intervalMin) * time.Minute) {
-			cleanup(db, artifactDir, days)
+			cleanup(db, store, days)
 		}
 	}()
 }
 
-func cleanup(db *gorm.DB, artifactDir string, days int) {
+func cleanup(db *gorm.DB, store artifactstore.Backend, days int) {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	var artCount int
 
@@ -40,14 +40,13 @@ func cleanup(db *gorm.DB, artifactDir string, days int) {
 	var runIDs []int64
 	db.Model(&model.TestRun{}).Where("started_at < ?", cutoff).Limit(500).Pluck("id", &runIDs)
 	if len(runIDs) > 0 {
-		// 产物文件先删磁盘（防路径穿越，与 artifact_handlers 同一规则）
+		// 产物文件先删（路径穿越防护由后端负责）
 		var arts []model.Artifact
 		db.Where("run_id IN ?", runIDs).Find(&arts)
 		artCount = len(arts)
 		for _, a := range arts {
-			p := filepath.Join(artifactDir, filepath.Clean("/"+a.URI))
-			if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
-				logging.L.Warnw("retention: remove artifact file failed", "path", p, "err", err)
+			if err := store.Delete(a.TenantID, a.URI); err != nil {
+				logging.L.Warnw("retention: remove artifact failed", "uri", a.URI, "err", err)
 			}
 		}
 		var caseIDs []int64

@@ -7,6 +7,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
+	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/config"
 	"github.com/testpilot/testpilot/internal/cronsched"
 	"github.com/testpilot/testpilot/internal/db"
@@ -45,7 +46,14 @@ func main() {
 	cron := cronsched.New(gormDB, run)
 	cron.Start()
 	defer cron.Stop()
-	retention.Start(gormDB, cfg.ArtifactDir, cfg.RetentionDays, cfg.RetentionIntervalMin)
+
+	// 产物后端（local 默认 / s3 对象存储）
+	artifacts, err := artifactstore.New(cfg)
+	if err != nil {
+		logging.L.Fatalw("artifact store init failed", "err", err)
+	}
+	disp.SetArtifactIngest(artifacts, cfg.ArtifactDir)
+	retention.Start(gormDB, artifacts, cfg.RetentionDays, cfg.RetentionIntervalMin)
 
 	// gRPC（Worker 双向流 + Copilot 工具面同端口）
 	gs := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
@@ -65,7 +73,7 @@ func main() {
 	}()
 
 	// REST + 前端托管（fiber v3 / fasthttp）
-	app := httpserver.New(gormDB, cfg, disp, run, cron).App()
+	app := httpserver.New(gormDB, cfg, disp, run, cron, artifacts).App()
 	logging.L.Infow("http listening", "addr", cfg.HTTPAddr)
 	if err := app.Listen(cfg.HTTPAddr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
 		logging.L.Fatalw("http serve failed", "err", err)

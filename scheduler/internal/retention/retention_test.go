@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/db"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
@@ -51,7 +52,11 @@ func TestCleanup(t *testing.T) {
 	d.Create(&model.StressRun{ID: 2002, TenantID: 1, StressPlanID: 1, Status: 2, StartedAt: now})
 	d.Create(&model.StressMetricPoint{ID: 3002, TenantID: 1, StressRunID: 2002, Ts: now})
 
-	cleanup(d, artDir, 30)
+	store, err := artifactstore.NewLocal(artDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cleanup(d, store, 30)
 
 	count := func(m any, where string, args ...any) int64 {
 		var n int64
@@ -90,5 +95,5 @@ func TestCleanup(t *testing.T) {
 // TestStartDisabled days<=0 时不启动清理（零副作用保障）。
 func TestStartDisabled(t *testing.T) {
 	var d *gorm.DB // nil db：若 Start 误启动 goroutine 会在首次 cleanup 时 panic
-	Start(d, t.TempDir(), 0, 60)
+	Start(d, nil, 0, 60)
 }

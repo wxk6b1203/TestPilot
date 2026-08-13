@@ -3,6 +3,7 @@ package dispatch
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,6 +11,7 @@ import (
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
 	"github.com/testpilot/testpilot/internal/apperr"
+	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/metrics"
 	"github.com/testpilot/testpilot/internal/model"
@@ -47,11 +49,20 @@ type stressState struct {
 }
 
 // Dispatcher 维护 Worker 池并做能力路由 + 负载均衡。
+// SetArtifactIngest 注入产物后端（s3 模式下上报产物时同步上传；local 为 no-op）。
+func (d *Dispatcher) SetArtifactIngest(store artifactstore.Backend, localRoot string) {
+	d.artifactStore = store
+	d.artifactRoot = localRoot
+}
+
 type Dispatcher struct {
 	db         *gorm.DB
 	mu         sync.RWMutex
 	workers    map[string]*Worker
 	stressRuns sync.Map // runID(int64) → *stressState
+
+	artifactStore artifactstore.Backend // s3 等远端后端（nil=仅本地）
+	artifactRoot  string                // Worker 共享产物目录（Ingest 源路径）
 }
 
 func New(db *gorm.DB) *Dispatcher {
@@ -402,6 +413,14 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 				}
 				if err := tx.Create(art).Error; err != nil {
 					return err
+				}
+				// s3 后端：把 Worker 已写入共享目录的文件同步上传（失败仅告警，
+				// 产物行保留——GET 时后端缺失会 404，便于运维发现重传）。
+				if d.artifactStore != nil {
+					local := filepath.Join(d.artifactRoot, filepath.Clean("/"+art.URI))
+					if err := d.artifactStore.Ingest(local, tid, art.URI); err != nil {
+						logging.L.Warnw("artifact ingest failed", "uri", art.URI, "err", err)
+					}
 				}
 			}
 		}

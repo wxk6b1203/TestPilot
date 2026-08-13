@@ -35,7 +35,16 @@ type Config struct {
 	LogLevel  string `yaml:"log_level"`  // debug/info/warn/error
 	LogFormat string `yaml:"log_format"` // text（默认彩色行）| json
 
-	ArtifactDir          string `yaml:"artifact_dir"`           // 产物根目录（与 Worker 一致）
+	ArtifactDir          string `yaml:"artifact_dir"`           // 产物根目录（与 Worker 一致；s3 后端下为暂存目录）
+	ArtifactBackend      string `yaml:"artifact_backend"`       // local（默认）| s3
+	S3Endpoint           string `yaml:"s3_endpoint"`            // S3 兼容端点（含 scheme，如 https://s3.cn-shanghai.aliyuncs.com）
+	S3AccessKey          string `yaml:"s3_access_key" tpflag:"-"` // 敏感：不暴露 CLI flag（进程列表可见）
+	S3SecretKey          string `yaml:"s3_secret_key" tpflag:"-"` // 敏感：同上
+	S3Bucket             string `yaml:"s3_bucket"`
+	S3Region             string `yaml:"s3_region"`
+	S3Prefix             string `yaml:"s3_prefix"` // 对象键前缀（多实例共享 bucket 时区分）
+	S3UseSSL             bool   `yaml:"s3_use_ssl"`
+	S3PathStyle          bool   `yaml:"s3_path_style"` // true=path-style（MinIO）；false=virtual-hosted（AWS/OSS）
 	RetentionDays        int    `yaml:"retention_run_days"`     // 运行数据保留天数（0=永久）
 	RetentionIntervalMin int    `yaml:"retention_interval_min"` // 保留清理周期分钟
 
@@ -63,6 +72,8 @@ func Defaults() Config {
 		LogLevel:             "info",
 		LogFormat:            "text",
 		ArtifactDir:          ".data/artifacts",
+		ArtifactBackend:      "local",
+		S3UseSSL:             true,
 		RetentionIntervalMin: 60,
 		BodyLimitMB:          64,
 		OTelEndpoint:         "127.0.0.1:4317",
@@ -155,12 +166,14 @@ func applyEnv(cfg *Config, getenv func(string) (string, bool)) error {
 }
 
 // bindFlags 把每个可配字段绑定为 --kebab-case flag，默认值取当前字段值。
+// tpflag:"-" 标记的字段（敏感项）不注册 flag，避免进程列表泄漏。
 func bindFlags(fs *flag.FlagSet, cfg *Config) {
 	v := reflect.ValueOf(cfg).Elem()
 	t := v.Type()
 	for i := 0; i < t.NumField(); i++ {
-		key := yamlKey(t.Field(i))
-		if key == "" {
+		fld := t.Field(i)
+		key := yamlKey(fld)
+		if key == "" || fld.Tag.Get("tpflag") == "-" {
 			continue
 		}
 		name := strings.ReplaceAll(key, "_", "-")
@@ -172,6 +185,8 @@ func bindFlags(fs *flag.FlagSet, cfg *Config) {
 			fs.IntVar(p, name, *p, key)
 		case *int64:
 			fs.Int64Var(p, name, *p, key)
+		case *bool:
+			fs.BoolVar(p, name, *p, key)
 		}
 	}
 }
@@ -194,6 +209,12 @@ func setFromString(f reflect.Value, name, raw string) error {
 			return fmt.Errorf("%s: %q 不是整数", name, raw)
 		}
 		f.SetInt(n)
+	case reflect.Bool:
+		b, err := strconv.ParseBool(raw)
+		if err != nil {
+			return fmt.Errorf("%s: %q 不是布尔值", name, raw)
+		}
+		f.SetBool(b)
 	default:
 		return fmt.Errorf("%s: 不支持的字段类型 %s", name, f.Kind())
 	}
