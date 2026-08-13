@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import timedelta
 from typing import Any, Awaitable, Callable, Mapping
@@ -463,7 +464,7 @@ async def run_task(task: wpb.TaskAssignment,
 
 
 async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb.TestStepResult]]:
-    """低代码用例：整脚本进沙箱，经能力桥执行副作用。"""
+    """低代码用例：整脚本进沙箱，经能力桥执行副作用（HTTP/变量/UI 操作）。"""
     from google.protobuf import json_format
 
     case = task.functional.case
@@ -482,11 +483,36 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
         # script_ref 由 Scheduler 派发前解析为内联 source；引擎直接见到裸 ref 属契约破坏。
         return (pb.CASE_STATUS_FAILED, "lowcode script_ref must be resolved by scheduler (engine accepts source only)", 0, [])
 
-    async with httpx.AsyncClient(verify=True) as client:
-        backend: ExecutionBackend = SubprocessBackend(
-            lambda args: bridge_http_handler(client, base_url, args))
-        timeout = min(task.timeout.ToSeconds() or 120, 300)
-        res = await backend.run(lc.source, lc.entry or "run", payload, timeout)
+    # Page 模型：桥 op=ui_action 转发到本用例的 UiSession（惰性启动浏览器），
+    # 产物（截图/trace/har）按 run/case 目录隔离，结束后挂到步骤结果。
+    case_rel = f"{task.run_id}/{task.functional.case_result_id}"
+    ui_session: ui.UiSession | None = None
+    bridge_artifacts: list[ui.UiArtifact] = []
+
+    def get_session() -> ui.UiSession:
+        nonlocal ui_session
+        if ui_session is None:
+            ui_session = ui.UiSession(
+                base_url=base_url,
+                case_dir=ui.artifact_root() / case_rel,
+                case_rel=case_rel,
+                render=lambda s: s,  # 低代码脚本自行渲染，桥不处理模板
+            )
+        return ui_session
+
+    try:
+        async with httpx.AsyncClient(verify=True) as client:
+            backend: ExecutionBackend = SubprocessBackend(
+                lambda args: bridge_http_handler(client, base_url, args),
+                extra_ops={"ui_action": ui.bridge_ui_handler(get_session)})
+            timeout = min(task.timeout.ToSeconds() or 120, 300)
+            res = await backend.run(lc.source, lc.entry or "run", payload, timeout)
+    finally:
+        if ui_session is not None:
+            try:
+                bridge_artifacts.extend(await ui_session.finish())
+            except Exception as e:  # 防御：浏览器收尾失败不影响用例结果
+                logging.getLogger(__name__).warning("ui session finish failed: %s", e)
 
     elapsed = int((time.perf_counter() - started) * 1000)
     status = pb.CASE_STATUS_PASSED if res.ok else pb.CASE_STATUS_FAILED
@@ -501,4 +527,6 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
     if res.logs:
         sr.logs.extend(res.logs[-200:])
     sr.assertions.extend(_sdk_assertions(res.assertions))
+    if bridge_artifacts:
+        sr.artifacts.extend(_artifact_refs(bridge_artifacts))
     return status, error, elapsed, [sr]

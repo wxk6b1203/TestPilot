@@ -85,6 +85,18 @@ def case(sdk):
 沙箱内运行：setrlimit 限额、环境白名单、无网络出口（macOS sandbox-exec / Linux bwrap），
 HTTP/变量等副作用经能力桥由 Worker 代执行。
 
+**Page 模型（v2 第三批）**：`ctx.page` 在沙箱内驱动浏览器（经能力桥转发 Playwright）：
+
+```python
+async def run(ctx: Context):
+    page = ctx.page
+    await page.goto("/form")
+    await page.fill("#username", "neo")
+    await page.click("#login-btn")
+    await page.expect_text("#result", "Welcome, neo!")   # 不匹配 → 用例失败
+    await page.screenshot()                               # 截图/trace/har 挂到步骤结果
+```
+
 ## UI 用例（Playwright）
 
 UI_ACTION 支持 GOTO/CLICK/FILL/SELECT/CHECK/HOVER/PRESS/EXPECT_TEXT/EXPECT_VISIBLE/

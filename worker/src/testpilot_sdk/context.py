@@ -6,6 +6,7 @@ from typing import Any
 
 from .bridge import Bridge
 from .models import Response
+from .page import Page
 
 
 class _Vars:
@@ -41,6 +42,14 @@ class Context:
         self.base_url: str = payload.get("base_url") or ""
         self.parameters: dict[str, Any] = payload.get("parameters") or {}
         self.tenant_id: int = payload.get("tenant_id") or 0
+        self._page: Page | None = None
+
+    @property
+    def page(self) -> Page:
+        """浏览器 Page（v2：经能力桥转发 Playwright 操作，沙箱零网络）。"""
+        if self._page is None:
+            self._page = Page(self._bridge)
+        return self._page
 
     async def http(self, method: str, uri: str, *,
                    headers: dict[str, str] | None = None,

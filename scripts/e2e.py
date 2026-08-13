@@ -181,6 +181,24 @@ case5 = api.post("/api/v1/cases", json={
     "definition": {"script_ref": str(script1["id"]), "entry": "run"}}).json()
 print(f"✓ script1={script1['id']} case5={case5['id']} (script_ref)")
 
+# ---- v2：低代码 Page 模型（沙箱内经能力桥驱动浏览器）----
+page_src = '''from testpilot_sdk import Context, assert_that
+
+
+async def run(ctx: Context):
+    page = ctx.page
+    await page.goto("/form")
+    await page.fill("#username", "neo")
+    await page.fill("#password", "s3cret")
+    await page.click("#login-btn")
+    await page.expect_text("#result", "Welcome, neo!")
+    await page.screenshot()
+'''
+case9 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-page", "type": 2,
+    "definition": {"source": page_src, "entry": "run"}}).json()
+print(f"✓ case9={case9['id']} (lowcode Page via capability bridge)")
+
 # ---- v2：api_id 派发期解析（api_call 引用 + override 合并）----
 api_echo = api.post("/api/v1/apis", json={
     "project_id": pid, "method": 1, "uri": "/echo",
@@ -255,6 +273,7 @@ plan = api.post("/api/v1/plans", json={
         {"ref_type": 1, "ref_id": case6["id"], "enabled": True, "order": 7},
         {"ref_type": 1, "ref_id": case7["id"], "enabled": True, "order": 8,
          "param_overrides": {"n": 7}},
+        {"ref_type": 1, "ref_id": case9["id"], "enabled": True, "order": 9},
     ]}).json()
 r = api.post(f"/api/v1/plans/{plan['id']}/run", json={})
 if r.status_code != 200:
@@ -279,7 +298,7 @@ else:
 ok = True
 expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2,
           case4["name"]: 2, case5["name"]: 2, case6["name"]: 2,
-          case7["name"]: 2}  # suite 展开使 case1/case3 各出现两次
+          case7["name"]: 2, case9["name"]: 2}  # suite 展开使 case1/case3 各出现两次
 summary = run.get("summary") or {}
 print(f"run status={run['status']} summary={json.dumps(summary)}")
 if run["status"] != 3:  # 一个 case 失败 → run FAILED

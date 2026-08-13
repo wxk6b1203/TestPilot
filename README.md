@@ -64,6 +64,10 @@ worker/venv/bin/python scripts/e2e_phase9.py
   **subprocess 沙箱**中运行：setrlimit 资源约束、环境变量白名单、临时工作目录、超时强杀，
   macOS `sandbox-exec` / Linux `bwrap` 强制无网络出口；HTTP/变量等副作用经**能力桥**
   （stdin/stdout JSON Lines）由 Worker 代执行 —— 沙箱内零凭据、零明文密钥
+- **低代码 Page 模型（v2 第三批）**：SDK `ctx.page`（goto/click/fill/select/check/hover/
+  press/expect_text/expect_visible/wait_for/screenshot）——沙箱内经能力桥（op=ui_action）
+  转发给 Worker 的 Playwright UiSession 执行，浏览器按 run/case 隔离，截图/trace/har
+  产物挂到步骤结果；断言失败随桥错误传播
 - **UI 测试（Phase 5）**：13 种 UI_ACTION（GOTO/CLICK/FILL/SELECT/CHECK/HOVER/PRESS/
   EXPECT_TEXT/EXPECT_VISIBLE/SCREENSHOT/WAIT/UPLOAD/DOWNLOAD）；每用例一次浏览器启动、
   BrowserContext 隔离、全程 tracing；产物 = 截图（含失败自动截图）+ trace.zip + network.har，
@@ -264,5 +268,5 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）
+- 压测 behavior_case（target_type=2 低代码行为脚本发压，设计另议）
 - OAuth2（非 OIDC）登录

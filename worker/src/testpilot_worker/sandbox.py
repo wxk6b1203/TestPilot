@@ -31,6 +31,7 @@ from . import egress
 log = __import__("logging").getLogger("testpilot.sandbox")
 
 HttpHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
+OpHandler = HttpHandler  # 扩展桥操作处理器（args dict → result dict）
 
 # 能力桥通道上限
 _BRIDGE_RESP_LIMIT = 256 * 1024
@@ -120,9 +121,11 @@ def _net_deny_wrapper(cmd: list[str], scratch: str) -> list[str]:
 
 
 class SubprocessBackend(ExecutionBackend):
-    def __init__(self, http_handler: HttpHandler, limits: SandboxLimits | None = None):
+    def __init__(self, http_handler: HttpHandler, limits: SandboxLimits | None = None,
+                 extra_ops: dict[str, OpHandler] | None = None):
         self.http_handler = http_handler
         self.limits = limits or SandboxLimits()
+        self.extra_ops = extra_ops or {}  # 扩展桥操作（如 ui_action → bridge_ui_handler）
 
     async def run(self, source: str, entry: str, payload: dict[str, Any],
                   timeout_s: float) -> SandboxResult:
@@ -241,6 +244,8 @@ class SubprocessBackend(ExecutionBackend):
                     value = merged_vars[key]
                 else:
                     value = (payload.get("vars") or {}).get(key)
+            elif op in self.extra_ops:
+                value = await self.extra_ops[op](args)
             else:
                 raise ValueError(f"unknown bridge op: {op}")
             await respond(call_id, True, value)

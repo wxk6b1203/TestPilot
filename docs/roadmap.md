@@ -350,8 +350,8 @@
 |---|---|---|
 | Postman 导入导出 | — | ✅ 已完成：collection v2.1 解析/生成（folder 递归、`{{base_url}}` 占位导出） |
 | gRPC 接口测试 | Spike F（proto reflection / 上传） | ✅ 已完成：Spike F 通过 → GrpcApi/ProtoFile 模型 + `/grpc-apis` `/proto-files` CRUD + 引擎 GRPC_CALL（反射动态调用，任务级 grpc_apis 映射）+ Copilot create_grpc_api 工具 |
-| 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | 沙箱内驱动浏览器（Page pydantic 封装经能力桥转发 Playwright 操作） |
-| 压测 behavior_case | 依赖低代码 Page 能力桥 | stress target_type=2 接低代码行为脚本 |
+| 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | ✅ 已完成：SDK `ctx.page` + 桥 op=ui_action → Worker UiSession（run/case 目录隔离产物；断言失败随桥错误传播） |
+| 压测 behavior_case | 依赖低代码 Page 能力桥（已就绪） | stress target_type=2 接低代码行为脚本（Locust 进程 × 能力桥通道设计待定） |
 
 ### 明确不做/另议
 - **OAuth2（非 OIDC）登录**：grant 类型未定（client_credentials 为 S2S、password 已弃用），待具体需求

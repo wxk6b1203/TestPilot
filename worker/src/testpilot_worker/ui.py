@@ -12,7 +12,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 from testpilot.common.v1 import types_pb2 as pb
 
@@ -209,3 +209,33 @@ def artifact_root() -> Path:
 
 def sanitize(name: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:80]
+
+# ---- 能力桥 UI 操作（低代码 Page 模型：沙箱 → Worker 转发 Playwright）----
+
+BRIDGE_UI_ACTIONS = {
+    "goto": pb.UI_ACTION_GOTO, "click": pb.UI_ACTION_CLICK, "fill": pb.UI_ACTION_FILL,
+    "select": pb.UI_ACTION_SELECT, "check": pb.UI_ACTION_CHECK, "hover": pb.UI_ACTION_HOVER,
+    "press": pb.UI_ACTION_PRESS, "expect_text": pb.UI_ACTION_EXPECT_TEXT,
+    "expect_visible": pb.UI_ACTION_EXPECT_VISIBLE, "screenshot": pb.UI_ACTION_SCREENSHOT,
+    "wait": pb.UI_ACTION_WAIT, "upload": pb.UI_ACTION_UPLOAD, "download": pb.UI_ACTION_DOWNLOAD,
+}
+
+
+def bridge_ui_handler(get_session) -> Callable[[dict], Awaitable[dict]]:
+    """op=ui_action 的桥处理器：args {action, target, value} → UiSession.execute。
+    get_session 返回本用例的 UiSession（惰性创建，产物目录按 run/case 隔离）。"""
+
+    async def handle(args: dict) -> dict:
+        action = str(args.get("action") or "")
+        kind = BRIDGE_UI_ACTIONS.get(action)
+        if kind is None:
+            raise ValueError(f"unknown ui action: {action!r}")
+        logs: list[str] = []
+        arts = await get_session().execute(
+            kind, str(args.get("target") or ""), str(args.get("value") or ""), logs)
+        return {
+            "logs": logs,
+            "artifacts": [{"kind": a.kind, "uri": a.uri, "size": a.size} for a in arts],
+        }
+
+    return handle
