@@ -17,10 +17,11 @@
 | 无网单测 | ✅ | Go 15 internal 包 + Worker 123 用例 + Copilot 61 用例 |
 | 依赖卫生 | ✅ | locust/pyyaml/pytest(dev) 声明入 pyproject；worker 镜像含 locust（容器压测冒烟通过） |
 | v2 第一批 | ✅ | curl 导出（/export/curl）、Copilot 反代（/copilot-api/* → TP_COPILOT_URL）、OpenAPI URL 导入（gRPC openapi_url 分支 + SSRF 私网防护） |
+| v2 第二批 | ✅ | suite 引用展开、ApplyOpenApiDiff、对象存储制品后端（local/S3）、loop parallel、lowcode script_ref（详述 `docs/v2-features.md`） |
 
 **v2 待办**（按批次，详见本文件末尾「v2 范围」）：
 - 第一批（已完成）：curl 导出 / Copilot 反代 / OpenAPI URL 导入
-- 第二批：suite 引用展开（ref_type=2）、ApplyOpenApiDiff、对象存储制品后端、loop parallel、lowcode script_ref
+- 第二批（已完成）：suite 引用展开（ref_type=2）、ApplyOpenApiDiff、对象存储制品后端、loop parallel、lowcode script_ref
 - 第三批（需 Spike 前置）：gRPC 接口测试（proto reflection）、低代码 Page 模型 + 压测行为脚本、Postman 导入导出
 
 ---
@@ -314,14 +315,17 @@
 | Copilot 生产反代 | Phase 6/9 边界 | scheduler `/copilot-api/*` → `TP_COPILOT_URL`（SSE FlushInterval=-1） |
 | OpenAPI URL 导入 | Phase 2 导入增强 | gRPC `ImportOpenApi.openapi_url` 分支 + 私网/环回 SSRF 防护 |
 
-### 第二批（中等，无 Spike 依赖）
-| 项 | 位置 | 说明 |
+### 第二批（已完成 2026-08-14）
+| 项 | 位置 | 落地 |
 |---|---|---|
-| suite 引用展开 | runner.go `RefType != 1` 跳过；DDL `test_suites/test_suite_items` 已预留 | 需新增 Suite GORM 模型 + runner 递归展开 + 去环 |
-| ApplyOpenApiDiff | copilot_service.go `Unimplemented` | OpenAPI diff 增量应用（按 method+uri 匹配 patch，含删除策略） |
-| 对象存储制品后端 | artifact_handlers.go 直读本地目录 | ArtifactBackend 接口 + local/S3 双实现（artifact_dir 语义层已留口） |
-| loop parallel | engine.py `parallel=true not supported` | asyncio.gather + 变量隔离/聚合语义定义 |
-| lowcode script_ref | engine.py `script_ref not supported` | 需新增脚本存储模型（artifact 是 run 产物，非资产库） |
+| suite 引用展开 | runner.go `RefType != 1` 跳过；DDL `test_suites/test_suite_items` 已预留 | ✅ Suite/Item GORM 模型 + `/suites` CRUD + 触发时有序展开（items 仅 case 引用，无嵌套无环） |
+| ApplyOpenApiDiff | copilot_service.go `Unimplemented` | ✅ impexp.ApplyOpenAPIDiff：method+uri 匹配，added/changed/breaking/removed（removed 仅报告不删除）；auto_update_cases 回写用例 inline；Copilot 工具 HITL |
+| 对象存储制品后端 | artifact_handlers.go 直读本地目录 | ✅ `internal/artifactstore` local/S3（minio-go，OSS S3 网关实测）；上报 Ingest 上传、读取/retention 走后端；AK/SK 不进 CLI |
+| loop parallel | engine.py `parallel=true not supported` | ✅ 并发迭代 + vars 快照隔离 + 按迭代序合并 + 统一抛首个失败（带迭代号） |
+| lowcode script_ref | engine.py `script_ref not supported` | ✅ `scripts` 资产库 + `/scripts` CRUD + 派发前按租户解析内联 source |
+
+> 详述见 `docs/v2-features.md`。遗留边界：api_call 步骤 api_id 引用的派发期解析未实现
+> （diff 回写 inline 的用例不受影响）；计划 item param_overrides 仍未应用。
 
 ### 第三批（大工程，需 Spike 前置）
 | 项 | 前置 | 说明 |

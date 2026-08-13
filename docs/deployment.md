@@ -62,6 +62,25 @@ Worker 与 Scheduler 经命名卷 `artifacts` 共享产物目录；生产可换�
 - 迁移回归：开发期改动模型后至少跑一次 `scripts/e2e.py`（SQLite）+ 一次 PG 冒烟
   （`TP_DB_DSN=... .data/bin/scheduler` 后跑 `scripts/e2e_phase8.py`）。
 
+## 制品存储：本地目录 → S3
+
+默认 `artifact_backend=local`（`TP_ARTIFACT_DIR` 共享目录，compose 用命名卷）。切 S3：
+
+```bash
+TP_ARTIFACT_BACKEND=s3
+TP_S3_ENDPOINT=https://s3.oss-cn-shanghai.aliyuncs.com   # OSS S3 网关（或 AWS/MinIO 端点）
+TP_S3_ACCESS_KEY=... TP_S3_SECRET_KEY=...                 # 仅 env/YAML（不走 CLI flag）
+TP_S3_BUCKET=bee-all TP_S3_REGION=cn-shanghai
+TP_S3_PREFIX=testpilot/                                  # 可选；键 = {prefix}{tenant_id}/{uri}
+# TP_S3_PATH_STYLE=true                                  # 私有 MinIO 需要；AWS/OSS 默认 virtual-hosted
+```
+
+- 写入：Worker 仍写共享产物目录（暂存），Scheduler 收到 TaskResult 时上传并删本地文件；
+  上传失败仅告警（产物行保留，读取时 404 便于发现）。
+- 读取：`GET /artifacts/{id}/content` 经后端；retention 清理经后端删除对象。
+- OSS S3 网关端点形如 `s3.oss-{region}.aliyuncs.com`（注意不是 `s3.{region}.aliyuncs.com`）；
+  要求 virtual-hosted 寻址（默认即可）。AK/SK 建议环境变量注入。
+
 ## 可观测性
 
 - **指标**：`GET /metrics`（Prometheus 格式，公开端点——生产仅对内网/Prom 可达）。

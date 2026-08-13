@@ -36,7 +36,14 @@
 表达式：`{{vars.x}}` / `{{response.json.user.name}}` / `{{response.status}}` / `{{env.BASE_URL}}`。
 断言：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS。
 
-完整可运行示例见 `scripts/e2e.py`（建项目 → 环境 → 4 种用例 → 计划 → 运行 → 断言结果）。
+完整可运行示例见 `scripts/e2e.py`（建项目 → 环境 → 用例（含 script_ref/套件）→ 计划 → 运行 → 断言结果）。
+
+**LOOP `parallel: true`**：迭代并发执行，每迭代取 vars 快照 + iterator 变量，迭代内 SET_VAR
+互不可见；结果按迭代序合并，任一迭代失败则该 LOOP 步骤失败（错误带迭代号）。
+
+**套件与脚本资产（v2）**：`POST /suites` 建有序用例集合，计划 item `ref_type=2` 引用后触发时
+展开；低代码脚本可存 `POST /scripts` 资产库，用例 definition `{"script_ref": "<id>"}` 引用，
+派发前内联执行。详见 `docs/v2-features.md`。
 
 ## 低代码用例（Python SDK）
 

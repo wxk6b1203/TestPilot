@@ -12,7 +12,8 @@ LLM 驱动的自动化集成测试平台 —— Phase 0–9（Copilot、压测�
 | 前端 | React 19 · TS · Vite · AntD | :5173 (dev) | 控制台 + Copilot 对话页 + 压测报告 |
 | echo 服务 | Python stdlib | :18080 | 联调用本地回显服务 |
 
-设计文档：`docs/design.md`（架构）· `docs/data-model.md`（31 表 ER）· `docs/roadmap.md`（实施路线）。
+设计文档：`docs/design.md`（架构）· `docs/data-model.md`（32 表 ER）· `docs/roadmap.md`（实施路线）·
+`docs/v2-features.md`（v2 第二批特性详述）。
 使用/部署/API：`docs/usage.md` · `docs/deployment.md` · `docs/api.md`。
 契约：`proto/testpilot/{common,worker,copilot}/v1/*.proto`。
 
@@ -105,11 +106,20 @@ worker/venv/bin/python scripts/e2e_phase9.py
   （PG + scheduler + worker 副本 + stress worker + copilot + Jaeger + Prometheus）+ `.env.example`；
   `TP_DB_DSN` 一键 SQLite→PostgreSQL（PG 全量 e2e 回归通过）
 - **调度**：Worker 能力路由（functional/lowcode/playwright/stress）+ 最少负载优先 + 共享/独占租户模型
-- **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、导出 OpenAPI 3
+- **套件（v2）**：`test_suites`/`test_suite_items`（仅 case 引用、有序、无嵌套），PlanItem
+  `ref_type=2` 触发时展开为 case 序列派发；`/suites` REST CRUD
+- **脚本资产库（v2）**：`scripts` 表 + `/scripts` REST CRUD；低代码用例 `script_ref` 引用，
+  派发前由 Scheduler 按租户解析内联为 `source`（沙箱零凭据不变）
+- **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、导出 OpenAPI 3；
+  Copilot 工具 `apply_openapi_diff`——按 method+uri 增量应用（added/changed/breaking/removed，
+  removed 仅报告不删除；auto_update_cases 回写用例 inline 快照）
+- **并行循环（v2）**：LOOP `parallel=true` 并发迭代，变量快照隔离，结果按迭代序合并
 - **结果模型**：TestRun → TestCaseResult → TestStepResult（点路径定址，含请求/响应快照与断言明细）+ Artifact（截图/trace/har）
+- **制品后端（v2）**：`artifact_backend=local|s3` 双实现（S3 兼容对象存储，键 `{prefix}{tenant}/{uri}`；
+  上报时同步上传、读取/retention 走后端）
 - **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（31 表；其中 5 张为 v2 预留——
-  grpc_apis / proto_files / test_suites / test_suite_items / api_tokens，GORM AutoMigrate 当前迁移 26 张）
+- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（32 表；其中 3 张为 v2 预留——
+  grpc_apis / proto_files / api_tokens，GORM AutoMigrate 当前迁移 29 张）
 
 ## 代码生成
 
@@ -157,7 +167,10 @@ testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key
 | `TP_JWT_EXPIRE_HOURS` | `24` | 令牌有效期 |
 | `TP_LOG_LEVEL` | `info` | debug/info/warn/error |
 | `TP_LOG_FORMAT` | `text` | `json` = 生产格式日志 |
-| `TP_ARTIFACT_DIR` | `.data/artifacts` | 产物根目录（Worker 与 Scheduler 须一致；生产换对象存储） |
+| `TP_ARTIFACT_DIR` | `.data/artifacts` | 产物根目录（Worker 与 Scheduler 须一致；s3 后端下为暂存目录） |
+| `TP_ARTIFACT_BACKEND` | `local` | 产物后端：`local` 本地目录 / `s3` 对象存储 |
+| `TP_S3_ENDPOINT` / `TP_S3_BUCKET` / `TP_S3_ACCESS_KEY` / `TP_S3_SECRET_KEY` | 空 | S3 兼容端点与桶（OSS 端点形如 `https://s3.oss-cn-shanghai.aliyuncs.com`；AK/SK 仅 env/YAML，不走 CLI） |
+| `TP_S3_REGION` / `TP_S3_PREFIX` / `TP_S3_USE_SSL` / `TP_S3_PATH_STYLE` | 空/空/`true`/`false` | 地域、对象键前缀、TLS、path-style 寻址（私有 MinIO 用） |
 | `TP_RETENTION_RUN_DAYS` | `0` | 运行数据保留天数（0=永久；>0 时级联清理） |
 | `TP_RETENTION_INTERVAL_MIN` | `60` | 保留清理轮询间隔 |
 | `TP_BODY_LIMIT_MB` | `64` | 请求体上限（OpenAPI 导入需要较大值） |
@@ -190,6 +203,8 @@ GET|POST /environments      PUT|DELETE /environments/{id}
 GET|POST /variables         PUT|DELETE /variables/{id}
 GET|POST /apis              GET|PUT|DELETE /apis/{id}
 GET|POST /cases             GET|PUT|DELETE /cases/{id}
+GET|POST /suites            GET|PUT|DELETE /suites/{id}      # 套件（case_ids 有序）
+GET|POST /scripts           GET|PUT|DELETE /scripts/{id}     # 低代码脚本资产
 GET|POST /plans             GET|PUT|DELETE /plans/{id}
 POST /plans/{id}/run        GET  /runs  GET /runs/{id}
 POST /import/openapi        POST /import/curl   GET /export/openapi?project_id=
@@ -231,6 +246,6 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 ## MVP 边界（未含）
 
 - 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）、gRPC 调用步骤
-- OAuth2（非 OIDC）登录、对象存储制品后端
-- suite 引用展开（PlanItem ref_type=2）
-- Copilot：ApplyOpenApiDiff 未实现（proto 占位）
+- OAuth2（非 OIDC）登录
+- api_call 步骤 api_id 引用的派发期解析（ApplyOpenApiDiff 的 auto_update_cases 已回写
+  inline 快照；直接手写 api_id 的用例仍会报错）

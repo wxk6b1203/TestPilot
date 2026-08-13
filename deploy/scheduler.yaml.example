@@ -37,3 +37,14 @@ idle_timeout_sec: 0
 
 # —— Copilot ——
 copilot_url: http://127.0.0.1:8100  # /copilot-api/* 反代目标（生产 compose 设 http://copilot:8100；空=关闭反代）
+
+# —— 制品后端（local | s3）——
+artifact_backend: local           # s3 = 对象存储（键 {s3_prefix}{tenant_id}/{uri}）
+s3_endpoint: ""                   # 如 https://s3.oss-cn-shanghai.aliyuncs.com（OSS S3 网关；非 s3.{region}.aliyuncs.com）
+s3_access_key: ""                 # 敏感：仅 env/YAML，不注册 CLI flag
+s3_secret_key: ""                 # 敏感：同上
+s3_bucket: ""
+s3_region: ""
+s3_prefix: ""                     # 可选：多实例共享 bucket 时区分
+s3_use_ssl: true
+s3_path_style: false              # true=path-style（私有 MinIO）；AWS/OSS 用 virtual-hosted

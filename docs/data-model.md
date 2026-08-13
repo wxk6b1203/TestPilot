@@ -2,9 +2,9 @@
 
 > 与 `docs/design.md` 第 3/4 章领域模型、第 9 章存储、`proto/testpilot/common/v1/types.proto` 对齐。
 > 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
-> 创建/演进**（`scheduler/internal/model`，当前 26 张）；`docs/sql/*.sql` 为生产 DDL 参考脚本
-> （31 表，含 5 张 v2 预留——grpc_apis / proto_files / test_suites / test_suite_items / api_tokens，
-> 尚未进 GORM 模型，随 v2 批次落地）。
+> 创建/演进**（`scheduler/internal/model`，当前 29 张——含 v2 已落地的 test_suites /
+> test_suite_items / scripts）；`docs/sql/*.sql` 为生产 DDL 参考脚本
+> （32 表，含 3 张 v2 预留——grpc_apis / proto_files / api_tokens，尚未进 GORM 模型，随 v2 第三批落地）。
 
 ## 0. 约定
 
@@ -261,6 +261,24 @@ UNIQUE `(project_id, environment_id, category, key)`（COALESCE environment_id�
 | suite_id | BIGINT FK | INDEX `(suite_id, order)` |
 | case_id | BIGINT FK | |
 | order | INT | |
+
+> 注：DDL 中 test_suite_items 无 tenant_id 列（跟随套件）；GORM 模型对齐此形态。
+> v2 已落地（套件展开见 `docs/v2-features.md`）。
+
+### scripts（低代码脚本资产，v2 落地）
+| 列 | 类型 | 说明 |
+|----|------|------|
+| id | BIGINT PK | |
+| tenant_id | BIGINT | INDEX `(tenant_id, project_id)` |
+| project_id | BIGINT FK | |
+| name | VARCHAR | |
+| description | TEXT | |
+| language | VARCHAR | 默认 python |
+| content | TEXT | 脚本源码 |
+| created_at / updated_at / deleted_at | TIMESTAMPTZ | 软删 |
+
+> 与 Artifact（run 产物，随保留策略清理）生命周期解耦；`LowCodeCase.script_ref` 引用本表，
+> Scheduler 派发前内联为 source（详见 `docs/v2-features.md`）。
 
 ### test_plans
 | 列 | 类型 | 说明 |

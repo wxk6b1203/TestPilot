@@ -17,10 +17,10 @@
 >
 > 标注 `（提案，待确认）` 的条目为合理默认，可在评审后调整。所有 `（待澄清）` 项均已确认（见第 15 章），当前无挂起的架构分叉。
 >
-> **落地状态（2026-08-13）**：Phase 0–9 已全部交付，本文档的组件/模型/流程描述与实现一致，以下三处为实施期的务实替代（语义等价、接口预留，生产可平滑替换）：
+> **落地状态（2026-08-14）**：Phase 0–9 + v2 第一批/第二批已交付，本文档的组件/模型/流程描述与实现一致，以下为实施期的务实替代（语义等价、接口预留，生产可平滑替换）：
 > - 压测时序指标：VictoriaMetrics → **`stress_metric_points` 表**（单库即可查询/清理，报告页直接消费；换 VictoriaMetrics 只动存储适配层）。
-> - 敏感变量保管：Vault → **应用层 redaction**（`variables` 表 sensitive 标记 + secret_ref 引用，读出即落 `secret_read` 审计；Vault 对接挂起到 v2 另议）。
-> - 制品存储：对象存储 → **本地文件系统**（`TP_ARTIFACT_DIR` 共享目录，Scheduler/Worker 约定一致；对象存储后端在 v2 第二批）。
+> - 敏感变量保管：Vault → **应用层 redaction**（`variables` 表 sensitive 标记 + secret_ref 引用，读出即落 `secret_read` 审计；Vault 对接挂起另议）。
+> - 制品存储：**已落地对象存储后端**（v2 第二批）——`artifactstore` 包 `local`/`s3` 双实现（Aliyun OSS S3 网关实测通过），键 `{prefix}{tenant}/{uri}`；本地 FS 为默认形态。
 >
 > 另：运行库 schema 由 GORM AutoMigrate 管理（非 golang-migrate）；`docs/sql/*.sql` 为生产 DDL 参考脚本。
 

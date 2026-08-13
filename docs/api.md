@@ -26,6 +26,18 @@
 | POST | 同上 | member | 创建（plans 体含 `items[]`，item 需 `ref_type:1` + `ref_id`） |
 | GET/PUT/DELETE | `/{资源}/{id}` | GET viewer / 写 member | 单资源操作 |
 
+## 套件 / 脚本资产（v2）
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET/POST | /suites | viewer/member | `{name, description, project_id, case_ids[]}`；case_ids 有序（order=下标） |
+| GET/PUT/DELETE | /suites/{id} | viewer/member | 更新时 items 全量替换；删除连带 items |
+| GET/POST | /scripts | viewer/member | `{name, project_id, language, content}`；content 必填，language 默认 python |
+| GET/PUT/DELETE | /scripts/{id} | viewer/member | 低代码用例 `definition.script_ref` 引用目标 |
+
+- 计划 item `ref_type=2` + `ref_id=<suite id>`：触发时按套件 items 顺序展开派发
+  （详见 `docs/v2-features.md`）。
+
 - `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
 - `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
 
