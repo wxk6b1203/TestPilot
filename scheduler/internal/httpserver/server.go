@@ -141,6 +141,8 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPost, "/import/curl", auth.RoleMember, s.importCurl)
 	h(fiber.MethodGet, "/export/openapi", auth.RoleViewer, s.exportOpenAPI)
 	h(fiber.MethodGet, "/export/curl", auth.RoleViewer, s.exportCurl)
+	h(fiber.MethodPost, "/import/postman", auth.RoleMember, s.importPostman)
+	h(fiber.MethodGet, "/export/postman", auth.RoleViewer, s.exportPostman)
 
 	// 运行
 	h(fiber.MethodPost, "/plans/:id/run", auth.RoleMember, s.runPlan)

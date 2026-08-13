@@ -118,7 +118,8 @@ worker/venv/bin/python scripts/e2e_phase9.py
   派发前批量解析为 inline 快照，保留 `override`；显式 inline 优先
 - **参数覆盖（v2 补完）**：计划条目 `param_overrides` 深合并进低代码 `parameters`
   （`ctx.parameters`），并追加为任务级模板变量（最高优先级，不改共享环境）
-- **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、导出 OpenAPI 3；
+- **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、Postman Collection v2.1
+  （folder 递归、query/header/body 映射、幂等）、导出 OpenAPI 3 / curl / Postman；
   Copilot 工具 `apply_openapi_diff`——按 method+uri 增量应用（added/changed/breaking/removed，
   removed 仅报告不删除；auto_update_cases 回写用例 inline 快照）
 - **并行循环（v2）**：LOOP `parallel=true` 并发迭代，变量快照隔离，结果按迭代序合并
@@ -217,8 +218,9 @@ GET|POST /suites            GET|PUT|DELETE /suites/{id}      # 套件（case_ids
 GET|POST /scripts           GET|PUT|DELETE /scripts/{id}     # 低代码脚本资产
 GET|POST /plans             GET|PUT|DELETE /plans/{id}
 POST /plans/{id}/run        GET  /runs  GET /runs/{id}
-POST /import/openapi        POST /import/curl   GET /export/openapi?project_id=
-GET  /export/curl?project_id=
+POST /import/openapi        POST /import/curl   POST /import/postman
+GET  /export/openapi?project_id=   GET /export/curl?project_id=
+GET  /export/postman?project_id=
 GET  /workers               GET  /artifacts/{id}/content
 GET|POST /stress-plans      GET|PUT|DELETE /stress-plans/{id}
 POST /stress-plans/{id}/run GET  /stress-runs  GET /stress-runs/{id}

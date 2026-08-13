@@ -279,6 +279,19 @@ if ui_case is not None:
         print(f"✗ ui case artifacts missing screenshot/trace: kinds={kinds}")
         ok = False
 
+# ---- v2：Postman Collection 导入导出 ----
+pm_doc = {"info": {"name": "pm-demo", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+          "item": [{"name": "pm ping", "request": {
+              "method": "GET", "url": {"raw": "https://h.example/ping?x=1"}}}]}
+r = api.post("/api/v1/import/postman", json={"project_id": pid, "document": pm_doc})
+assert r.status_code == 200 and r.json()["created"] == 1, r.text
+r = api.get("/api/v1/export/postman", params={"project_id": pid})
+assert r.status_code == 200, r.text
+col = r.json()
+pm_ping = next((it for it in col["item"] if it["name"] == "GET /ping"), None)
+assert pm_ping is not None and "x=1" in pm_ping["request"]["url"]["raw"], col
+print("✓ postman import + export roundtrip")
+
 # ---- v2：租户配置开关（tenant_settings，admin+）----
 r = api.put("/api/v1/tenant/settings/e2e_flag", json={"value": "on"})
 assert r.status_code == 200, r.text

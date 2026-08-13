@@ -345,13 +345,13 @@
 
 > 详述见 `docs/v2-features.md`（含派发期解析与 param_overrides 的补完章节 §6）。
 
-### 第三批（大工程，需 Spike 前置）
+### 第三批（大工程，需 Spike 前置；2026-08-14 开工）
 | 项 | 前置 | 说明 |
 |---|---|---|
+| Postman 导入导出 | — | ✅ 已完成：collection v2.1 解析/生成（folder 递归、`{{base_url}}` 占位导出） |
 | gRPC 接口测试 | Spike F（proto reflection / 上传） | DDL `grpc_apis/proto_files` 已预留；GrpcApi CRUD + 引擎 GRPC_CALL 步骤 + Copilot `API_KIND_GRPC` |
 | 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | 沙箱内驱动浏览器（Page pydantic 封装经能力桥转发 Playwright 操作） |
 | 压测 behavior_case | 依赖低代码 Page 能力桥 | stress target_type=2 接低代码行为脚本 |
-| Postman 导入导出 | — | collection v2.1 解析/生成（对称已有 OpenAPI/curl） |
 
 ### 明确不做/另议
 - **OAuth2（非 OIDC）登录**：grant 类型未定（client_credentials 为 S2S、password 已弃用），待具体需求

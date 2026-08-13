@@ -83,8 +83,10 @@
 |---|---|---|---|
 | POST | /import/openapi | member | OpenAPI 3 JSON/YAML（幂等跳过重复） |
 | POST | /import/curl | member | curl 命令文本 → 接口 |
+| POST | /import/postman | member | Postman Collection v2.1 JSON（folder 递归、query/header/body 映射、幂等） |
 | GET | /export/openapi?project_id= | viewer | 导出 OpenAPI 3 |
 | GET | /export/curl?project_id= | viewer | 导出 curl 命令脚本（每接口一行） |
+| GET | /export/postman?project_id= | viewer | 导出 Postman Collection v2.1（`{{base_url}}` 占位） |
 | GET | /workers | viewer | 在线 Worker（能力/负载/标签） |
 
 ## Copilot 反代（不在 /api/v1 下）

@@ -442,3 +442,126 @@ func TestApplyOpenAPIDiffAutoUpdateCases(t *testing.T) {
 		t.Fatalf("unrelated case should not be touched: %s", gotB.Definition)
 	}
 }
+
+// ---- Postman 导入导出 ----
+
+const postmanJSON = `{
+  "info": {"name": "demo", "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"},
+  "item": [
+    {"name": "users folder", "item": [
+      {"name": "list users", "request": {
+        "method": "GET",
+        "url": {"raw": "https://api.example.com/users?page=2"},
+        "header": [{"key": "X-Token", "value": "t1"}, {"key": "Host", "value": "ignored"}]}},
+      {"name": "create user", "request": {
+        "method": "POST",
+        "url": {"raw": "https://api.example.com/users"},
+        "header": [{"key": "Content-Type", "value": "application/json"}],
+        "body": {"mode": "raw", "raw": "{\"name\": \"neo\"}"}}}
+    ]},
+    {"name": "ping (path form)", "request": {
+      "method": "GET",
+      "url": {"protocol": "https", "host": ["api.example.com"], "path": ["ping"]}}}
+  ]
+}`
+
+func TestImportPostman(t *testing.T) {
+	d := openTestDB(t)
+	res, err := ImportPostman(d, 1, 10, []byte(postmanJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created != 3 || res.Skipped != 0 {
+		t.Fatalf("got %+v", res)
+	}
+
+	// 幂等：重复导入全部跳过
+	res2, err := ImportPostman(d, 1, 10, []byte(postmanJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Created != 0 || res2.Skipped != 3 {
+		t.Fatalf("reimport got %+v", res2)
+	}
+
+	// 租户隔离
+	res3, err := ImportPostman(d, 2, 10, []byte(postmanJSON))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res3.Created != 3 {
+		t.Fatalf("tenant isolation got %+v", res3)
+	}
+
+	// 内容抽查：GET /users（query 拆分 + header 落库 + Host 忽略）
+	var users model.HttpApi
+	if err := d.Where("tenant_id = 1 AND project_id = 10 AND uri = '/users' AND method = 1").
+		First(&users).Error; err != nil {
+		t.Fatal(err)
+	}
+	if string(users.Params) != `[{"key":"page","value":"2"}]` {
+		t.Fatalf("params: %s", users.Params)
+	}
+	if string(users.Headers) != `[{"key":"X-Token","value":"t1"}]` {
+		t.Fatalf("headers: %s", users.Headers)
+	}
+	// POST /users body（JSON 探测）
+	var post model.HttpApi
+	if err := d.Where("tenant_id = 1 AND project_id = 10 AND uri = '/users' AND method = 2").
+		First(&post).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(post.Body), `"contentType":4`) ||
+		!strings.Contains(string(post.Body), `\"name\": \"neo\"`) { // 列内 JSON 转义存储
+		t.Fatalf("body: %s", post.Body)
+	}
+	// path 数组形态
+	var ping model.HttpApi
+	if err := d.Where("tenant_id = 1 AND project_id = 10 AND uri = '/ping'").
+		First(&ping).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	// 非法文档
+	if _, err := ImportPostman(d, 1, 10, []byte(`{"info":{}}`)); err == nil {
+		t.Fatal("missing item should error")
+	}
+	if _, err := ImportPostman(d, 1, 10, []byte(`not json`)); err == nil {
+		t.Fatal("invalid json should error")
+	}
+}
+
+func TestExportPostmanRoundtrip(t *testing.T) {
+	d := openTestDB(t)
+	if _, err := ImportPostman(d, 1, 10, []byte(postmanJSON)); err != nil {
+		t.Fatal(err)
+	}
+	doc, err := ExportPostman(d, 1, 10, "roundtrip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var col map[string]any
+	if err := json.Unmarshal(doc, &col); err != nil {
+		t.Fatalf("export not valid json: %v", err)
+	}
+	if col["info"].(map[string]any)["name"] != "roundtrip" {
+		t.Fatalf("title missing: %v", col["info"])
+	}
+	items := col["item"].([]any)
+	if len(items) != 3 {
+		t.Fatalf("items=%d, want 3", len(items))
+	}
+	// 首条应有 {{base_url}} 占位与 query
+	first := items[0].(map[string]any)
+	if !strings.Contains(first["request"].(map[string]any)["url"].(map[string]any)["raw"].(string), "{{base_url}}") {
+		t.Fatalf("base_url placeholder missing: %v", first)
+	}
+	// 导出→导入 roundtrip：换项目导入应全量重建
+	res, err := ImportPostman(d, 1, 11, doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Created != 3 {
+		t.Fatalf("roundtrip import: %+v", res)
+	}
+}

@@ -82,6 +82,48 @@ func (s *Server) exportOpenAPI(ctx fiber.Ctx) error {
 	return ctx.Status(fiber.StatusOK).Send(doc)
 }
 
+type importPostmanReq struct {
+	ProjectID int64           `json:"project_id"`
+	Document  json.RawMessage `json:"document"` // Postman Collection v2.1 JSON
+}
+
+func (s *Server) importPostman(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	var in importPostmanReq
+	if !decode(ctx, &in) {
+		return nil
+	}
+	if in.ProjectID == 0 || len(in.Document) == 0 {
+		return writeErr(ctx, fiber.StatusBadRequest, "project_id and document required")
+	}
+	res, err := impexp.ImportPostman(s.db, c.TenantID, in.ProjectID, in.Document)
+	if err != nil {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeImportParse, err.Error()))
+	}
+	return writeJSON(ctx, fiber.StatusOK, res)
+}
+
+func (s *Server) exportPostman(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	pid := queryInt(ctx, "project_id")
+	if pid == 0 {
+		return writeErr(ctx, fiber.StatusBadRequest, "project_id required")
+	}
+	title := "testpilot export"
+	var p model.Project
+	if err := s.db.Select("name").Where("id = ? AND tenant_id = ?", pid, c.TenantID).
+		First(&p).Error; err == nil {
+		title = p.Name
+	}
+	doc, err := impexp.ExportPostman(s.db, c.TenantID, pid, title)
+	if err != nil {
+		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+	}
+	ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="collection.json"`)
+	return ctx.Status(fiber.StatusOK).Send(doc)
+}
+
 func (s *Server) exportCurl(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	pid := queryInt(ctx, "project_id")
