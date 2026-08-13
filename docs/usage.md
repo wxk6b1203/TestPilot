@@ -1,5 +1,24 @@
 # TestPilot 使用指南
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. 概念速览
+2. 声明式用例
+3. 低代码用例（Python SDK）
+4. UI 用例（Playwright）
+5. 定时调度
+6. 通知
+7. 配额
+8. OIDC 登录
+9. Copilot
+10. 压测
+11. 审计
+
+---
+
+
 面向测试/开发用户的操作手册。部署见 `docs/deployment.md`，REST 参考见 `docs/api.md`。
 
 ## 概念速览
@@ -43,7 +62,11 @@
 
 **套件与脚本资产（v2）**：`POST /suites` 建有序用例集合，计划 item `ref_type=2` 引用后触发时
 展开；低代码脚本可存 `POST /scripts` 资产库，用例 definition `{"script_ref": "<id>"}` 引用，
-派发前内联执行。详见 `docs/v2-features.md`。
+派发前内联执行。
+
+**api_id 引用与参数覆盖（v2 补完）**：步骤 `api_call` 可只写 `api_id`（含嵌套步骤），派发前
+自动解析为接口快照；计划条目 `param_overrides` 深合并进低代码 `parameters`（`ctx.parameters`），
+并追加为 `{{key}}` 模板变量（优先级最高）。详见 `docs/v2-features.md`。
 
 ## 低代码用例（Python SDK）
 

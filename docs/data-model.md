@@ -1,5 +1,26 @@
 # TestPilot 数据模型（ER 与表结构）
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. 约定
+2. ER 图
+3. 租户与访问控制
+4. 项目 / 环境 / 变量 / 证书
+5. 接口
+6. 目录树
+7. 测试用例 / 套件 / 计划
+8. 运行结果
+9. 压力测试
+10. Copilot
+11. 审计 / 配额
+12. 索引与查询要点
+13. 备注
+
+---
+
+
 > 与 `docs/design.md` 第 3/4 章领域模型、第 9 章存储、`proto/testpilot/common/v1/types.proto` 对齐。
 > 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
 > 创建/演进**（`scheduler/internal/model`，当前 29 张——含 v2 已落地的 test_suites /

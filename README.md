@@ -110,6 +110,10 @@ worker/venv/bin/python scripts/e2e_phase9.py
   `ref_type=2` 触发时展开为 case 序列派发；`/suites` REST CRUD
 - **脚本资产库（v2）**：`scripts` 表 + `/scripts` REST CRUD；低代码用例 `script_ref` 引用，
   派发前由 Scheduler 按租户解析内联为 `source`（沙箱零凭据不变）
+- **api_id 派发期解析（v2 补完）**：api_call 步骤的 `api_id` 引用（含 if/loop/retry 嵌套）
+  派发前批量解析为 inline 快照，保留 `override`；显式 inline 优先
+- **参数覆盖（v2 补完）**：计划条目 `param_overrides` 深合并进低代码 `parameters`
+  （`ctx.parameters`），并追加为任务级模板变量（最高优先级，不改共享环境）
 - **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、导出 OpenAPI 3；
   Copilot 工具 `apply_openapi_diff`——按 method+uri 增量应用（added/changed/breaking/removed，
   removed 仅报告不删除；auto_update_cases 回写用例 inline 快照）
@@ -247,5 +251,3 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 - 低代码 Page 模型（沙箱内驱动浏览器，需能力桥扩展 UI 操作）、gRPC 调用步骤
 - OAuth2（非 OIDC）登录
-- api_call 步骤 api_id 引用的派发期解析（ApplyOpenApiDiff 的 auto_update_cases 已回写
-  inline 快照；直接手写 api_id 的用例仍会报错）

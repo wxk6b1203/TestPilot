@@ -1,5 +1,20 @@
 # TestPilot 部署指南
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. 启动配置（YAML / env / flag）
+2. 单机开发（scripts/dev.sh）
+3. 生产：docker compose
+4. 数据库：SQLite → PostgreSQL
+5. 制品存储：本地目录 → S3
+6. 可观测性
+7. 安全清单
+
+---
+
+
 两种本地调试形态 + 生产 compose 模板（design 13.4；首期不引入 k8s）。
 
 ## 启动配置（YAML / env / flag）

@@ -1,5 +1,23 @@
 # TestPilot REST API 参考
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. 认证 / 租户
+2. 领域资源（同构 CRUD）
+3. 套件 / 脚本资产（v2）
+4. 运行结果
+5. 压测
+6. 导入导出 / Worker
+7. Copilot 反代（不在 /api/v1 下）
+8. 定时调度 / 通知 / 配额 / 成员 / 身份源 / 审计
+9. Copilot 会话持久化
+10. 其他端点（不在 /api/v1 下）
+
+---
+
+
 基准：`/api/v1`；除 login 与 OIDC 链路外均需 `Authorization: Bearer <token>`。
 错误统一 `{"error":{"code","message"}}`，码表见 `docs/error-codes.md`。
 **ID 约定**：响应中 id/*_id 为字符串（雪花 ID 超 JS 安全整数）；请求两种形态都收。
@@ -26,6 +44,9 @@
 | POST | 同上 | member | 创建（plans 体含 `items[]`，item 需 `ref_type:1` + `ref_id`） |
 | GET/PUT/DELETE | `/{资源}/{id}` | GET viewer / 写 member | 单资源操作 |
 
+- `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
+- `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
+
 ## 套件 / 脚本资产（v2）
 
 | 方法 | 路径 | 角色 | 说明 |
@@ -37,9 +58,6 @@
 
 - 计划 item `ref_type=2` + `ref_id=<suite id>`：触发时按套件 items 顺序展开派发
   （详见 `docs/v2-features.md`）。
-
-- `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
-- `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
 
 ## 运行结果
 

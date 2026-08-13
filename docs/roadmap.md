@@ -1,5 +1,23 @@
 # TestPilot 实施方案（Roadmap）
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. 进度总览
+2. 实施原则
+3. 工作流与依赖
+4. 阶段划分（Phase 0–9）
+5. MVP 定义
+6. 风险登记与 Spike 清单
+7. 里程碑
+8. 工程规范
+9. 与设计的可追溯
+10. v2 范围
+
+---
+
+
 > 基于 `docs/design.md`、`proto/`、`docs/data-model.md` 制定的分阶段落地计划。
 > 原则：**契约先行、端到端骨架优先、垂直切片、风险驱动（Spike 前置）、多租户/认证内建于 day 1**。
 > 每阶段交付**可运行、可演示、可回滚**的增量。
@@ -18,6 +36,7 @@
 | 依赖卫生 | ✅ | locust/pyyaml/pytest(dev) 声明入 pyproject；worker 镜像含 locust（容器压测冒烟通过） |
 | v2 第一批 | ✅ | curl 导出（/export/curl）、Copilot 反代（/copilot-api/* → TP_COPILOT_URL）、OpenAPI URL 导入（gRPC openapi_url 分支 + SSRF 私网防护） |
 | v2 第二批 | ✅ | suite 引用展开、ApplyOpenApiDiff、对象存储制品后端（local/S3）、loop parallel、lowcode script_ref（详述 `docs/v2-features.md`） |
+| v2 第二批补完 | ✅ | api_call 步骤 api_id 派发期解析、PlanItem param_overrides 应用（原遗留边界清零） |
 
 **v2 待办**（按批次，详见本文件末尾「v2 范围」）：
 - 第一批（已完成）：curl 导出 / Copilot 反代 / OpenAPI URL 导入
@@ -324,8 +343,7 @@
 | loop parallel | engine.py `parallel=true not supported` | ✅ 并发迭代 + vars 快照隔离 + 按迭代序合并 + 统一抛首个失败（带迭代号） |
 | lowcode script_ref | engine.py `script_ref not supported` | ✅ `scripts` 资产库 + `/scripts` CRUD + 派发前按租户解析内联 source |
 
-> 详述见 `docs/v2-features.md`。遗留边界：api_call 步骤 api_id 引用的派发期解析未实现
-> （diff 回写 inline 的用例不受影响）；计划 item param_overrides 仍未应用。
+> 详述见 `docs/v2-features.md`（含派发期解析与 param_overrides 的补完章节 §6）。
 
 ### 第三批（大工程，需 Spike 前置）
 | 项 | 前置 | 说明 |

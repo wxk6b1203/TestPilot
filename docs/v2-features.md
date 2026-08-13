@@ -1,5 +1,19 @@
 # TestPilot v2 第二批特性说明
 
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+
+## 目录
+
+1. suite 引用展开（PlanItem ref_type=2）
+2. ApplyOpenApiDiff（OpenAPI 增量应用）
+3. lowcode script_ref（脚本资产库）
+4. LOOP parallel（要点）
+5. 对象存储制品后端（要点）
+6. api_id 派发期解析与 param_overrides（第二批补完）
+
+---
+
+
 > v2 第二批交付说明（2026-08-14）。前三节（suite 引用展开 / ApplyOpenApiDiff / lowcode script_ref）
 > 为详细设计记录，后两节为 loop parallel 与对象存储制品后端的要点速览。
 > 实现位置：Scheduler `internal/{runner,impexp,httpserver,artifactstore,dispatch,retention}`，
@@ -49,7 +63,7 @@ GET|PUT|DELETE /suites/{id}  （viewer 读；member 写）
   case_result。run summary 统计展开后的实际数量。
 - **套件缺失/被删**：该 plan item 跳过，WARN 日志；不影响其他 item。
 - **套件内 case 缺失**：与直接引用相同——跳过该 case（WARN）。
-- **param_overrides 未应用**：与 v1 直接引用行为一致（该字段后续批次接入）。
+- **param_overrides 对展开出的每个 case 一致生效**：条目级覆盖作用于套件的全部成员，见 §6.2。
 - 展开发生在触发时刻（读套件最新内容），改套件后下次触发即生效。
 
 ### 1.6 测试
@@ -110,8 +124,8 @@ Copilot 工具 `apply_openapi_diff(project_id, openapi_document, auto_update_cas
 ### 2.5 auto_update_cases（用例内联快照回写）
 
 声明式用例的 `api_call` 步骤形如 `{"api_id": "...", "override": {...}}`——运行态由 Scheduler
-在派发前解析（当前 MVP 尚未实现 api_id 的派发期解析，见 2.6）。diff 检测到接口变更时，
-`auto_update_cases=true` 会把**新 spec 的快照写回用例 definition**：
+在派发前解析（§6.1）。diff 检测到接口变更时，`auto_update_cases=true` 会把**新 spec 的快照
+写回用例 definition**：
 
 - 递归遍历步骤树（顶层 steps + `if_step`/`loop_step`/`retry_step` 嵌套内的
   `then_steps`/`else_steps`/`body_steps`/`body_step`），命中 `api_id == 变更接口` 的
@@ -120,10 +134,11 @@ Copilot 工具 `apply_openapi_diff(project_id, openapi_document, auto_update_cas
 - **保留 `api_id` 引用与 `override`**——inline 是快照缓存，不破坏引用语义与用例覆盖。
 - 响应 `updated_case_ids` 列出被回写的用例；未引用变更接口的用例不被触碰。
 
-### 2.6 已知边界
+### 2.6 与派发期解析的关系
 
-- api_id 引用的**派发期解析**（runner 内联，类似 script_ref）尚未实现：Worker 收到仅含
-  api_id 的步骤仍会报错——经 diff 回写 inline 后的用例不受影响。该缺口在后续批次补。
+auto_update_cases 回写 inline 是**展示层快照**；运行时的兜底是**派发期解析**（§6.1）——
+api_call 步骤仅含 api_id 时，Scheduler 在派发前统一解析为 inline 快照。二者叠加使
+「引用接口」形态在更新 spec 后即刻生效，不依赖回写时机。
 
 ### 2.7 测试
 
@@ -177,8 +192,8 @@ Worker 无 DB、引擎只接受 `source`，因此**解析发生在 Scheduler 派
 ### 3.5 语义
 
 - **更新即时生效**：改脚本内容，下次触发即用新内容（派发时解析，无缓存）。
-- **一次写、处处引用**：同一流程被多个用例引用；控制台展示的 definition 仍是 ref 形态
-  （改写回写需借助 ApplyOpenApiDiff 的 auto_update_cases 同款机制，未实现）。
+- **一次写、处处引用**：同一流程被多个用例引用；控制台展示的 definition 保持 ref 形态，
+  运行态由派发期解析兜底，无需回写。
 - 沙箱执行路径与 source 完全一致（subprocess 沙箱 + 能力桥，零凭据）。
 
 ### 3.6 测试
@@ -217,3 +232,33 @@ Worker 无 DB、引擎只接受 `source`，因此**解析发生在 Scheduler 派
   CLI flag，避免进程列表泄漏），勿入代码库；建议环境变量注入。
 - 配置项：`artifact_backend` `s3_endpoint` `s3_access_key` `s3_secret_key` `s3_bucket`
   `s3_region` `s3_prefix` `s3_use_ssl` `s3_path_style`（详见 `deploy/scheduler.yaml.example`）。
+
+## 6. api_id 派发期解析与 param_overrides（第二批补完）
+
+> 本批交付时遗留的两处边界（roadmap 曾标注"未实现"），已随补完提交落地。
+
+### 6.1 api_call 步骤 api_id 引用（派发期解析）
+
+声明式步骤树（含 `if_step`/`loop_step`/`retry_step` 嵌套）中，`api_call.api_id` 且无
+`inline` 的步骤在派发前统一解析：
+
+- **批量加载**：收集用例全部引用 → 一次查询本租户接口（`tenant_id + id IN`）→ 逐步骤写入
+  `inline` 快照（proto `HttpApi` 全量：method/uri/params/headers/body/…）。
+- **保留引用与覆盖**：`api_id` 与 `override` 原样保留——Worker 运行时 inline 优先并叠加
+  override，行为与解析前的引用语义一致。
+- **显式 inline 优先**：已有 inline 的步骤不覆盖（用户手写快照即用户意图）。
+- **解析失败即不派发**：接口缺失 / 跨租户 / 非法 id → 该 case_result 置 FAILED（error 说明
+  原因），其余 case 不受影响。
+- **Worker 侧契约**：引擎收到裸 `api_id` 视为契约破坏（"must be resolved by scheduler"）。
+- 与 §2.6 的关系：auto_update_cases 回写是快照，派发期解析是运行时兜底。
+
+### 6.2 PlanItem.param_overrides（条目级参数覆盖）
+
+- **形态**：JSON 对象，存于 `test_plan_items.param_overrides`（REST 创建/更新计划条目时传入）。
+- **低代码用例**：**深合并**进 case `parameters`（覆盖值优先；嵌套对象递归合并）——SDK 经
+  `ctx.parameters` 读取。
+- **全部用例类型**：同时追加为**任务级模板变量**（`{{key}}` 可渲染；非字符串值 JSON
+  序列化），排在环境变量之后——Worker 按序取末值，覆盖值优先级最高。
+- **作用域**：仅本次派发的任务（共享 `ExecutionEnv` 不被修改）；套件展开时条目覆盖对每个
+  成员一致生效（§1.5）。
+- **典型用法**：同一用例挂在不同计划条目下、以不同参数运行（如分环境/分租户回归）。
