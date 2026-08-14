@@ -88,6 +88,9 @@ worker/venv/bin/python scripts/e2e_phase9.py
   与 Locust 路径一致（报告页零改动）
 - **表达式语言**：`{{expr}}` 模板 + AST 白名单安全求值（无函数调用/dunder），
   作用域含环境变量、`vars`、`response`（`response.json` / `.status` / `.headers` / `.elapsed_ms`）
+- **默认 auth 注入**：项目/环境级 `category=HEADER` 的变量自动注入每个 api_call 请求头
+  （声明式与低代码能力桥一致生效；接口/SDK 显式同名头优先，忽略大小写；值支持 `{{var}}`
+  模板；敏感变量不注入——沙箱零凭据不变）
 - **统一断言**：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/NOT_EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS
 - **多租户**：tenant_id 全表隔离（应用层过滤），雪花 ID，REST 层 ID 字符串化（JS 安全、输入字符串自动还原）
 - **认证 / RBAC（Phase 8）**：本地账号（bcrypt + JWT 24h；种子 `admin/admin123` = tenant 1 owner）

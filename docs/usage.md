@@ -33,6 +33,9 @@
 ```
 
 - **多租户**：所有数据按租户隔离；`POST /tenants` 自助建租户，`POST /auth/switch-tenant` 切换。
+- **默认 auth（HEADER 变量注入）**：建一条 `category=HEADER` 的环境/项目变量（如
+  `Authorization: Bearer xxx`），声明式 api_call 与低代码 `ctx.http` 的所有请求自动携带；
+  接口或 SDK 显式配置的同名头优先（忽略大小写）；值可含 `{{var}}` 模板；敏感变量不注入。
 - **角色**：owner=1 / admin=2 / member=3 / viewer=4（小=高）。GET 只需 viewer；领域写要 member；
   租户治理（成员/配额/通知/身份源/审计）要 admin。
 

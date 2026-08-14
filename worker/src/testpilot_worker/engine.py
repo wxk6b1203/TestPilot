@@ -65,11 +65,15 @@ class CaseRunner:
         self.on_progress = on_progress
         self.vars: dict[str, Any] = {}
         self.skipped_secrets: list[str] = []
+        # 项目/环境级 HEADER 类变量：自动注入每个 api_call 请求头（接口显式配置同名头优先）
+        self.auto_headers: dict[str, str] = {}
         for v in self.env.variables:
             if v.sensitive:
                 self.skipped_secrets.append(v.key)
                 continue
             self.vars[v.key] = v.value
+            if v.category == pb.VARIABLE_CATEGORY_HEADER:
+                self.auto_headers[v.key] = v.value
         self.base_url = self.env.base_url or self.env.environment.base_url
         self.last_response: dict[str, Any] | None = None
         self.step_results: list[pb.TestStepResult] = []
@@ -252,6 +256,12 @@ class CaseRunner:
 
     async def _do_api_call(self, spec: pb.ApiCallStep, logs: list[str]):
         api = self._resolve_api(spec)
+        # 默认 auth 注入：HEADER 类环境变量并入（值可含 {{var}} 模板，http_exec 统一渲染；
+        # 接口显式配置的同名头优先，忽略大小写）
+        existing = {kv.key.lower() for kv in api.headers}
+        for k, v in self.auto_headers.items():
+            if k.lower() not in existing:
+                api.headers.add(key=k, value=v)
         req_snap, resp_snap, resp_scope = await http_exec.execute(
             self.client, api, self.base_url, self.scope())
         self.last_response = resp_scope
@@ -502,8 +512,10 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
 
     try:
         async with httpx.AsyncClient(verify=True) as client:
+            auto_headers = {v.key: v.value for v in task.env.variables
+                            if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
             backend: ExecutionBackend = SubprocessBackend(
-                lambda args: bridge_http_handler(client, base_url, args),
+                lambda args: bridge_http_handler(client, base_url, args, auto_headers),
                 extra_ops={"ui_action": ui.bridge_ui_handler(get_session)})
             timeout = min(task.timeout.ToSeconds() or 120, 300)
             res = await backend.run(lc.source, lc.entry or "run", payload, timeout)

@@ -279,10 +279,12 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     pace_task = asyncio.create_task(ramp_and_stop())
 
     # 预起 K 个沙箱常驻进程（K = 本 Worker 分摊并发）
+    auto_headers = {v.key: v.value for v in task.env.variables
+                    if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
     async with httpx.AsyncClient(verify=True) as client:
         backends = [
             SubprocessBackend(
-                lambda args, _c=client: bridge_http_handler(_c, base_url, args),
+                lambda args, _c=client: bridge_http_handler(_c, base_url, args, auto_headers),
                 extra_ops={"iteration_gate": gate})
             for _ in range(assigned)
         ]

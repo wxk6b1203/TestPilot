@@ -266,19 +266,34 @@ class SubprocessBackend(ExecutionBackend):
             await respond(call_id, False, f"{type(e).__name__}: {e}")
 
 
+def env_auto_headers(env: Any) -> dict[str, str]:
+    """项目/环境级 HEADER 类变量（非敏感）→ 自动注入头集合。"""
+    out: dict[str, str] = {}
+    for v in env.variables:
+        if not v.sensitive and v.category == 1:  # VARIABLE_CATEGORY_HEADER
+            out[v.key] = v.value
+    return out
+
+
 async def bridge_http_handler(client: httpx.AsyncClient, base_url: str,
-                              args: dict[str, Any]) -> dict[str, Any]:
-    """能力桥 http_request 的 Worker 侧实现（引擎 httpx 客户端复用）。"""
+                              args: dict[str, Any],
+                              auto_headers: dict[str, str] | None = None) -> dict[str, Any]:
+    """能力桥 http_request 的 Worker 侧实现（引擎 httpx 客户端复用）。
+    auto_headers = HEADER 类环境变量默认注入（SDK 显式传的同名头优先，忽略大小写）。"""
     uri = str(args.get("uri") or "")
     if not (uri.startswith("http://") or uri.startswith("https://")):
         uri = base_url.rstrip("/") + "/" + uri.lstrip("/")
     egress.check_url(uri)
     body = args.get("body")
+    headers = {str(k).lower(): v for k, v in (args.get("headers") or {}).items()}
+    if auto_headers:
+        for k, v in auto_headers.items():
+            headers.setdefault(k.lower(), v)  # SDK 显式头优先
     kwargs: dict[str, Any] = {
         "method": str(args.get("method") or "GET"),
         "url": uri,
         "params": args.get("params") or None,
-        "headers": args.get("headers") or None,
+        "headers": headers or None,
         "timeout": min(float(args.get("timeout") or 30), 120),
     }
     if body is not None:

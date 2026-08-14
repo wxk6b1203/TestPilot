@@ -227,6 +227,20 @@ case7 = api.post("/api/v1/cases", json={
     ]}}).json()
 print(f"✓ case7={case7['id']} (param_overrides)")
 
+# ---- v2：HEADER 类变量自动注入（默认 auth）----
+# 环境已建 category=HEADER 的 token/greeting 变量 → 每个 api_call 自动携带
+case11 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-auto-header", "type": 1,
+    "definition": {"steps": [
+        {"id": "1", "type": 1, "name": "echo with auto headers",
+         "api_call": {"inline": {"method": 1, "uri": "/echo"}}},
+        {"id": "2", "type": 3, "name": "assert injected headers",
+         "assertion": {"assertions": [
+             {"target": 4, "path": "$.headers.token", "op": 1, "expected": "t-123"},
+             {"target": 4, "path": "$.headers.greeting", "op": 1, "expected": "hello"}]}},
+    ]}}).json()
+print(f"✓ case11={case11['id']} (HEADER 类变量自动注入)")
+
 # ---- v2：gRPC 接口（GRPC_CALL 步骤 + server reflection；目标地址取环境 base_url）----
 grpc_env = api.post("/api/v1/environments", json={
     "project_id": pid, "name": "grpc-target", "base_url": "127.0.0.1:19090"}).json()
@@ -294,6 +308,7 @@ plan = api.post("/api/v1/plans", json={
         {"ref_type": 1, "ref_id": case7["id"], "enabled": True, "order": 8,
          "param_overrides": {"n": 7}},
         {"ref_type": 1, "ref_id": case9["id"], "enabled": True, "order": 9},
+        {"ref_type": 1, "ref_id": case11["id"], "enabled": True, "order": 10},
     ]}).json()
 r = api.post(f"/api/v1/plans/{plan['id']}/run", json={})
 if r.status_code != 200:
@@ -318,7 +333,8 @@ else:
 ok = True
 expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2,
           case4["name"]: 2, case5["name"]: 2, case6["name"]: 2,
-          case7["name"]: 2, case9["name"]: 2}  # suite 展开使 case1/case3 各出现两次
+          case7["name"]: 2, case9["name"]: 2,
+          case11["name"]: 2}  # suite 展开使 case1/case3 各出现两次
 summary = run.get("summary") or {}
 print(f"run status={run['status']} summary={json.dumps(summary)}")
 if run["status"] != 3:  # 一个 case 失败 → run FAILED

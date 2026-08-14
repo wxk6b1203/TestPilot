@@ -3,6 +3,7 @@
 
 import asyncio
 
+import httpx
 import pytest
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot.worker.v1 import worker_pb2 as wpb
@@ -266,3 +267,98 @@ def test_loop_parallel_no_bounds_fails():
     spec = pb.LoopStep(parallel=True)
     with pytest.raises(StepFailure, match="no bounds"):
         asyncio.run(r._do_loop(spec, "1"))
+
+
+# ---- HEADER 类变量自动注入（默认 auth）----
+
+import json as _json
+import threading as _threading
+from http.server import BaseHTTPRequestHandler, HTTPServer as _HTTPServer
+
+
+class _Capture(BaseHTTPRequestHandler):
+    seen: dict = {}
+
+    def do_GET(self):
+        _Capture.seen = {k.lower(): v for k, v in self.headers.items()}
+        body = _json.dumps({"ok": True}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+@pytest.fixture()
+def capture_addr():
+    srv = _HTTPServer(("127.0.0.1", 0), _Capture)
+    t = _threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{srv.server_port}"
+    srv.shutdown()
+
+
+def test_auto_header_injection_declarative(capture_addr):
+    task = wpb.TaskAssignment()
+    task.env.base_url = capture_addr
+    task.env.variables.add(key="X-Auto", value="tp-auto", category=pb.VARIABLE_CATEGORY_HEADER)
+    task.env.variables.add(key="X-NotHeader", value="no", category=pb.VARIABLE_CATEGORY_CUSTOM)
+    task.env.variables.add(key="X-Secret", value="hidden", sensitive=True,
+                           category=pb.VARIABLE_CATEGORY_HEADER)
+    r = CaseRunner(task)
+    step = pb.TestStep(name="call")
+    step.api_call.inline.method = pb.HTTP_METHOD_GET
+    step.api_call.inline.uri = "/"
+
+    asyncio.run(r._do_api_call(step.api_call, []))
+    assert _Capture.seen.get("x-auto") == "tp-auto"
+    assert "x-notheader" not in _Capture.seen  # 非 HEADER 类不注入
+    assert "x-secret" not in _Capture.seen     # 敏感不注入
+
+
+def test_auto_header_explicit_wins_and_template(capture_addr):
+    task = wpb.TaskAssignment()
+    task.env.base_url = capture_addr
+    task.env.variables.add(key="X-Auto", value="{{ base }}", category=pb.VARIABLE_CATEGORY_HEADER)
+    task.env.variables.add(key="base", value="tpl-rendered", category=pb.VARIABLE_CATEGORY_CUSTOM)
+    r = CaseRunner(task)
+    # 显式同名头优先（忽略大小写）
+    step = pb.TestStep(name="call")
+    step.api_call.inline.method = pb.HTTP_METHOD_GET
+    step.api_call.inline.uri = "/"
+    step.api_call.inline.headers.add(key="x-auto", value="explicit")
+
+    asyncio.run(r._do_api_call(step.api_call, []))
+    assert _Capture.seen.get("x-auto") == "explicit"
+
+    # 未显式配置 → 注入且模板渲染
+    r2 = CaseRunner(task)
+    step2 = pb.TestStep(name="call2")
+    step2.api_call.inline.method = pb.HTTP_METHOD_GET
+    step2.api_call.inline.uri = "/"
+    asyncio.run(r2._do_api_call(step2.api_call, []))
+    assert _Capture.seen.get("x-auto") == "tpl-rendered"
+
+
+def test_bridge_auto_headers(capture_addr):
+    from testpilot_worker.sandbox import bridge_http_handler, env_auto_headers
+
+    task = wpb.TaskAssignment()
+    task.env.variables.add(key="X-Auto", value="bridge-auto", category=pb.VARIABLE_CATEGORY_HEADER)
+    task.env.variables.add(key="X-Other", value="nope", category=pb.VARIABLE_CATEGORY_CUSTOM)
+    assert env_auto_headers(task.env) == {"X-Auto": "bridge-auto"}
+
+    async def call(headers, auto):
+        async with httpx.AsyncClient(verify=True) as client:
+            return await bridge_http_handler(client, capture_addr,
+                                             {"method": "GET", "uri": "/", "headers": headers},
+                                             auto_headers=auto)
+
+    # 自动注入（SDK 未显式传）
+    asyncio.run(call({}, {"X-Auto": "bridge-auto"}))
+    assert _Capture.seen.get("x-auto") == "bridge-auto"
+    # SDK 显式同名头优先（忽略大小写）
+    asyncio.run(call({"x-AUTO": "sdk"}, {"X-Auto": "bridge-auto"}))
+    assert _Capture.seen.get("x-auto") == "sdk"
