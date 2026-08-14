@@ -1,31 +1,40 @@
-import { Button, Card, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, message } from 'antd'
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, message } from 'antd'
+import { DeleteOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { del, get, post } from '../api'
-import type { Environment, ListResp, TestCase, TestPlan } from '../api'
+import type { ListResp, TestPlan } from '../api'
+import IdeLayout from '../components/IdeLayout'
+import PanelList from '../components/PanelList'
+import { PALETTE } from '../theme'
 import { useLayout } from './Layout'
 
+// 测试计划列表：左侧面板为计划列表（运行/删除/新建），点击进入编辑器。
 export default function Plans() {
-  const { projectId } = useLayout()
+  const { projectId, envId, envs } = useLayout()
+  const nav = useNavigate()
   const [rows, setRows] = useState<TestPlan[]>([])
-  const [envs, setEnvs] = useState<Environment[]>([])
-  const [cases, setCases] = useState<TestCase[]>([])
+  const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
-  const [running, setRunning] = useState<string>('')
+  const [creating, setCreating] = useState(false)
+  const [running, setRunning] = useState('')
   const [form] = Form.useForm()
 
-  const load = () => {
-    if (!projectId) return Promise.resolve()
-    get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=500`).then((r) => setRows(r.items))
-    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}`).then((r) => setEnvs(r.items))
-    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=500`).then((r) => setCases(r.items))
-    return Promise.resolve()
-  }
+  const load = () =>
+    projectId
+      ? get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=200`).then((r) =>
+          setRows(r.items),
+        )
+      : Promise.resolve()
+
   useEffect(() => {
     setRows([])
     load().catch((e) => message.error(e.message))
   }, [projectId])
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
+
+  const filtered = rows.filter((p) => p.name.toLowerCase().includes(search.trim().toLowerCase()))
 
   const runPlan = async (id: string) => {
     setRunning(id)
@@ -40,77 +49,118 @@ export default function Plans() {
   }
 
   return (
-    <Card title="测试计划" extra={<Button type="primary" onClick={() => setOpen(true)}>新建计划</Button>}>
-      <Table
-        rowKey="id"
-        dataSource={rows}
-        pagination={{ pageSize: 15 }}
-        columns={[
-          { title: '名称', dataIndex: 'name' },
-          {
-            title: '环境',
-            dataIndex: 'env_id',
-            width: 120,
-            render: (v: string) => envs.find((e) => e.id === v)?.name || v || '-',
-          },
-          {
-            title: '操作',
-            width: 200,
-            render: (_, r) => (
-              <Space>
-                <Button size="small" type="primary" loading={running === r.id} onClick={() => runPlan(r.id)}>
+    <IdeLayout
+      panel={
+        <PanelList
+          title="测试计划"
+          search={search}
+          onSearch={setSearch}
+          extra={
+            <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
+              新建
+            </Button>
+          }
+          data={filtered}
+          onPick={(p) => nav(`/plans/${p.id}/edit`)}
+          renderItem={(p) => (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div
+                  style={{
+                    fontSize: 13, fontWeight: 500, color: PALETTE.text,
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  }}
+                >
+                  {p.name}
+                </div>
+                <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
+                  {envs.find((e) => e.id === p.env_id)?.name || '未设置环境'}
+                </div>
+              </div>
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                <Button size="small" type="primary" loading={running === p.id} onClick={() => runPlan(p.id)}>
                   运行
                 </Button>
-                <Popconfirm title="删除计划？" onConfirm={async () => {
-                  await del(`/api/v1/plans/${r.id}`)
-                  load()
-                }}>
-                  <Button danger size="small">删除</Button>
+                <Popconfirm
+                  title="删除计划？"
+                  description="删除后不可恢复"
+                  onConfirm={async () => {
+                    try {
+                      await del(`/api/v1/plans/${p.id}`)
+                      message.success('已删除')
+                      load()
+                    } catch (e: any) {
+                      message.error(e.message)
+                    }
+                  }}
+                >
+                  <Button size="small" danger type="text" icon={<DeleteOutlined />} />
                 </Popconfirm>
               </Space>
-            ),
-          },
-        ]}
-      />
+            </div>
+          )}
+        />
+      }
+    >
+      <div
+        style={{
+          display: 'flex', height: '100%', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 12,
+        }}
+      >
+        <PlayCircleOutlined style={{ fontSize: 40, color: PALETTE.textTertiary }} />
+        <div style={{ fontSize: 13, color: PALETTE.textTertiary }}>
+          在左侧选择计划进行编辑，或点击「+ 新建」创建测试计划
+        </div>
+      </div>
 
-      <Modal title="新建计划" open={open} width={560} onCancel={() => setOpen(false)} onOk={() => form.submit()} destroyOnHidden>
-        <Form form={form} layout="vertical" initialValues={{ concurrency: 1, timeout_ms: 300000 }}
-          onFinish={async (v) => {
-            const items = (v.case_ids || []).map((cid: string, i: number) => ({
-              ref_type: 1, ref_id: cid, enabled: true, order: i + 1,
-            }))
-            if (items.length === 0) {
-              message.error('至少选择一个用例')
-              return
+      <Modal
+        title="新建测试计划"
+        open={open}
+        width={480}
+        okText="创建"
+        confirmLoading={creating}
+        onCancel={() => setOpen(false)}
+        onOk={() => form.submit()}
+        destroyOnHidden
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ env_id: envId || undefined }}
+          onFinish={async (v: { name: string; env_id: string }) => {
+            setCreating(true)
+            try {
+              const r = await post<TestPlan>('/api/v1/plans', {
+                project_id: projectId,
+                env_id: v.env_id,
+                name: v.name,
+                concurrency: 1,
+                timeout_ms: 300000,
+                items: [],
+              })
+              message.success('已创建')
+              setOpen(false)
+              form.resetFields()
+              nav(`/plans/${r.id}/edit`)
+            } catch (e: any) {
+              message.error(e.message)
+            } finally {
+              setCreating(false)
             }
-            await post('/api/v1/plans', {
-              project_id: projectId, name: v.name, env_id: v.env_id,
-              concurrency: v.concurrency, timeout_ms: v.timeout_ms, items,
-            })
-            setOpen(false)
-            form.resetFields()
-            load()
-            message.success('已创建')
-          }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
-            <Input />
+          }}
+        >
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入计划名称' }]}>
+            <Input placeholder="计划名称" />
           </Form.Item>
-          <Form.Item name="env_id" label="环境" rules={[{ required: true }]}>
-            <Select options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))} />
+          <Form.Item name="env_id" label="环境" rules={[{ required: true, message: '请选择环境' }]}>
+            <Select
+              placeholder="选择环境"
+              options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))}
+            />
           </Form.Item>
-          <Form.Item name="case_ids" label="用例（按选择顺序执行）" rules={[{ required: true }]}>
-            <Select mode="multiple" options={cases.map((c) => ({ value: c.id, label: c.name }))} />
-          </Form.Item>
-          <Space size={16}>
-            <Form.Item name="concurrency" label="并发">
-              <InputNumber min={1} max={32} />
-            </Form.Item>
-            <Form.Item name="timeout_ms" label="超时（ms）">
-              <InputNumber min={1000} step={60000} />
-            </Form.Item>
-          </Space>
         </Form>
       </Modal>
-    </Card>
+    </IdeLayout>
   )
 }

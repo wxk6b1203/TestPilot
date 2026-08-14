@@ -15,6 +15,28 @@ export function getProjectId(): string {
 export function setProjectId(id: string) {
   localStorage.setItem(PROJECT_KEY, id)
 }
+const ENV_KEY = 'tp_env'
+export function getEnvId(): string {
+  return localStorage.getItem(ENV_KEY) || ''
+}
+export function setEnvId(id: string) {
+  localStorage.setItem(ENV_KEY, id)
+}
+
+// download 带 Bearer 的 blob 下载（导出端点需认证，<a href> 会 401）。
+export async function download(path: string, filename: string) {
+  const res = await fetch(path, {
+    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+  })
+  if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -80,6 +102,139 @@ export interface HttpApi {
   params?: { key: string; value: string }[]
   headers?: { key: string; value: string }[]
   body?: { contentType: number; raw?: string }
+}
+export interface GrpcApi {
+  id: string
+  project_id: string
+  proto_ref?: string
+  address: string
+  full_service: string
+  method: string
+  request_message?: any
+  metadata?: { key: string; value: string }[]
+  deadline_ms?: number
+  tls_settings?: any
+}
+export interface ProtoFile {
+  id: string
+  project_id: string
+  filename: string
+  content: string
+  imports?: string[]
+}
+export interface Suite {
+  id: string
+  project_id: string
+  name: string
+  description: string
+  case_ids?: string[]
+}
+export interface Script {
+  id: string
+  project_id: string
+  name: string
+  description: string
+  language: string
+  content: string
+}
+export interface TenantView {
+  tenant_id: string
+  name: string
+  role: number
+  is_current: boolean
+}
+export interface Me {
+  user: { id: string; username: string; display_name: string }
+  tenant_id: string
+  role: number
+}
+export interface Schedule {
+  id: string
+  plan_id: string
+  env_id: string
+  cron_expr: string
+  overlap_policy: number
+  enabled: boolean
+}
+export interface NotificationChannel {
+  id: string
+  type: number // 1=webhook 2=dingtalk 3=feishu
+  name: string
+  events: string
+  webhook_url: string
+  secret: string
+}
+export interface IdentityProvider {
+  id: string
+  name: string
+  type: string // oidc | oauth2
+  issuer: string
+  client_id: string
+  enabled: boolean
+  config?: Record<string, string>
+}
+export interface TenantQuota {
+  metric: string
+  limit: number
+  used: number
+}
+export interface TenantSetting {
+  id: string
+  key: string
+  value: string
+}
+export interface Member {
+  user_id: string
+  username: string
+  display_name: string
+  role: number
+}
+export interface AuditLog {
+  id: string
+  actor: number
+  actor_id: string
+  action: string
+  resource_type: string
+  resource_id: string
+  detail?: any
+  created_at: string
+}
+export interface StressPlan {
+  id: string
+  project_id: string
+  env_id: string
+  target_type: number // 1=api 2=behavior_case
+  target_id: string
+  load_profile: any
+  worker_count: number
+  metrics_interval_ms: number
+}
+export interface DebugRequest {
+  project_id: string
+  api_id?: string
+  method?: number
+  uri?: string
+  params?: { key: string; value: string }[]
+  headers?: { key: string; value: string }[]
+  body?: { contentType: number; raw?: string }
+  env_id?: string
+  timeout_ms?: number
+}
+export interface DebugResult {
+  run_id: string
+  case_result_id: string
+  status: number
+  duration_ms: number
+  error: string
+  step?: {
+    step_path: string
+    status: number
+    duration_ms: number
+    request?: any
+    response?: any
+    assertions?: any[]
+    logs?: string[]
+  }
 }
 export interface TestCase {
   id: string

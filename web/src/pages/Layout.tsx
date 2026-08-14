@@ -1,27 +1,45 @@
-import { Layout as ALayout, Menu, Select, Space, Typography, Dropdown, message } from 'antd'
-import { LogoutOutlined, RobotOutlined } from '@ant-design/icons'
-import { useEffect, useState } from 'react'
+import { Layout as ALayout, Select, Space, Dropdown, message, Tag, Avatar, Typography } from 'antd'
+import {
+  ApiOutlined, ExperimentOutlined, ThunderboltOutlined, FileTextOutlined,
+  ClusterOutlined, PlayCircleOutlined, EnvironmentOutlined, ProjectOutlined,
+  SettingOutlined, DesktopOutlined, RobotOutlined, LogoutOutlined, DownOutlined,
+} from '@ant-design/icons'
+import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
-import { get, getProjectId, setProjectId, setToken } from '../api'
-import type { ListResp, Project } from '../api'
+import {
+  get, getEnvId, getProjectId, post, setEnvId, setProjectId, setToken,
+} from '../api'
+import type { Environment, ListResp, Me, Project, TenantView } from '../api'
+import { PALETTE, SPACING } from '../theme'
 
-const menuItems = [
-  { key: '/copilot', label: 'Copilot' },
-  { key: '/runs', label: '运行' },
-  { key: '/plans', label: '测试计划' },
-  { key: '/cases', label: '测试用例' },
-  { key: '/apis', label: '接口' },
-  { key: '/stress', label: '压测' },
-  { key: '/envs', label: '环境与变量' },
-  { key: '/projects', label: '项目' },
-  { key: '/workers', label: 'Worker' },
+// 图标栏导航（IDE 式一级功能栏：图标在上、文字在下）
+const NAV = [
+  { path: '/apis', label: '接口', icon: <ApiOutlined /> },
+  { path: '/cases', label: '用例', icon: <ExperimentOutlined /> },
+  { path: '/suites', label: '套件', icon: <ClusterOutlined /> },
+  { path: '/scripts', label: '脚本', icon: <FileTextOutlined /> },
+  { path: '/plans', label: '计划', icon: <PlayCircleOutlined /> },
+  { path: '/runs', label: '运行', icon: <ThunderboltOutlined /> },
+  { path: '/stress', label: '压测', icon: <ThunderboltOutlined /> },
+  { path: '/grpc', label: 'gRPC', icon: <ApiOutlined /> },
+  { path: '/envs', label: '环境', icon: <EnvironmentOutlined /> },
+  { path: '/projects', label: '项目', icon: <ProjectOutlined /> },
+  { path: '/admin', label: '管理', icon: <SettingOutlined />, admin: true },
+  { path: '/workers', label: 'Worker', icon: <DesktopOutlined /> },
+  { path: '/copilot', label: 'Copilot', icon: <RobotOutlined /> },
 ]
+
+const ROLE_NAMES: Record<number, string> = { 1: 'owner', 2: 'admin', 3: 'member', 4: 'viewer' }
 
 export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const [projects, setProjects] = useState<Project[]>([])
   const [projectId, setPid] = useState(getProjectId())
+  const [envs, setEnvs] = useState<Environment[]>([])
+  const [envId, setEid] = useState(getEnvId())
+  const [me, setMe] = useState<Me | null>(null)
+  const [tenants, setTenants] = useState<TenantView[]>([])
 
   useEffect(() => {
     get<ListResp<Project>>('/api/v1/projects?page_size=100')
@@ -34,59 +52,145 @@ export default function Layout() {
         }
       })
       .catch((e) => message.error(e.message))
+    get<Me>('/api/v1/me').then(setMe).catch(() => {})
+    get<{ items: TenantView[] }>('/api/v1/tenants').then((r) => setTenants(r.items)).catch(() => {})
   }, [])
+
+  // 项目变化 → 环境列表重载
+  useEffect(() => {
+    if (!projectId) return
+    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
+      .then((r) => {
+        setEnvs(r.items)
+        if (envId && !r.items.find((e) => e.id === envId)) setEid('')
+      })
+      .catch(() => {})
+  }, [projectId])
+
+  const visibleNav = useMemo(
+    () => NAV.filter((n) => !n.admin || (me?.role ?? 9) <= 2),
+    [me],
+  )
 
   const ctx: LayoutCtx = {
     projectId,
     projects,
     refreshProjects: () =>
       get<ListResp<Project>>('/api/v1/projects?page_size=100').then((r) => setProjects(r.items)),
+    envId,
+    setEnvId: (id) => {
+      setEid(id)
+      setEnvId(id)
+    },
+    envs,
+    refreshEnvs: () =>
+      get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
+        .then((r) => setEnvs(r.items)),
+    me,
+    tenants,
+    switchTenant: async (tid) => {
+      const r = await post<{ token: string }>('/api/v1/auth/switch-tenant', { tenant_id: tid })
+      setToken(r.token)
+      location.reload()
+    },
+    refreshMe: () => get<Me>('/api/v1/me').then(setMe),
   }
 
   return (
-    <ALayout style={{ minHeight: '100vh' }}>
-      <ALayout.Sider theme="dark" width={200}>
-        <div style={{ color: '#fff', padding: 16, fontSize: 16, fontWeight: 600 }}>
-          <RobotOutlined /> TestPilot
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[loc.pathname]}
-          items={menuItems}
-          onClick={(e) => nav(e.key)}
+    <ALayout style={{ height: '100vh' }}>
+      {/* 顶栏：品牌 + 项目/环境 + 租户切换 + 用户 */}
+      <ALayout.Header
+        style={{
+          height: 48, lineHeight: '48px', background: PALETTE.topbar,
+          padding: `0 ${SPACING[4]}px`, display: 'flex', alignItems: 'center', gap: SPACING[3],
+        }}
+      >
+        <span style={{ fontWeight: 700, fontSize: 15, color: PALETTE.text }}>TestPilot</span>
+        <Select
+          size="small" style={{ width: 180 }} value={projectId || undefined}
+          placeholder="选择项目"
+          options={projects.map((p) => ({ value: p.id, label: p.name }))}
+          onChange={(v) => {
+            setPid(v)
+            setProjectId(v)
+          }}
         />
-      </ALayout.Sider>
-      <ALayout>
-        <ALayout.Header style={{ background: '#fff', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px' }}>
-          <Space>
-            <Typography.Text type="secondary">项目</Typography.Text>
-            <Select
-              style={{ width: 240 }}
-              value={projectId || undefined}
-              placeholder="选择项目"
-              options={projects.map((p) => ({ value: p.id, label: p.name }))}
-              onChange={(v) => {
-                setPid(v)
-                setProjectId(v) // 子页通过 useLayout().projectId 依赖自动重载
-              }}
-            />
-          </Space>
+        <Select
+          size="small" style={{ width: 150 }} value={envId || undefined}
+          placeholder="环境"
+          allowClear
+          options={envs.map((e) => ({ value: e.id, label: e.name }))}
+          onChange={(v) => {
+            setEid(v ?? '')
+            setEnvId(v ?? '')
+          }}
+        />
+        <span style={{ flex: 1 }} />
+        {tenants.length > 0 && (
           <Dropdown
             menu={{
-              items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录' }],
-              onClick: () => {
-                setToken(null)
-                nav('/login', { replace: true })
-              },
+              items: tenants.map((t) => ({
+                key: t.tenant_id,
+                label: `${t.name}（${ROLE_NAMES[t.role] ?? t.role}）${t.is_current ? ' ✓' : ''}`,
+                disabled: t.is_current,
+              })),
+              onClick: ({ key }) => ctx.switchTenant(key),
             }}
           >
-            <Typography.Link>admin</Typography.Link>
+            <Typography.Link style={{ color: PALETTE.textSecondary, fontSize: 13 }}>
+              {tenants.find((t) => t.is_current)?.name ?? '租户'} <DownOutlined style={{ fontSize: 10 }} />
+            </Typography.Link>
           </Dropdown>
-        </ALayout.Header>
-        <ALayout.Content style={{ margin: 16 }}>
+        )}
+        <Dropdown
+          menu={{
+            items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录' }],
+            onClick: () => {
+              setToken(null)
+              nav('/login', { replace: true })
+            },
+          }}
+        >
+          <Space size={6} style={{ cursor: 'pointer' }}>
+            <Avatar size={26} style={{ background: '#4AC778', fontSize: 12 }}>
+              {(me?.user?.username ?? '?').slice(0, 1).toUpperCase()}
+            </Avatar>
+            <span style={{ fontSize: 13, color: PALETTE.text }}>
+              {me?.user?.display_name || me?.user?.username || '用户'}
+            </span>
+            {me && <Tag style={{ margin: 0 }} color={me.role <= 2 ? 'blue' : 'default'}>{ROLE_NAMES[me.role]}</Tag>}
+          </Space>
+        </Dropdown>
+      </ALayout.Header>
+      <ALayout style={{ height: 'calc(100vh - 48px)' }}>
+        {/* 一级图标栏 */}
+        <div style={{
+          width: 72, background: PALETTE.bgLayout, borderRight: `1px solid ${PALETTE.border}`,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: SPACING[2], gap: 2,
+        }}>
+          {visibleNav.map((n) => {
+            const active = loc.pathname.startsWith(n.path)
+            return (
+              <div
+                key={n.path}
+                onClick={() => nav(n.path)}
+                style={{
+                  width: 56, padding: '7px 0', textAlign: 'center', cursor: 'pointer',
+                  borderRadius: 8, marginBottom: 2,
+                  color: active ? PALETTE.primary : PALETTE.textSecondary,
+                  background: active ? '#E4EBFF' : 'transparent',
+                }}
+              >
+                <div style={{ fontSize: 18 }}>{n.icon}</div>
+                <div style={{ fontSize: 11 }}>{n.label}</div>
+              </div>
+            )
+          })}
+        </div>
+        {/* 内容区 */}
+        <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
           <Outlet context={ctx} />
-        </ALayout.Content>
+        </div>
       </ALayout>
     </ALayout>
   )
@@ -96,6 +200,14 @@ export interface LayoutCtx {
   projectId: string
   projects: Project[]
   refreshProjects: () => Promise<void>
+  envId: string
+  setEnvId: (id: string) => void
+  envs: Environment[]
+  refreshEnvs: () => Promise<void>
+  me: Me | null
+  tenants: TenantView[]
+  switchTenant: (tenantId: string) => Promise<void>
+  refreshMe: () => Promise<void>
 }
 
 export function useLayout() {

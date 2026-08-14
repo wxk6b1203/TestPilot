@@ -9,7 +9,7 @@ LLM 驱动的自动化集成测试平台 —— Phase 0–9（Copilot、压测�
 | Scheduler | Go 1.25 · fiber v3 · GORM/SQLite · gRPC | :8080 (REST+前端) / :9090 (gRPC) | 领域模型、认证(JWT)、调度派发、结果落库、CopilotToolService |
 | Worker | Python 3.13 · grpcio · asyncio · httpx | 连接 :9090 | 声明式执行引擎 + 表达式语言 + 低代码沙箱 + Playwright + Locust 压测 |
 | Copilot | Python 3.13 · FastAPI · pydantic-ai 2.28 | :8100 | AI 生成/分析：工具经 Scheduler gRPC 执行，写操作 HITL 审批 + 审计 |
-| 前端 | React 19 · TS · Vite · AntD | :5173 (dev) | 控制台 + Copilot 对话页 + 压测报告 |
+| 前端 | React 19 · TS · Vite · AntD | :5173 (dev) | IDE 式控制台（图标栏+面板+工作区）：接口调试、用例步骤树、计划/套件/脚本/gRPC、压测报告、租户管理台、Copilot 对话 |
 | echo 服务 | Python stdlib | :18080 | 联调用本地回显服务 |
 
 设计文档：`docs/design.md`（架构）· `docs/data-model.md`（32 表 ER）· `docs/roadmap.md`（实施路线）·
@@ -132,6 +132,14 @@ worker/venv/bin/python scripts/e2e_phase9.py
   请求 = request_message ⊕ request_override，JSONPATH 断言对响应消息生效
 - **参数覆盖（v2 补完）**：计划条目 `param_overrides` 深合并进低代码 `parameters`
   （`ctx.parameters`），并追加为任务级模板变量（最高优先级，不改共享环境）
+- **接口调试（前端 IDE 化）**：`POST /apis/debug` 单步派发同步返回响应快照；
+  控制台「发送→即时响应」工作区（参数/请求头/请求体结构化编辑、Ctrl+Enter 发送、
+  响应体/头/断言/日志面板）；调试 run 落库可查但不进运行列表
+- **前端控制台（IDE 化重构）**：顶栏（项目/环境/租户切换）+ 图标栏 + 二级面板 +
+  主工作区三栏布局；用例可视化步骤树编辑器（10 种步骤类型嵌套编辑）、计划条目编辑器
+  （套件引用/重排/参数覆盖）、套件/脚本/gRPC 接口/Proto 文件管理页、租户管理台
+  （成员/配额/设置/身份源/通知/定时/审计）、注册与 OIDC/OAuth2 登录页；设计 token 统一
+  （`web/src/theme.ts`，参考 Apifox 视觉语言）
 - **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、Postman Collection v2.1
   （folder 递归、query/header/body 映射、幂等）、导出 OpenAPI 3 / curl / Postman；
   Copilot 工具 `apply_openapi_diff`——按 method+uri 增量应用（added/changed/breaking/removed，

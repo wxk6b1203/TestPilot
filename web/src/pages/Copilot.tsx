@@ -4,6 +4,7 @@ import { Button, Input, List, Space, Tag, Typography, message } from 'antd'
 import { RobotOutlined, SendOutlined, PlusOutlined } from '@ant-design/icons'
 import { get, getToken } from '../api'
 import type { ListResp } from '../api'
+import { PALETTE } from '../theme'
 
 interface UIPart {
   type: string
@@ -199,7 +200,7 @@ export default function Copilot() {
 
   return (
     <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 150px)' }}>
-      <div style={{ width: 220, borderRight: '1px solid #303030', overflowY: 'auto' }}>
+      <div style={{ width: 220, borderRight: `1px solid ${PALETTE.border}`, overflowY: 'auto' }}>
         <Button block icon={<PlusOutlined />} onClick={newChat} style={{ marginBottom: 8 }}>
           新会话
         </Button>
@@ -211,7 +212,7 @@ export default function Copilot() {
               onClick={() => openSession(s.id)}
               style={{
                 cursor: 'pointer',
-                background: s.id === sessionId ? '#1f1f1f' : undefined,
+                background: s.id === sessionId ? PALETTE.selectedRow : undefined,
                 padding: '6px 8px',
               }}
             >
@@ -235,7 +236,7 @@ export default function Copilot() {
               <div
                 style={{
                   display: 'inline-block', maxWidth: '85%', textAlign: 'left',
-                  background: m.role === 'user' ? '#14395d' : '#1f1f1f',
+                  background: m.role === 'user' ? '#E8EDFE' : PALETTE.bgLayout,
                   borderRadius: 8, padding: '8px 12px',
                 }}
               >
@@ -273,7 +274,7 @@ function PartView({ part, onRespond }: { part: UIPart; onRespond: (p: UIPart, ok
   }
   if (part.type.startsWith('tool-')) {
     return (
-      <div style={{ border: '1px solid #333', borderRadius: 6, padding: 8, margin: '4px 0', fontSize: 12 }}>
+      <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: 8, margin: '4px 0', fontSize: 12 }}>
         <Space>
           <Tag color="blue">{part.toolName}</Tag>
           <StateTag state={part.state} />
@@ -290,7 +291,7 @@ function PartView({ part, onRespond }: { part: UIPart; onRespond: (p: UIPart, ok
           </Space>
         )}
         {part.state === 'output-available' && part.output != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto', color: '#7c7' }}>
+          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto', color: PALETTE.success }}>
             {typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 1)}
           </pre>
         )}

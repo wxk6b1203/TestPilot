@@ -37,6 +37,7 @@
 | v2 第一批 | ✅ | curl 导出（/export/curl）、Copilot 反代（/copilot-api/* → TP_COPILOT_URL）、OpenAPI URL 导入（gRPC openapi_url 分支 + SSRF 私网防护） |
 | v2 第二批 | ✅ | suite 引用展开、ApplyOpenApiDiff、对象存储制品后端（local/S3）、loop parallel、lowcode script_ref（详述 `docs/v2-features.md`） |
 | v2 第二批补完 | ✅ | api_call 步骤 api_id 派发期解析、PlanItem param_overrides 应用（原遗留边界清零） |
+| 前端 IDE 化重构 | ✅ | 三栏布局 + 接口调试工作区（/apis/debug 后端支撑）+ 用例步骤树编辑器 + 全部缺失页面（gRPC/proto/套件/脚本/管理台/注册/SSO）+ 设计 token 体系 |
 
 **v2 待办**（按批次，详见本文件末尾「v2 范围」）：
 - 第一批（已完成）：curl 导出 / Copilot 反代 / OpenAPI URL 导入

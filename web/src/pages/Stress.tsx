@@ -1,7 +1,7 @@
-import { Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd'
 import { useEffect, useState } from 'react'
 import { del, get, HTTP_METHODS, post, STATUS } from '../api'
-import type { Environment, HttpApi, ListResp } from '../api'
+import type { Environment, HttpApi, ListResp, TestCase } from '../api'
 import { useLayout } from './Layout'
 
 interface StressPlan {
@@ -83,10 +83,12 @@ export default function Stress() {
   const [plans, setPlans] = useState<StressPlan[]>([])
   const [runs, setRuns] = useState<StressRun[]>([])
   const [apis, setApis] = useState<HttpApi[]>([])
+  const [cases, setCases] = useState<TestCase[]>([])
   const [envs, setEnvs] = useState<Environment[]>([])
   const [open, setOpen] = useState(false)
   const [detail, setDetail] = useState<StressRun | null>(null)
   const [form] = Form.useForm()
+  const targetType = Form.useWatch('target_type', form) ?? 1
 
   const load = () => {
     if (!projectId) return
@@ -97,6 +99,7 @@ export default function Stress() {
     if (!projectId) return
     load()
     get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => setApis(r.items))
+    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`).then((r) => setCases(r.items))
     get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`).then((r) => setEnvs(r.items))
     const t = setInterval(load, 3000)
     return () => clearInterval(t)
@@ -108,6 +111,11 @@ export default function Stress() {
     const a = apis.find((x) => x.id === id)
     return a ? `[${HTTP_METHODS[a.method]?.text || a.method}] ${a.uri}` : id.slice(-8)
   }
+  const caseName = (id: string) => {
+    const c = cases.find((x) => x.id === id)
+    return c ? c.name : id.slice(-8)
+  }
+  const lowCodeCases = cases.filter((c) => c.type === 2)
 
   return (
     <>
@@ -117,7 +125,11 @@ export default function Stress() {
           dataSource={plans}
           pagination={{ pageSize: 10 }}
           columns={[
-            { title: '目标接口', dataIndex: 'target_id', render: (v: string) => apiName(v) },
+            {
+              title: '类型', dataIndex: 'target_type', width: 90,
+              render: (v: number) => <Tag color={v === 2 ? 'purple' : 'blue'}>{v === 2 ? '行为用例' : '接口'}</Tag>,
+            },
+            { title: '目标', dataIndex: 'target_id', render: (v: string, r: StressPlan) => (r.target_type === 2 ? caseName(v) : apiName(v)) },
             { title: 'Worker 数', dataIndex: 'worker_count', width: 90 },
             {
               title: '负载', dataIndex: 'load_profile', render: (v: any) => {
@@ -175,7 +187,7 @@ export default function Stress() {
 
       <Modal title="新建压测计划" open={open} width={640} onCancel={() => setOpen(false)} onOk={() => form.submit()} destroyOnHidden>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          对单接口发压（Locust 库模式，独立子进程 + gevent）。ramp 为阶梯加压（at=起点，target=总并发）。
+          对单个接口或低代码行为用例发压（Locust 库模式，独立子进程 + gevent）。ramp 为阶梯加压（at=起点，target=总并发）。
         </Typography.Paragraph>
         <Form form={form} layout="vertical" onFinish={async (v) => {
           let profile: any
@@ -186,7 +198,7 @@ export default function Stress() {
             return
           }
           await post('/api/v1/stress-plans', {
-            project_id: projectId, env_id: v.env_id, target_type: 1, target_id: v.target_id,
+            project_id: projectId, env_id: v.env_id, target_type: v.target_type ?? 1, target_id: v.target_id,
             load_profile: profile, worker_count: v.worker_count ?? 1,
             metrics_interval_ms: v.metrics_interval_ms ?? 1000,
           })
@@ -195,9 +207,20 @@ export default function Stress() {
           load()
           message.success('已创建')
         }}>
-          <Form.Item name="target_id" label="目标接口" rules={[{ required: true }]}>
-            <Select showSearch optionFilterProp="label"
-              options={apis.map((a) => ({ value: a.id, label: `[${HTTP_METHODS[a.method]?.text || a.method}] ${a.uri}` }))} />
+          <Form.Item name="target_type" label="目标类型" initialValue={1}>
+            <Segmented
+              options={[{ label: '接口', value: 1 }, { label: '行为用例', value: 2 }]}
+              onChange={() => form.setFieldValue('target_id', undefined)}
+            />
+          </Form.Item>
+          <Form.Item name="target_id" label="目标" rules={[{ required: true, message: '请选择目标' }]}>
+            <Select
+              showSearch optionFilterProp="label"
+              placeholder={targetType === 2 ? '选择低代码用例' : '选择接口'}
+              options={targetType === 2
+                ? lowCodeCases.map((c) => ({ value: c.id, label: `[用例] ${c.name}` }))
+                : apis.map((a) => ({ value: a.id, label: `[${HTTP_METHODS[a.method]?.text || a.method}] ${a.uri}` }))}
+            />
           </Form.Item>
           <Form.Item name="env_id" label="环境" rules={[{ required: true }]}>
             <Select options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))} />
