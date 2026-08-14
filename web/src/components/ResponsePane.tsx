@@ -1,12 +1,14 @@
 import { useState } from 'react'
-import { Empty, Table, Tabs, Tag } from 'antd'
-import { RocketOutlined } from '@ant-design/icons'
+import { Button, Empty, Segmented, Table, Tabs, Tag, Tooltip } from 'antd'
+import { MenuUnfoldOutlined, RocketOutlined } from '@ant-design/icons'
 import { PALETTE } from '../theme'
 import type { DebugResult } from '../api'
 
-// 响应面板：状态/耗时 + 响应体（JSON 高亮）/响应头/断言/日志。
+// 响应面板：状态/耗时 + 响应体（Prettify/原文 + 自动换行开关）/响应头/断言/日志。
 export default function ResponsePane({ result, loading }: { result?: DebugResult; loading?: boolean }) {
   const [tab, setTab] = useState('body')
+  const [view, setView] = useState<'prettify' | 'raw'>('prettify')
+  const [wrap, setWrap] = useState(true)
   if (loading) {
     return <div style={{ color: PALETTE.textSecondary, padding: 24 }}>发送中…</div>
   }
@@ -28,10 +30,21 @@ export default function ResponsePane({ result, loading }: { result?: DebugResult
   const status = resp.status
   const ok = s.status === 2
   const okColor = status >= 200 && status < 400
-  const bodyText = (() => {
+
+  // 仅取用户响应体：resp.body 为原始文本（快照里的 status/headers/elapsed_ms 不混入）
+  const rawBody: string = (() => {
     const b = resp.body
     if (typeof b === 'string') return b
-    return JSON.stringify(b ?? resp.json ?? null, null, 2)
+    if (b === undefined || b === null) return ''
+    return JSON.stringify(b) // 后端异常形态兜底
+  })()
+  const prettyBody: string | null = (() => {
+    if (!rawBody) return null
+    try {
+      return JSON.stringify(JSON.parse(rawBody), null, 2)
+    } catch {
+      return null // 非 JSON：Prettify 视图下提示
+    }
   })()
   const headers = (resp.headers ?? {}) as Record<string, string>
   return (
@@ -49,14 +62,42 @@ export default function ResponsePane({ result, loading }: { result?: DebugResult
           {
             key: 'body',
             label: '响应体',
-            children: (
-              <pre style={{
-                maxHeight: 420, overflow: 'auto', margin: 0,
-                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12,
-                color: okColor ? PALETTE.text : '#F54A45',
-              }}>
-                {bodyText}
-              </pre>
+            children: rawBody === '' ? (
+              <span style={{ color: PALETTE.textTertiary }}>（空响应体）</span>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Segmented
+                    size="small"
+                    value={view}
+                    onChange={(v) => setView(v as 'prettify' | 'raw')}
+                    options={[
+                      { label: 'Prettify', value: 'prettify' },
+                      { label: '原文', value: 'raw' },
+                    ]}
+                  />
+                  {view === 'raw' && (
+                    <Tooltip title={wrap ? '关闭自动换行' : '开启自动换行'}>
+                      <Button
+                        size="small"
+                        type={wrap ? 'primary' : 'text'}
+                        icon={<MenuUnfoldOutlined />}
+                        onClick={() => setWrap(!wrap)}
+                      />
+                    </Tooltip>
+                  )}
+                </div>
+                <pre style={{
+                  maxHeight: 420, overflow: 'auto', margin: 0,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12,
+                  color: okColor ? PALETTE.text : '#F54A45',
+                  whiteSpace: view === 'raw' ? (wrap ? 'pre-wrap' : 'pre') : 'pre',
+                }}>
+                  {view === 'prettify'
+                    ? (prettyBody ?? `非 JSON，无法美化：\n${rawBody}`)
+                    : rawBody}
+                </pre>
+              </div>
             ),
           },
           {
