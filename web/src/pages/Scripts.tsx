@@ -8,6 +8,7 @@ import type { ListResp, Script } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLayout } from './Layout'
 
 const SCRIPT_TEMPLATE = `async def run(ctx):
@@ -105,6 +106,8 @@ export default function Scripts() {
       message.error(e.message)
     }
   }
+
+  useSaveShortcut(() => { void save() })
 
   const create = async () => {
     if (!createName.trim()) {

@@ -10,6 +10,7 @@ import { get, post, put } from '../api'
 import type { ListResp, PlanItem, Suite, TestCase, TestPlan } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import { PALETTE, SPACING } from '../theme'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLayout } from './Layout'
 
 // api.ts 的 PlanItem 尚无 param_overrides 字段（后端 planPayload 支持），此处本地扩展。
@@ -85,6 +86,8 @@ export default function PlanEditor() {
       .then((r) => setSuites(r.items))
       .catch((e) => message.error(e.message))
   }, [projectId])
+
+  useSaveShortcut(() => { void save() })
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 

@@ -10,6 +10,7 @@ import type { ListResp, Suite, TestCase } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLayout } from './Layout'
 
 const CASE_TYPE: Record<number, { text: string; color: string }> = {
@@ -175,6 +176,8 @@ export default function Suites() {
       message.error(e.message)
     }
   }
+
+  useSaveShortcut(() => { void save() })
 
   const create = async () => {
     if (!createName.trim()) {

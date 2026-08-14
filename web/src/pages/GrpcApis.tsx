@@ -3,6 +3,7 @@ import { DeleteOutlined, PlusOutlined, SaveOutlined, SearchOutlined } from '@ant
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { del, get, post, put } from '../api'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import type { GrpcApi, ListResp, ProtoFile } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import KvEditor from '../components/KvEditor'
@@ -200,6 +201,7 @@ export default function GrpcApis() {
       message.error(e.message)
     }
   }
+  useSaveShortcut(() => { void (activeTab === 'grpc' ? saveGrpc() : saveProto()) })
   const removeProto = async () => {
     if (!selectedProtoId) return
     try {

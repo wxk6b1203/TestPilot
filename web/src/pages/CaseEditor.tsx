@@ -17,6 +17,7 @@ import IdeLayout from '../components/IdeLayout'
 import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import { PALETTE, SPACING } from '../theme'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLayout } from './Layout'
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
@@ -1070,6 +1071,7 @@ export default function CaseEditor() {
       setSaving(false)
     }
   }
+  useSaveShortcut(() => { void save() })
 
   // 树操作：structuredClone 副本上可变操作后整体 setState
   const mutate = (fn: (nodes: StepNode[]) => void) => {
