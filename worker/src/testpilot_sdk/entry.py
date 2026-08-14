@@ -45,6 +45,46 @@ async def _amain() -> int:
     _assert_mod.reset_records()
     ctx = Context(bridge, payload)
 
+    # 循环模式（行为压测）：迭代前经 iteration_gate 取并发额度（Worker 按负载配置放行/
+    # 停止），每次迭代全新 Context（vars 快照），结果以 event 流式上报。
+    if payload.get("loop"):
+        import time as _time
+
+        fn = getattr(_load_module(source_path), entry_name, None)
+        if fn is None:
+            raise RuntimeError(f"entry function '{entry_name}' not found in source")
+
+        async def _iteration() -> tuple[bool, str]:
+            _assert_mod.reset_records()
+            it_ctx = Context(bridge, payload)
+            try:
+                result = fn(it_ctx)
+                if inspect.isawaitable(result):
+                    await result
+                return True, ""
+            except AssertionError as e:
+                return False, f"assertion failed: {e}"
+            except Exception:
+                tb = traceback.format_exc(limit=5)
+                return False, tb.strip().splitlines()[-1] if tb.strip() else "iteration failed"
+
+        iteration = 0
+        while True:
+            gate = await bridge.call("iteration_gate", {"iteration": iteration})
+            if not gate.get("go", True):
+                break  # Worker 正常停发（duration 结束）
+            iteration += 1
+            t0 = _time.perf_counter()
+            ok, error = await _iteration()
+            elapsed_ms = int((_time.perf_counter() - t0) * 1000)
+            bridge.emit({"type": "event", "name": "iteration",
+                         "ok": ok, "elapsed_ms": elapsed_ms, "error": error})
+
+        bridge.emit({"type": "result", "ok": True, "error": "",
+                     "vars": {}, "assertions": []})
+        bridge.close()
+        return 0
+
     ok, error = True, ""
     try:
         fn = getattr(_load_module(source_path), entry_name, None)

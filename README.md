@@ -81,7 +81,11 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **压测（Phase 7）**：Locust 以独立子进程运行（gevent，不与 asyncio 混部），
   JSON Lines stdout 协议上报采样点；Scheduler 将目标并发均衡拆分到多个 stress-capable
   Worker（Worker 独占式压测调度）；指标点落 `stress_metric_points`（生产换 VictoriaMetrics），
-  报告页手绘 SVG 时序图（RPS/P95/并发/错误率）
+  报告页手绘 SVG 时序图（RPS/P95/并发/错误率）。
+  **行为压测（v2 第三批）**：`target_type=2` 接低代码行为用例——Worker 进程内 asyncio
+  负载环 + **沙箱常驻循环模式**（预起 K 个沙箱、迭代门控按 ramp 放行、每迭代全新 vars
+  快照、经能力桥执行 HTTP/UI 操作），迭代延迟/错误率按 metrics_interval 采样，指标协议
+  与 Locust 路径一致（报告页零改动）
 - **表达式语言**：`{{expr}}` 模板 + AST 白名单安全求值（无函数调用/dunder），
   作用域含环境变量、`vars`、`response`（`response.json` / `.status` / `.headers` / `.elapsed_ms`）
 - **统一断言**：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/NOT_EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS
@@ -268,5 +272,4 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- 压测 behavior_case（target_type=2 低代码行为脚本发压，设计另议）
 - OAuth2（非 OIDC）登录

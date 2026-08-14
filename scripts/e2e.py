@@ -397,5 +397,54 @@ else:
             print("✗ stress metrics look wrong (rps/concurrency too low)")
             ok = False
 
+# ---- v2：行为压测（target_type=2：沙箱常驻循环 + 能力桥）----
+behavior_src = '''from testpilot_sdk import Context, assert_that
+
+
+async def run(ctx: Context):
+    resp = await ctx.http("GET", "/json")
+    assert_that(resp.status, "status").eq(200)
+'''
+case10 = api.post("/api/v1/cases", json={
+    "project_id": pid, "name": "e2e-behavior-load", "type": 2,
+    "definition": {"source": behavior_src, "entry": "run"}}).json()
+bsplan = api.post("/api/v1/stress-plans", json={
+    "project_id": pid, "env_id": eid, "target_type": 2, "target_id": case10["id"],
+    "load_profile": {
+        "ramp": [{"at": "0s", "target": 2}, {"at": "2s", "target": 4}],
+        "duration": "6s", "concurrency_per_worker": 4,
+    },
+    "worker_count": 1, "metrics_interval_ms": 1000}).json()
+r = api.post(f"/api/v1/stress-plans/{bsplan['id']}/run", json={})
+if r.status_code != 200:
+    print(f"✗ behavior stress trigger failed: {r.text}")
+    ok = False
+else:
+    bsrun_id = r.json()["run_id"]
+    print(f"✓ behavior stress plan={bsplan['id']} run={bsrun_id}")
+    deadline = time.time() + 60
+    bsrun = None
+    while time.time() < deadline:
+        bsrun = api.get(f"/api/v1/stress-runs/{bsrun_id}").json()
+        if bsrun["status"] not in (0, 1):
+            break
+        time.sleep(1.5)
+    bmetrics = bsrun.get("metrics") or []
+    bsummary = bsrun.get("summary") or {}
+    print(f"behavior stress status={bsrun['status']} summary={json.dumps(bsummary)} points={len(bmetrics)}")
+    if bsrun["status"] != 2:
+        print(f"✗ expect behavior stress PASSED(2), got {bsrun['status']}")
+        ok = False
+    if len(bmetrics) < 3:
+        print(f"✗ expect >=3 metric points, got {len(bmetrics)}")
+        ok = False
+    else:
+        total_err = sum(m["error_rate"] for m in bmetrics)
+        total_rps = sum(m["rps"] for m in bmetrics)
+        print(f"  behavior: total_rps={total_rps:.0f} err_sum={total_err:.3f}")
+        if total_rps <= 0 or total_err > 0:
+            print("✗ behavior stress metrics wrong")
+            ok = False
+
 print("E2E " + ("PASSED" if ok else "FAILED"))
 sys.exit(0 if ok else 1)

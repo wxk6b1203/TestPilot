@@ -84,7 +84,7 @@
 
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
-| GET/POST | /stress-plans | viewer/member | load_profile JSON（concurrency/duration/ramp） |
+| GET/POST | /stress-plans | viewer/member | load_profile JSON（concurrency/duration/ramp）；`target_type:1`=接口 / `target_type:2`=低代码行为用例 |
 | GET/PUT/DELETE | /stress-plans/{id} | viewer/member | |
 | POST | /stress-plans/{id}/run | member | → `{run_id}` |
 | GET | /stress-runs · /stress-runs/{id} | viewer | 详情含时序指标点 |

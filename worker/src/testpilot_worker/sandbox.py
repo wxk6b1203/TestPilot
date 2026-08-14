@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import os
 import platform
@@ -64,7 +65,7 @@ class ExecutionBackend(ABC):
 
     @abstractmethod
     async def run(self, source: str, entry: str, payload: dict[str, Any],
-                  timeout_s: float) -> SandboxResult: ...
+                  timeout_s: float, loop: bool = False) -> SandboxResult: ...
 
 
 def _apply_rlimits(limits: SandboxLimits) -> None:
@@ -126,9 +127,15 @@ class SubprocessBackend(ExecutionBackend):
         self.http_handler = http_handler
         self.limits = limits or SandboxLimits()
         self.extra_ops = extra_ops or {}  # 扩展桥操作（如 ui_action → bridge_ui_handler）
+        # 循环模式（行为压测）：每个迭代结束的回调（可 async），在控制循环协程内直接调用
+        self._loop_cb: Callable[[dict], Any] | None = None
+
+    def set_loop_callback(self, cb: Callable[[dict], Any] | None) -> None:
+        """循环模式迭代回调（entry 的 iteration event → cb(msg)）。"""
+        self._loop_cb = cb
 
     async def run(self, source: str, entry: str, payload: dict[str, Any],
-                  timeout_s: float) -> SandboxResult:
+                  timeout_s: float, loop: bool = False) -> SandboxResult:
         started = time.perf_counter()
         result = SandboxResult(ok=False)
         scratch = tempfile.mkdtemp(prefix="tp-sandbox-")
@@ -137,6 +144,8 @@ class SubprocessBackend(ExecutionBackend):
         src_path = os.path.join(scratch, "user_case.py")
         payload_path = os.path.join(scratch, "payload.json")
         Path(src_path).write_text(source, encoding="utf-8")
+        if loop:
+            payload["loop"] = True  # entry 循环模式：迭代门控 + iteration 事件流
         Path(payload_path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
         cmd = [sys.executable, "-m", "testpilot_sdk.entry", src_path, entry]
@@ -192,6 +201,10 @@ class SubprocessBackend(ExecutionBackend):
                     done.set()
                 elif mtype == "op":
                     asyncio.create_task(self._handle_op(msg, _respond, payload, merged_vars))
+                elif mtype == "event" and msg.get("name") == "iteration" and self._loop_cb:
+                    res = self._loop_cb(msg)
+                    if inspect.isawaitable(res):
+                        await res
 
         async def _drain(stream):
             while True:

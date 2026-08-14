@@ -135,8 +135,14 @@ API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。
 
 ## 压测
 
-`POST /stress-plans`（target=接口，load_profile：concurrency/duration/ramp）。
-Scheduler 把目标并发均衡拆到所有 stress-capable Worker（压测期间独占）。
+`POST /stress-plans`（load_profile：concurrency/duration/ramp）。两种目标：
+
+- `target_type=1` + `target_id=<接口 id>`：Locust 子进程发压（Scheduler 均衡拆分到 stress Worker）。
+- `target_type=2` + `target_id=<低代码用例 id>`：**行为压测**——Worker 进程内 asyncio 负载环，
+  沙箱常驻循环模式反复执行行为脚本（迭代前经门控取并发额度，每迭代全新 vars 快照），
+  脚本内的 HTTP/变量/UI 操作走能力桥（egress 防护生效）；迭代延迟与错误率按
+  metrics_interval 采样。UI 行为脚本注意浏览器内存（每并发一个 Chromium，建议并发 ≤5）。
+
 报告页有时序图（RPS/P95/并发/错误率）；压测结束触发 `stress_finished` 通知。
 
 ## 审计

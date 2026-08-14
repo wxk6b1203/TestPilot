@@ -156,18 +156,22 @@ class FunctionalTask(_message.Message):
     def __init__(self, case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ..., case_result_id: _Optional[str] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ...) -> None: ...
 
 class StressTask(_message.Message):
-    __slots__ = ("plan", "worker_index", "assigned_concurrency", "metrics_label", "inline_api")
+    __slots__ = ("plan", "worker_index", "assigned_concurrency", "metrics_label", "inline_api", "behavior_source", "behavior_entry")
     PLAN_FIELD_NUMBER: _ClassVar[int]
     WORKER_INDEX_FIELD_NUMBER: _ClassVar[int]
     ASSIGNED_CONCURRENCY_FIELD_NUMBER: _ClassVar[int]
     METRICS_LABEL_FIELD_NUMBER: _ClassVar[int]
     INLINE_API_FIELD_NUMBER: _ClassVar[int]
+    BEHAVIOR_SOURCE_FIELD_NUMBER: _ClassVar[int]
+    BEHAVIOR_ENTRY_FIELD_NUMBER: _ClassVar[int]
     plan: _types_pb2.StressTestPlan
     worker_index: int
     assigned_concurrency: int
     metrics_label: str
     inline_api: _types_pb2.HttpApi
-    def __init__(self, plan: _Optional[_Union[_types_pb2.StressTestPlan, _Mapping]] = ..., worker_index: _Optional[int] = ..., assigned_concurrency: _Optional[int] = ..., metrics_label: _Optional[str] = ..., inline_api: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ...) -> None: ...
+    behavior_source: str
+    behavior_entry: str
+    def __init__(self, plan: _Optional[_Union[_types_pb2.StressTestPlan, _Mapping]] = ..., worker_index: _Optional[int] = ..., assigned_concurrency: _Optional[int] = ..., metrics_label: _Optional[str] = ..., inline_api: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ..., behavior_source: _Optional[str] = ..., behavior_entry: _Optional[str] = ...) -> None: ...
 
 class TaskAssignment(_message.Message):
     __slots__ = ("task_id", "run_id", "tenant_id", "task_type", "timeout", "functional", "stress", "env", "traceparent")

@@ -38,13 +38,34 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 	r.db.Where("tenant_id = ? AND project_id = ? AND (environment_id = 0 OR environment_id = ?)",
 		tenantID, plan.ProjectID, envID).Find(&vars)
 
-	// 目标解析：MVP 仅支持单接口（api_id）；低代码行为脚本后续接能力桥
-	if plan.TargetType != 1 {
-		return 0, apperr.BadRequest(apperr.CodeInvalidParam, "stress target: only api supported for now")
-	}
+	// 目标解析：1=单接口（inline_api 下发）；2=低代码行为用例（script_ref 解析后下发源码，
+	// Worker 沙箱常驻循环模式执行）
 	var api model.HttpApi
-	if err := r.db.Where("id = ? AND tenant_id = ?", plan.TargetID, tenantID).First(&api).Error; err != nil {
-		return 0, apperr.NotFound(apperr.CodeNotFound, "target api not found")
+	var behaviorSource, behaviorEntry string
+	switch plan.TargetType {
+	case 1:
+		if err := r.db.Where("id = ? AND tenant_id = ?", plan.TargetID, tenantID).First(&api).Error; err != nil {
+			return 0, apperr.NotFound(apperr.CodeNotFound, "target api not found")
+		}
+	case 2:
+		var tc model.TestCase
+		if err := r.db.Where("id = ? AND tenant_id = ?", plan.TargetID, tenantID).First(&tc).Error; err != nil {
+			return 0, apperr.NotFound(apperr.CodeNotFound, "target case not found")
+		}
+		if tc.Type != int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE) {
+			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "stress behavior target must be a lowcode case")
+		}
+		pcase, _, err := r.materializeCase(&tc)
+		if err != nil {
+			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "behavior case materialize: "+err.Error())
+		}
+		behaviorSource = pcase.GetLowcode().GetSource()
+		behaviorEntry = pcase.GetLowcode().GetEntry()
+		if behaviorSource == "" {
+			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "behavior case has no script source")
+		}
+	default:
+		return 0, apperr.BadRequest(apperr.CodeInvalidParam, "stress target_type must be 1(api) or 2(behavior_case)")
 	}
 
 	lp := &commonv1.LoadProfile{}
@@ -100,8 +121,11 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 		WorkerCount:     int32(n),
 		MetricsInterval: durationpb.New(time.Duration(max(plan.MetricsIntervalMs, 200)) * time.Millisecond),
 	}
-	if plan.TargetType == 1 {
+	switch plan.TargetType {
+	case 1:
 		protoPlan.Target = &commonv1.StressTestPlan_ApiId{ApiId: idStr(plan.TargetID)}
+	case 2:
+		protoPlan.Target = &commonv1.StressTestPlan_BehaviorCaseId{BehaviorCaseId: idStr(plan.TargetID)}
 	}
 
 	execEnv := buildExecutionEnv(&env, envExists, vars)
@@ -131,6 +155,8 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 					AssignedConcurrency: int32(assigned),
 					MetricsLabel:        idStr(run.ID),
 					InlineApi:           ToProtoHTTP(&api),
+					BehaviorSource:      behaviorSource,
+					BehaviorEntry:       behaviorEntry,
 				},
 			},
 			Env:         execEnv,
