@@ -260,6 +260,26 @@ assert grpc_run["status"] == 2, json.dumps(grpc_run.get("summary"))
 assert grpc_run["cases"][0]["status"] == 2, grpc_run["cases"]
 print(f"✓ grpc run={grpc_run_id}（reflection + GRPC_CALL + JSONPATH 断言）")
 
+# ---- v2：接口调试（POST /apis/debug，同步派发等待）----
+r = api.post("/api/v1/apis/debug", json={
+    "project_id": pid, "method": 1, "uri": "http://127.0.0.1:18080/json"})
+assert r.status_code == 200, r.text
+d = r.json()
+assert d["status"] == 2 and d["step"]["status"] == 2, d
+assert d["step"]["response"]["status"] == 200, d
+print(f"✓ api debug: GET /json → 200（{d['duration_ms']}ms）")
+# 失败路径：拒连 → step FAILED 但外层 200
+r = api.post("/api/v1/apis/debug", json={
+    "project_id": pid, "method": 1, "uri": "http://127.0.0.1:9/nope"})
+assert r.status_code == 200 and r.json()["status"] == 3, r.text
+print("✓ api debug: 拒连 → step FAILED（外层 200，错误进 body）")
+# 调试 run 不进 runs 列表（plan_id=0 过滤），但可按 id 查看
+dbg_run = api.get(f"/api/v1/runs/{d['run_id']}")
+assert dbg_run.status_code == 200, dbg_run.text
+runs = api.get("/api/v1/runs").json()["items"]
+assert all(str(x["id"]) != str(d["run_id"]) for x in runs), "调试 run 不应出现在列表"
+print("✓ api debug: 调试 run 落库可查且不污染列表")
+
 # ---- 计划 + 触发 ----
 plan = api.post("/api/v1/plans", json={
     "project_id": pid, "env_id": eid, "name": f"e2e-plan-{stamp}",

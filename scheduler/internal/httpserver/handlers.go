@@ -433,6 +433,8 @@ func (s *Server) listRuns(ctx fiber.Ctx) error {
 		q = q.Where("tenant_id = ?", c.TenantID)
 		if planID != 0 {
 			q = q.Where("plan_id = ?", planID)
+		} else {
+			q = q.Where("plan_id <> 0") // 调试 run（plan_id=0）不进列表，仍可按 id 查看
 		}
 		return q
 	})

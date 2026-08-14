@@ -108,6 +108,7 @@ func (s *Server) App() *fiber.App {
 
 	h(fiber.MethodGet, "/apis", auth.RoleViewer, s.listAPIs)
 	h(fiber.MethodPost, "/apis", auth.RoleMember, s.createAPI)
+	h(fiber.MethodPost, "/apis/debug", auth.RoleMember, s.debugAPI)
 	h(fiber.MethodGet, "/apis/:id", auth.RoleViewer, s.getAPI)
 	h(fiber.MethodPut, "/apis/:id", auth.RoleMember, s.updateAPI)
 	h(fiber.MethodDelete, "/apis/:id", auth.RoleMember, s.deleteAPI)
@@ -183,6 +184,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPut, "/tenant/members/:userID", auth.RoleAdmin, s.updateMemberRole)
 	h(fiber.MethodDelete, "/tenant/members/:userID", auth.RoleAdmin, s.removeMember)
 	h(fiber.MethodPost, "/auth/switch-tenant", auth.RoleViewer, s.switchTenant)
+	h(fiber.MethodGet, "/tenants", auth.RoleViewer, s.listMyTenants)
 	h(fiber.MethodPost, "/tenants", auth.RoleViewer, s.createTenant)
 	h(fiber.MethodGet, "/tenant/quotas", auth.RoleAdmin, s.listQuotas)
 	h(fiber.MethodGet, "/tenant/settings", auth.RoleAdmin, s.listTenantSettings)

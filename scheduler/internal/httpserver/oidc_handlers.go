@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,22 +23,47 @@ import (
 // GET  /api/v1/auth/oidc/{id}/login           302 到 IdP 授权端点
 // GET  /api/v1/auth/oidc/{id}/callback        code 换 token、验签、建/联账号、签发本地 JWT
 
-var oidcStates sync.Map // state → time.Time（10min 有效）
+type oidcStateEntry struct {
+	at       time.Time
+	redirect string // 登录成功后 302 回跳的浏览器 origin（前端 SSE 登录页用）
+}
 
-func newOIDCState() string {
+var oidcStates sync.Map // state → oidcStateEntry（10min 有效）
+
+func newOIDCState(redirect string) string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	s := hex.EncodeToString(b)
-	oidcStates.Store(s, time.Now())
+	oidcStates.Store(s, oidcStateEntry{at: time.Now(), redirect: redirect})
 	return s
 }
 
-func takeOIDCState(s string) bool {
+func takeOIDCState(s string) (string, bool) {
 	v, ok := oidcStates.LoadAndDelete(s)
 	if !ok {
+		return "", false
+	}
+	e := v.(oidcStateEntry)
+	if time.Since(e.at) > 10*time.Minute {
+		return "", false
+	}
+	return e.redirect, true
+}
+
+// redirectAllowed 302 回跳白名单：同 host，或 localhost/回环（dev 前端 :5173 跨端口）。
+func redirectAllowed(redirect string, ctx fiber.Ctx) bool {
+	u, err := url.Parse(redirect)
+	if err != nil || u.Hostname() == "" {
 		return false
 	}
-	return time.Since(v.(time.Time)) < 10*time.Minute
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if u.Hostname() == ctx.Hostname() {
+		return true
+	}
+	h := strings.ToLower(u.Hostname())
+	return h == "localhost" || h == "127.0.0.1" || h == "::1"
 }
 
 func (s *Server) oidcCallbackURI(ctx fiber.Ctx, id int64) string {
@@ -95,7 +121,10 @@ func (s *Server) oidcLogin(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "discovery failed: "+err.Error()))
 	}
-	state := newOIDCState()
+	// strings.Clone：fiber v3 ctx.Query 是 fasthttp 查询缓冲的零拷贝视图，
+	// 连接复用后缓冲区会被后续请求覆盖，跨请求存活的 state 必须拷贝。
+	rd := strings.Clone(ctx.Query("redirect"))
+	state := newOIDCState(rd)
 	return ctx.Redirect().Status(fiber.StatusFound).To(auth.AuthURL(doc, p.ClientID, s.oidcCallbackURI(ctx, id), state))
 }
 
@@ -104,7 +133,8 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "invalid provider id"))
 	}
-	if !takeOIDCState(ctx.Query("state")) {
+	redirect, ok := takeOIDCState(strings.Clone(ctx.Query("state")))
+	if !ok {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeOIDCState, "invalid or expired state"))
 	}
 	code := ctx.Query("code")
@@ -157,6 +187,12 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
+	}
+	// 浏览器 SSO 流：带 redirect 时 302 回跳前端 hash 路由（token 走 URL）；
+	// 否则保持 JSON（API 客户端兼容）
+	if redirect != "" && redirectAllowed(redirect, ctx) {
+		return ctx.Redirect().Status(fiber.StatusFound).
+			To(redirect + "/#/auth/callback?token=" + url.QueryEscape(token))
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{
 		"token": token, "user": u, "tenant_id": m.TenantID, "role": m.Role,

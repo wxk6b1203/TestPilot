@@ -134,6 +134,27 @@ func (s *Server) ownerCount(tenantID int64) int64 {
 	return cnt
 }
 
+// listMyTenants 当前用户所属租户列表（租户切换器数据源）。
+func (s *Server) listMyTenants(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	var ms []model.TenantMember
+	s.db.Where("user_id = ?", c.UserID).Order("id asc").Find(&ms)
+	items := make([]map[string]any, 0, len(ms))
+	for _, m := range ms {
+		var t model.Tenant
+		if err := s.db.First(&t, m.TenantID).Error; err != nil {
+			continue
+		}
+		items = append(items, map[string]any{
+			"tenant_id":  m.TenantID,
+			"name":       t.Name,
+			"role":       m.Role,
+			"is_current": m.TenantID == c.TenantID,
+		})
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"items": items})
+}
+
 // createTenant 创建租户并把调用者设为 owner（自助式多租户）。
 func (s *Server) createTenant(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)

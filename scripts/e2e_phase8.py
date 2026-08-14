@@ -128,6 +128,27 @@ try:
     r = oidc.post("/api/v1/projects", json={"name": "x"})
     assert r.status_code == 403, "OIDC 默认角色 viewer 应只读"
     print(f"✓ OIDC: mock IdP 登录 → {data['user']['username']}（viewer）token 可用")
+
+    # redirect 模式：浏览器 SSO 流 → 302 回跳前端 hash 路由带 token；恶意 origin 拒绝
+    b2 = httpx.Client(follow_redirects=False, timeout=15)
+    r1 = b2.get(f"{BASE}/api/v1/auth/oidc/{prov_id}/login",
+                params={"redirect": "http://localhost:5173"})
+    assert r1.status_code == 302, r1.status_code
+    r2 = b2.get(r1.headers["location"])  # authorize → 302 到 callback
+    assert r2.status_code == 302, r2.status_code
+    r3 = b2.get(r2.headers["location"])  # callback → 302 回跳带 token
+    assert r3.status_code == 302, r3.status_code
+    loc3 = r3.headers["location"]
+    assert loc3.startswith("http://localhost:5173/#/auth/callback?token="), loc3
+    print("✓ OIDC redirect: 302 回跳 #/auth/callback?token=…")
+    r4 = b2.get(f"{BASE}/api/v1/auth/oidc/{prov_id}/login",
+                params={"redirect": "https://evil.example"})
+    assert r4.status_code == 302
+    r5 = b2.get(r4.headers["location"])
+    r6 = b2.get(r5.headers["location"])
+    assert r6.status_code == 200, "非白名单 origin 应回落 JSON（不 302）"
+    assert r6.json().get("token"), r6.text
+    print("✓ OIDC redirect: 非白名单 origin 回落 JSON")
 finally:
     idp.terminate()
 

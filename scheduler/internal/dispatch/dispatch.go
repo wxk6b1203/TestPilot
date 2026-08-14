@@ -63,6 +63,24 @@ type Dispatcher struct {
 
 	artifactStore artifactstore.Backend // s3 等远端后端（nil=仅本地）
 	artifactRoot  string                // Worker 共享产物目录（Ingest 源路径）
+
+	waiters sync.Map // taskID(string) → chan *workerv1.TaskResult（调试端点同步等待）
+}
+
+// RegisterWaiter 注册调试等待器（必须在 Dispatch 之前调用，防结果先于等待到达）。
+func (d *Dispatcher) RegisterWaiter(taskID string) chan *workerv1.TaskResult {
+	ch := make(chan *workerv1.TaskResult, 1) // 缓冲：结果可能在 select 之前到达
+	d.waiters.Store(taskID, ch)
+	return ch
+}
+
+// TakeWaiter 取走等待器（LoadAndDelete；结果落库失败也能回传给调用方）。
+func (d *Dispatcher) TakeWaiter(taskID string) (chan *workerv1.TaskResult, bool) {
+	v, ok := d.waiters.LoadAndDelete(taskID)
+	if !ok {
+		return nil, false
+	}
+	return v.(chan *workerv1.TaskResult), true
 }
 
 func New(db *gorm.DB) *Dispatcher {
@@ -353,6 +371,15 @@ func (d *Dispatcher) handleStressResult(res *workerv1.TaskResult) error {
 
 // HandleTaskResult 落库任务结果并推进 run 状态。w 为上报的 Worker（压测任务用于解除独占）。
 func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error {
+	// 调试等待器优先投递（在落库之前：即使入库失败调用方也能拿到响应）
+	if ch, ok := d.TakeWaiter(res.GetTaskId()); ok {
+		defer func() {
+			select {
+			case ch <- res:
+			default:
+			}
+		}()
+	}
 	// 压测任务结果走独立收尾路径
 	var srun model.StressRun
 	if err := d.db.Select("id", "tenant_id").Where("id = ?", mustInt64(res.GetRunId())).First(&srun).Error; err == nil {

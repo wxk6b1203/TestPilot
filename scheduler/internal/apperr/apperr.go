@@ -47,6 +47,7 @@ const (
 	CodeAlreadyExists  = "ALREADY_EXISTS"  // 409 目标已存在
 	CodeLastOwner      = "LAST_OWNER"      // 409 不能降级/移除最后一名 owner
 	CodeQuotaExceeded  = "QUOTA_EXCEEDED"  // 429 配额超限
+	CodeDebugTimeout   = "DEBUG_TIMEOUT"   // 504 调试任务超时未回
 	CodeOIDCState      = "OIDC_BAD_STATE"  // 400 OIDC state 无效/过期
 	CodeOIDCExchange   = "OIDC_EXCHANGE"   // 502 OIDC 令牌交换/验签失败
 	CodeIdentityUnlink = "IDENTITY_UNLINK" // 403 OIDC 身份未关联任何用户
