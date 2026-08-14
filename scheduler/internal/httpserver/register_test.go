@@ -158,8 +158,8 @@ func TestTenantSettingsCRUD(t *testing.T) {
 		t.Fatalf("list: %+v", list.Items)
 	}
 
-	// DELETE + 再删 404
-	for want := range map[int]struct{}{200: {}, 404: {}} {
+	// DELETE + 再删 404（顺序固定，勿用 map 迭代）
+	for _, want := range []int{200, 404} {
 		req = httptest.NewRequest(fiber.MethodDelete, "/api/v1/tenant/settings/feature_beta", nil)
 		req.Header.Set(fiber.HeaderAuthorization, "Bearer "+token)
 		resp, err = app.Test(req)

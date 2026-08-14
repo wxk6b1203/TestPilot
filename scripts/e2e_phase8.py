@@ -131,6 +131,33 @@ try:
 finally:
     idp.terminate()
 
+# ---- OAuth2 授权码（mock 提供方，无 discovery → 走 IdP config 显式端点）----
+oa2 = subprocess.Popen([sys.executable, "scripts/mock_oauth2.py", "18110"],
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+try:
+    time.sleep(0.8)
+    r = api.post("/api/v1/identity-providers", json={
+        "name": "mock-oauth2", "type": "oauth2", "issuer": "http://127.0.0.1:18110",
+        "client_id": "mock-client", "client_secret": "mock-secret",
+        "authorization_endpoint": "http://127.0.0.1:18110/authorize",
+        "token_endpoint": "http://127.0.0.1:18110/token",
+        "userinfo_endpoint": "http://127.0.0.1:18110/userinfo"})
+    assert r.status_code == 200, r.text
+    prov2 = r.json()
+    assert prov2["type"] == "oauth2", prov2
+    browser = httpx.Client(follow_redirects=True, timeout=15)
+    r = browser.get(f"{BASE}/api/v1/auth/oidc/{prov2['id']}/login")
+    data = r.json()
+    assert data.get("token"), f"OAuth2 未签发 token: {data}"
+    oauth2cli = authed(data["token"])
+    r = oauth2cli.get("/api/v1/me")
+    assert r.status_code == 200 and r.json()["user"]["email"] == "mock@oauth2.local", r.text
+    r = oauth2cli.post("/api/v1/projects", json={"name": "x"})
+    assert r.status_code == 403, "OAuth2 默认角色 viewer 应只读"
+    print(f"✓ OAuth2: mock 提供方登录 → {data['user']['username']}（viewer，userinfo 身份）")
+finally:
+    oa2.terminate()
+
 # ---- 定时调度 + 通知 ----
 r = api.post("/api/v1/notifications", json={
     "name": "e2e-sink", "type": 1, "url": f"{ECHO}/sink",

@@ -91,10 +91,12 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **统一断言**：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/NOT_EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS
 - **多租户**：tenant_id 全表隔离（应用层过滤），雪花 ID，REST 层 ID 字符串化（JS 安全、输入字符串自动还原）
 - **认证 / RBAC（Phase 8）**：本地账号（bcrypt + JWT 24h；种子 `admin/admin123` = tenant 1 owner）
-  + **OIDC** 授权码流程（可插拔 identity_providers，租户级；RS256 JWKS / HS256 验签，
-  外部用户首次登录自动建档并落 viewer）。角色 owner=1 / admin=2 / member=3 / viewer=4
-  （小=高），路由约定：GET→viewer、领域写→member、租户治理（成员/配额/通知/身份源/审计）→admin；
-  自助建租户（POST /tenants）+ switch-tenant 换签；最后一名 owner 不可降级/移除。
+  + **OIDC / OAuth2 授权码双轨**（可插拔 identity_providers，租户级；OIDC=id_token 验签
+  RS256 JWKS / HS256，OAuth2=access_token 换 userinfo 取身份——无 discovery 的提供方
+  （如 GitHub）经 IdP config 显式端点接入；外部用户首次登录自动建档并落 viewer）。
+  角色 owner=1 / admin=2 / member=3 / viewer=4（小=高），路由约定：GET→viewer、领域写→member、
+  租户治理（成员/配额/通知/身份源/审计）→admin；自助建租户（POST /tenants）+ switch-tenant
+  换签；最后一名 owner 不可降级/移除。
   **公开注册（v2）**：`POST /auth/register`（配置开关 `registration_enabled`，默认关）——
   注册即自建租户并成为 owner，成功直接签发 token；用户名唯一（409 `USERNAME_TAKEN`）
 - **租户配置开关表（v2）**：`tenant_settings`（key-value，UNIQUE(tenant_id,key)）——
@@ -272,4 +274,4 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- OAuth2（非 OIDC）登录
+- （无——全部计划能力已落地；client_credentials 机器凭证属 api_tokens 另议项）

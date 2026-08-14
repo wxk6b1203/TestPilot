@@ -121,11 +121,24 @@ SCREENSHOT/WAIT/UPLOAD/DOWNLOAD。产物：截图（失败自动）+ trace.zip +
 `ai_calls`（月度 Copilot 调用）/ `worker_slots`（租户专属 Worker 数）。
 0 或不存在 = 不限；超限 → 429 `QUOTA_EXCEEDED`。用量实时从事实表计算（`GET /tenant/quotas` 可见）。
 
-## OIDC 登录
+## OIDC / OAuth2 登录
 
-admin 配置 `POST /identity-providers`（issuer/client_id/client_secret）。用户访问
-`GET /auth/oidc/providers` 选择身份源 → `GET /auth/oidc/{id}/login` 302 到 IdP →
-回调签发本地 JWT。外部用户首次登录自动建档，默认 viewer。支持 RS256（JWKS）与 HS256。
+admin 配置 `POST /identity-providers`（issuer/client_id/client_secret），`type` 二选一：
+
+- **oidc**（默认）：回调验 `id_token`（RS256 JWKS / HS256），身份取 sub/email 声明。
+- **oauth2**：回调以 `access_token` 拉 **userinfo** 取身份（sub/email/name）。对不发布
+  discovery 文档的提供方（如 GitHub），显式给出端点：
+
+```json
+{"name": "github", "type": "oauth2", "issuer": "https://github.com",
+ "client_id": "...", "client_secret": "...",
+ "authorization_endpoint": "https://github.com/login/oauth/authorize",
+ "token_endpoint": "https://github.com/login/oauth/access_token",
+ "userinfo_endpoint": "https://api.github.com/user"}
+```
+
+用户访问 `GET /auth/oidc/providers` 选择身份源 → `GET /auth/oidc/{id}/login` 302 到
+IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 viewer。
 
 ## Copilot
 

@@ -122,7 +122,7 @@
 | DELETE | /tenant/settings/{key} | admin | 删除（不存在 404） |
 | GET/POST | /tenant/members | admin | addMember 可按需创建用户（默认密码 changeme123） |
 | PUT/DELETE | /tenant/members/{userID} | admin | 最后 owner 不可降级/移除（409 LAST_OWNER） |
-| GET/POST | /identity-providers | admin | OIDC 身份源（issuer/client_id/client_secret） |
+| GET/POST | /identity-providers | admin | OIDC/OAuth2 身份源（issuer/client_id/client_secret + `type: oidc|oauth2` + 可选 authorization/token/userinfo_endpoint 覆盖） |
 | PUT/DELETE | /identity-providers/{id} | admin | |
 | GET | /audit-logs | admin | actor 1=human 2=copilot |
 

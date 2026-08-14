@@ -3,6 +3,7 @@ package httpserver
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -57,6 +58,30 @@ func (s *Server) listOIDCProvidersPublic(ctx fiber.Ctx) error {
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"items": out})
 }
 
+// resolveDoc 取身份源的端点：优先 discovery 文档；失败或提供方不发布时用 IdP 配置
+// 显式端点兜底/覆盖（纯 OAuth2 提供方如 GitHub 没有 openid-configuration）。
+func (s *Server) resolveDoc(p *model.IdentityProvider) (*auth.DiscoveryDoc, error) {
+	cfg := p.ConfigMap()
+	doc, err := auth.Discover(p.Issuer)
+	if err != nil {
+		if cfg["authorization_endpoint"] == "" || cfg["token_endpoint"] == "" {
+			return nil, err
+		}
+		doc = &auth.DiscoveryDoc{Issuer: p.Issuer,
+			Authorization: cfg["authorization_endpoint"], Token: cfg["token_endpoint"]}
+	}
+	if v := cfg["authorization_endpoint"]; v != "" {
+		doc.Authorization = v
+	}
+	if v := cfg["token_endpoint"]; v != "" {
+		doc.Token = v
+	}
+	if v := cfg["userinfo_endpoint"]; v != "" {
+		doc.UserInfo = v
+	}
+	return doc, nil
+}
+
 func (s *Server) oidcLogin(ctx fiber.Ctx) error {
 	id, err := strconv.ParseInt(ctx.Params("id"), 10, 64)
 	if err != nil {
@@ -66,7 +91,7 @@ func (s *Server) oidcLogin(ctx fiber.Ctx) error {
 	if err := s.db.First(&p, id).Error; err != nil || !p.Enabled {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "provider not found"))
 	}
-	doc, err := auth.Discover(p.Issuer)
+	doc, err := s.resolveDoc(&p)
 	if err != nil {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "discovery failed: "+err.Error()))
 	}
@@ -90,7 +115,7 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	if err := s.db.First(&p, id).Error; err != nil || !p.Enabled {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "provider not found"))
 	}
-	doc, err := auth.Discover(p.Issuer)
+	doc, err := s.resolveDoc(&p)
 	if err != nil {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "discovery failed: "+err.Error()))
 	}
@@ -98,11 +123,24 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, err.Error()))
 	}
-	rawIDToken, _ := tok["id_token"].(string)
-	if rawIDToken == "" {
-		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "token response lacks id_token"))
+	// oidc：id_token 验签取身份；oauth2：access_token 换 userinfo 取身份
+	var claims *auth.OIDCClaims
+	switch p.Type {
+	case "oauth2":
+		access, _ := tok["access_token"].(string)
+		if access == "" {
+			return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "token response lacks access_token"))
+		}
+		claims, err = auth.FetchUserInfo(doc.UserInfo, access)
+	case "", "oidc":
+		rawIDToken, _ := tok["id_token"].(string)
+		if rawIDToken == "" {
+			return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, "token response lacks id_token"))
+		}
+		claims, err = auth.VerifyIDToken(rawIDToken, p.Issuer, p.ClientID, p.ClientSecret)
+	default:
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "unsupported provider type "+p.Type))
 	}
-	claims, err := auth.VerifyIDToken(rawIDToken, p.Issuer, p.ClientID, p.ClientSecret)
 	if err != nil {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, err.Error()))
 	}
@@ -178,7 +216,30 @@ type providerReq struct {
 	Issuer       string `json:"issuer"`
 	ClientID     string `json:"client_id"`
 	ClientSecret string `json:"client_secret"`
-	Enabled      *bool  `json:"enabled"`
+	Type         string `json:"type"` // oidc（默认）| oauth2
+	// oauth2 提供方端点覆盖（无 discovery 时必填 authorization/token；userinfo 必填）
+	AuthorizationEndpoint string `json:"authorization_endpoint"`
+	TokenEndpoint         string `json:"token_endpoint"`
+	UserInfoEndpoint      string `json:"userinfo_endpoint"`
+	Enabled               *bool  `json:"enabled"`
+}
+
+func (in *providerReq) endpointsConfig() model.JSON {
+	m := map[string]string{}
+	for k, v := range map[string]string{
+		"authorization_endpoint": in.AuthorizationEndpoint,
+		"token_endpoint":         in.TokenEndpoint,
+		"userinfo_endpoint":      in.UserInfoEndpoint,
+	} {
+		if v != "" {
+			m[k] = v
+		}
+	}
+	if len(m) == 0 {
+		return nil
+	}
+	b, _ := json.Marshal(m)
+	return model.JSON(b)
 }
 
 func (s *Server) createIdentityProvider(ctx fiber.Ctx) error {
@@ -190,14 +251,21 @@ func (s *Server) createIdentityProvider(ctx fiber.Ctx) error {
 	if in.Issuer == "" || in.ClientID == "" {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "issuer 与 client_id 必填"))
 	}
+	ptype := in.Type
+	if ptype == "" {
+		ptype = "oidc"
+	}
+	if ptype != "oidc" && ptype != "oauth2" {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type 仅支持 oidc/oauth2"))
+	}
 	enabled := true
 	if in.Enabled != nil {
 		enabled = *in.Enabled
 	}
 	row := &model.IdentityProvider{
-		ID: model.NextID(), TenantID: c.TenantID, Name: in.Name, Type: "oidc",
+		ID: model.NextID(), TenantID: c.TenantID, Name: in.Name, Type: ptype,
 		Issuer: strings.TrimSuffix(in.Issuer, "/"), ClientID: in.ClientID,
-		ClientSecret: in.ClientSecret, Enabled: enabled,
+		ClientSecret: in.ClientSecret, Config: in.endpointsConfig(), Enabled: enabled,
 	}
 	if in.Name == "" {
 		row.Name = in.Issuer
@@ -233,6 +301,24 @@ func (s *Server) updateIdentityProvider(ctx fiber.Ctx) error {
 	}
 	if in.ClientSecret != "" {
 		row.ClientSecret = in.ClientSecret
+	}
+	if in.Type != "" {
+		if in.Type != "oidc" && in.Type != "oauth2" {
+			return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type 仅支持 oidc/oauth2"))
+		}
+		row.Type = in.Type
+	}
+	if cfg := in.endpointsConfig(); len(cfg) > 0 {
+		// 合并进现有 config（新端点覆盖旧值）
+		merged := row.ConfigMap()
+		var m map[string]string
+		if json.Unmarshal([]byte(cfg), &m) == nil {
+			for k, v := range m {
+				merged[k] = v
+			}
+		}
+		b, _ := json.Marshal(merged)
+		row.Config = model.JSON(b)
 	}
 	if in.Enabled != nil {
 		row.Enabled = *in.Enabled

@@ -2,6 +2,7 @@ package model
 
 import (
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -493,13 +494,27 @@ type IdentityProvider struct {
 	ID           int64     `json:"id" gorm:"primaryKey"`
 	TenantID     int64     `json:"tenant_id" gorm:"index"`
 	Name         string    `json:"name"`
-	Type         string    `json:"type" gorm:"size:16"` // oidc
+	Type         string    `json:"type" gorm:"size:16"` // oidc | oauth2
 	Issuer       string    `json:"issuer"`
 	ClientID     string    `json:"client_id"`
 	ClientSecret string    `json:"-"`
+	Config       JSON      `json:"config,omitempty" gorm:"type:text"` // oauth2 端点覆盖：authorization_endpoint/token_endpoint/userinfo_endpoint
 	Enabled      bool      `json:"enabled"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// ConfigMap 解析 IdentityProvider.Config JSON 为键值映射（端点覆盖等）。
+func (p *IdentityProvider) ConfigMap() map[string]string {
+	out := map[string]string{}
+	if len(p.Config) == 0 {
+		return out
+	}
+	var m map[string]string
+	if json.Unmarshal([]byte(p.Config), &m) == nil {
+		out = m
+	}
+	return out
 }
 
 // TenantQuota 租户配额上限（Limit=0 表示不限；metric 见 internal/quota）。

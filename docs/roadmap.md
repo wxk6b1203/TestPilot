@@ -354,7 +354,7 @@
 | 压测 behavior_case | 依赖低代码 Page 能力桥（已就绪） | ✅ 已完成：Worker 进程内 asyncio 负载环 + 沙箱常驻循环模式（迭代门控/全新 vars 快照/指标协议复用 Locust 路径，报告页零改动） |
 
 ### 明确不做/另议
-- **OAuth2（非 OIDC）登录**：grant 类型未定（client_credentials 为 S2S、password 已弃用），待具体需求
+- **OAuth2 授权码登录**：✅ 已落地（2026-08-14）——`type=oauth2` + userinfo 身份拉取 + 无 discovery 提供方显式端点接入；**client_credentials（机器凭证）**仍另议（属 api_tokens 场景）
 - **api_tokens 表（CI token）**：DDL 已预留；roadmap Phase 3 的「CI 集成 + CLI」整体待议（用户已明确不依赖 GitHub CI）
 - **VictoriaMetrics**：压测时序当前落 `stress_metric_points` 表；设计文档保留 VictoriaMetrics 为大规模部署的可选替换，非排期项
 - **Vault**：密钥管理走敏感变量 + secret_ref 引用（沙箱零凭据设计）；Vault 对接非排期项

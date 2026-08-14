@@ -1,6 +1,9 @@
 package auth
 
 import (
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
 
@@ -132,5 +135,57 @@ func TestRoleName(t *testing.T) {
 		if got := RoleName(tc.role); got != tc.want {
 			t.Errorf("RoleName(%d) = %q, want %q", tc.role, got, tc.want)
 		}
+	}
+}
+
+// FetchUserInfo（OAuth2 回调身份来源）：Bearer 校验 + 字段映射 + 错误面。
+func TestFetchUserInfo(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer tok-1" {
+			http.Error(w, `{"error":"invalid_token"}`, 401)
+			return
+		}
+		fmt.Fprint(w, `{"sub":"u-1","email":"a@b.c","name":"Alice"}`)
+	}))
+	defer srv.Close()
+
+	claims, err := FetchUserInfo(srv.URL, "tok-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if claims.Sub != "u-1" || claims.Email != "a@b.c" || claims.PreferredUsername != "Alice" {
+		t.Fatalf("claims: %+v", claims)
+	}
+
+	// preferred_username 优先于 name
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"sub":"u-2","preferred_username":"p","name":"n"}`)
+	}))
+	defer srv2.Close()
+	c2, err := FetchUserInfo(srv2.URL, "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c2.PreferredUsername != "p" {
+		t.Fatalf("preferred_username should win: %+v", c2)
+	}
+
+	// 错误面：401 / 空端点 / 缺身份字段
+	srv3 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "nope", 500)
+	}))
+	defer srv3.Close()
+	if _, err := FetchUserInfo(srv3.URL, "x"); err == nil {
+		t.Fatal("500 should error")
+	}
+	if _, err := FetchUserInfo("", "x"); err == nil {
+		t.Fatal("empty endpoint should error")
+	}
+	srv4 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"name":"only-name"}`)
+	}))
+	defer srv4.Close()
+	if _, err := FetchUserInfo(srv4.URL, "x"); err == nil {
+		t.Fatal("missing sub+email should error")
 	}
 }

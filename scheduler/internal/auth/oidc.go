@@ -21,10 +21,13 @@ import (
 )
 
 // DiscoveryDoc .well-known/openid-configuration 的必要字段。
+// UserInfo 为 OAuth2（非 OIDC）回调拉取用户信息的端点；纯 OAuth2 提供方（如 GitHub）
+// 不发布 discovery 文档，此时由 IdP 配置显式给出端点（见 httpserver.resolveDoc）。
 type DiscoveryDoc struct {
 	Issuer        string `json:"issuer"`
 	Authorization string `json:"authorization_endpoint"`
 	Token         string `json:"token_endpoint"`
+	UserInfo      string `json:"userinfo_endpoint"`
 	JWKS          string `json:"jwks_uri"`
 }
 
@@ -108,6 +111,44 @@ func Exchange(doc *DiscoveryDoc, clientID, clientSecret, code, redirectURI strin
 	var out map[string]any
 	if err := json.Unmarshal(raw, &out); err != nil {
 		return nil, err
+	}
+	return out, nil
+}
+
+// FetchUserInfo 用 access_token 拉取 userinfo（OAuth2 授权码回调的身份来源），
+// 映射 sub/email/preferred_username（name 作退化）。
+func FetchUserInfo(userinfoEndpoint, accessToken string) (*OIDCClaims, error) {
+	if userinfoEndpoint == "" {
+		return nil, errors.New("userinfo_endpoint 未配置")
+	}
+	req, err := http.NewRequest("GET", userinfoEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("userinfo status %d", resp.StatusCode)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, err
+	}
+	out := &OIDCClaims{}
+	out.Sub, _ = body["sub"].(string)
+	out.Email, _ = body["email"].(string)
+	out.PreferredUsername, _ = body["preferred_username"].(string)
+	if out.PreferredUsername == "" {
+		out.PreferredUsername, _ = body["name"].(string)
+	}
+	if out.Sub == "" && out.Email == "" {
+		return nil, errors.New("userinfo lacks sub and email")
 	}
 	return out, nil
 }

@@ -104,14 +104,14 @@ erDiagram
 | status | SMALLINT | active/disabled |
 | created_at | TIMESTAMPTZ | |
 
-### identity_providers（可插拔身份源）
+### identity_providers（可插拔身份源，已落地 oidc/oauth2）
 | 列 | 类型 | 说明 |
 |----|------|------|
 | id | BIGINT PK | |
 | tenant_id | BIGINT NULL FK→tenants | 空 = 系统级默认 |
-| type | SMALLINT | local/oidc/oauth2 |
+| type | VARCHAR | oidc / oauth2（授权码双轨） |
 | name | VARCHAR | |
-| config | JSONB | issuer/client_id/scopes/字段映射等 |
+| config | JSONB | oauth2 端点覆盖：authorization_endpoint / token_endpoint / userinfo_endpoint |
 | enabled | BOOLEAN | |
 
 ### tenant_members（用户-租户-角色）
