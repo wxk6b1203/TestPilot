@@ -69,4 +69,5 @@ func (s *Server) createProtoFile(ctx fiber.Ctx) error {
 }
 
 func (s *Server) getProtoFile(ctx fiber.Ctx) error    { return getOf[model.ProtoFile](s.db, ctx) }
+func (s *Server) updateProtoFile(ctx fiber.Ctx) error { return updateOf[model.ProtoFile](s.db, ctx) }
 func (s *Server) deleteProtoFile(ctx fiber.Ctx) error { return deleteOf[model.ProtoFile](s.db, ctx) }

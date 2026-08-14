@@ -122,6 +122,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/proto-files", auth.RoleViewer, s.listProtoFiles)
 	h(fiber.MethodPost, "/proto-files", auth.RoleMember, s.createProtoFile)
 	h(fiber.MethodGet, "/proto-files/:id", auth.RoleViewer, s.getProtoFile)
+	h(fiber.MethodPut, "/proto-files/:id", auth.RoleMember, s.updateProtoFile)
 	h(fiber.MethodDelete, "/proto-files/:id", auth.RoleMember, s.deleteProtoFile)
 
 	h(fiber.MethodGet, "/cases", auth.RoleViewer, s.listCases)
