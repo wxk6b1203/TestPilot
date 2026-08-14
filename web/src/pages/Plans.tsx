@@ -1,17 +1,19 @@
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, message } from 'antd'
 import { DeleteOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { del, get, post } from '../api'
 import type { ListResp, TestPlan } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
 import { useLayout } from './Layout'
+import PlanEditor from './PlanEditor'
 
-// 测试计划列表：左侧面板为计划列表（运行/删除/新建），点击进入编辑器。
+// 测试计划列表：左侧面板为计划列表（运行/删除/新建），右侧为编辑器（/plans/:id/edit）。
 export default function Plans() {
   const { projectId, envId, envs } = useLayout()
+  const { id } = useParams()
   const nav = useNavigate()
   const [rows, setRows] = useState<TestPlan[]>([])
   const [search, setSearch] = useState('')
@@ -102,17 +104,21 @@ export default function Plans() {
         />
       }
     >
-      <div
-        style={{
-          display: 'flex', height: '100%', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 12,
-        }}
-      >
-        <PlayCircleOutlined style={{ fontSize: 40, color: PALETTE.textTertiary }} />
-        <div style={{ fontSize: 13, color: PALETTE.textTertiary }}>
-          在左侧选择计划进行编辑，或点击「+ 新建」创建测试计划
+      {id ? (
+        <PlanEditor key={id} />
+      ) : (
+        <div
+          style={{
+            display: 'flex', height: '100%', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 12,
+          }}
+        >
+          <PlayCircleOutlined style={{ fontSize: 40, color: PALETTE.textTertiary }} />
+          <div style={{ fontSize: 13, color: PALETTE.textTertiary }}>
+            在左侧选择计划进行编辑，或点击「+ 新建」创建测试计划
+          </div>
         </div>
-      </div>
+      )}
 
       <Modal
         title="新建测试计划"

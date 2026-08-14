@@ -199,32 +199,38 @@ export default function Copilot() {
   }
 
   return (
-    <div style={{ display: 'flex', gap: 16, height: 'calc(100vh - 150px)' }}>
-      <div style={{ width: 220, borderRight: `1px solid ${PALETTE.border}`, overflowY: 'auto' }}>
-        <Button block icon={<PlusOutlined />} onClick={newChat} style={{ marginBottom: 8 }}>
+    <div style={{ display: 'flex', height: '100%' }}>
+      {/* 会话列表：常驻左栏，全高，内部滚动 */}
+      <div style={{
+        flex: '0 0 260px', minWidth: 0, borderRight: `1px solid ${PALETTE.border}`,
+        display: 'flex', flexDirection: 'column', padding: 8, background: '#FFFFFF',
+      }}>
+        <Button block icon={<PlusOutlined />} onClick={newChat} style={{ marginBottom: 8, flexShrink: 0 }}>
           新会话
         </Button>
-        <List
-          size="small"
-          dataSource={sessions}
-          renderItem={(s) => (
-            <List.Item
-              onClick={() => openSession(s.id)}
-              style={{
-                cursor: 'pointer',
-                background: s.id === sessionId ? PALETTE.selectedRow : undefined,
-                padding: '6px 8px',
-              }}
-            >
-              <Typography.Text ellipsis style={{ fontSize: 13 }}>
-                {s.title || '(未命名)'}
-              </Typography.Text>
-            </List.Item>
-          )}
-        />
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          <List
+            size="small"
+            dataSource={sessions}
+            renderItem={(s) => (
+              <List.Item
+                onClick={() => openSession(s.id)}
+                style={{
+                  cursor: 'pointer',
+                  background: s.id === sessionId ? PALETTE.selectedRow : undefined,
+                  padding: '6px 8px',
+                }}
+              >
+                <Typography.Text ellipsis style={{ fontSize: 13 }}>
+                  {s.title || '(未命名)'}
+                </Typography.Text>
+              </List.Item>
+            )}
+          />
+        </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
           {messages.length === 0 && (
             <Typography.Text type="secondary">

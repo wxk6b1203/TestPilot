@@ -1,7 +1,7 @@
 import { Button, Input, Modal, Popconfirm, Space, message } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { del, download, get, post } from '../api'
 import type { HttpApi, ListResp } from '../api'
 import IdeLayout from '../components/IdeLayout'
@@ -14,6 +14,7 @@ import { PALETTE } from '../theme'
 // 接口工作区：左侧接口列表（搜索/导入/导出）+ 右侧调试区（无选中时为新建/空状态）。
 export default function Apis() {
   const { projectId } = useLayout()
+  const { id } = useParams() // /apis/:id 时右侧渲染调试区，左侧面板保持
   const nav = useNavigate()
   const [rows, setRows] = useState<HttpApi[]>([])
   const [search, setSearch] = useState('')
@@ -128,6 +129,7 @@ export default function Apis() {
           search={search}
           onSearch={setSearch}
           data={filtered}
+          activeId={id}
           onPick={(a) => nav(`/apis/${a.id}`)}
           extra={
             <Space size={4}>
@@ -168,7 +170,9 @@ export default function Apis() {
     </div>
   )
 
-  const workspace = newMode ? (
+  const workspace = id ? (
+    <ApiDebug key={id} />
+  ) : newMode ? (
     <ApiDebug newMode />
   ) : (
     <div style={{

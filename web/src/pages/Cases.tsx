@@ -1,21 +1,23 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, Popconfirm, Tag, message } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { del, get } from '../api'
 import type { ListResp, TestCase } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE, SPACING } from '../theme'
 import { useLayout } from './Layout'
+import CaseEditor from './CaseEditor'
 
-// 用例列表：左侧 PanelList（搜索/新建/删除），点击进入 CaseEditor。
+// 用例列表：左侧 PanelList（搜索/新建/删除），右侧为编辑器（/cases/:id/edit 或 /cases/new）。
 export default function Cases() {
   const { projectId } = useLayout()
+  const { id } = useParams()
+  const loc = useLocation()
   const nav = useNavigate()
   const [rows, setRows] = useState<TestCase[]>([])
   const [search, setSearch] = useState('')
-  const [activeId, setActiveId] = useState<string>()
 
   const load = () =>
     projectId
@@ -42,14 +44,13 @@ export default function Cases() {
           search={search}
           onSearch={setSearch}
           data={data}
-          activeId={activeId}
+          activeId={id}
           extra={
             <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => nav('/cases/new')}>
               + 新建
             </Button>
           }
           onPick={(c) => {
-            setActiveId(c.id)
             nav(`/cases/${c.id}/edit`)
           }}
           renderItem={(c) => (
@@ -88,19 +89,23 @@ export default function Cases() {
         />
       }
     >
-      <div
-        style={{
-          height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-          flexDirection: 'column', gap: SPACING[2],
-        }}
-      >
-        <span style={{ fontSize: 14, color: PALETTE.textSecondary }}>
-          从左侧选择用例，或点击「+ 新建」创建
-        </span>
-        <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>
-          声明式用例使用步骤树编辑器；低代码用例直接编写 Python
-        </span>
-      </div>
+      {id || loc.pathname === '/cases/new' ? (
+        <CaseEditor key={id ?? 'new'} />
+      ) : (
+        <div
+          style={{
+            height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexDirection: 'column', gap: SPACING[2],
+          }}
+        >
+          <span style={{ fontSize: 14, color: PALETTE.textSecondary }}>
+            从左侧选择用例，或点击「+ 新建」创建
+          </span>
+          <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>
+            声明式用例使用步骤树编辑器；低代码用例直接编写 Python
+          </span>
+        </div>
+      )}
     </IdeLayout>
   )
 }

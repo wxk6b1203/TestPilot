@@ -5,14 +5,11 @@ import Login from './pages/Login'
 import Projects from './pages/Projects'
 import Environments from './pages/Environments'
 import Apis from './pages/Apis'
-import ApiDebug from './pages/ApiDebug'
 import GrpcApis from './pages/GrpcApis'
 import Cases from './pages/Cases'
-import CaseEditor from './pages/CaseEditor'
 import Suites from './pages/Suites'
 import Scripts from './pages/Scripts'
 import Plans from './pages/Plans'
-import PlanEditor from './pages/PlanEditor'
 import Runs from './pages/Runs'
 import Stress from './pages/Stress'
 import Workers from './pages/Workers'
@@ -47,17 +44,17 @@ export default function App() {
         <Route path="/" element={<Guard><Layout /></Guard>}>
           <Route index element={<Navigate to="/apis" replace />} />
           <Route path="apis" element={<Apis />} />
-          <Route path="apis/:id" element={<ApiDebug />} />
+          <Route path="apis/:id" element={<Apis />} />
           <Route path="grpc" element={<GrpcApis />} />
           <Route path="cases" element={<Cases />} />
-          <Route path="cases/new" element={<CaseEditor />} />
-          <Route path="cases/:id/edit" element={<CaseEditor />} />
+          <Route path="cases/new" element={<Cases />} />
+          <Route path="cases/:id/edit" element={<Cases />} />
           <Route path="suites" element={<Suites />} />
           <Route path="suites/:id/edit" element={<Suites />} />
           <Route path="scripts" element={<Scripts />} />
           <Route path="scripts/:id/edit" element={<Scripts />} />
           <Route path="plans" element={<Plans />} />
-          <Route path="plans/:id/edit" element={<PlanEditor />} />
+          <Route path="plans/:id/edit" element={<Plans />} />
           <Route path="runs" element={<Runs />} />
           <Route path="stress" element={<Stress />} />
           <Route path="envs" element={<Environments />} />
