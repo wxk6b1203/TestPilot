@@ -162,7 +162,7 @@ export default function Layout() {
           </Space>
         </Dropdown>
       </ALayout.Header>
-      <ALayout style={{ height: 'calc(100vh - 48px)' }}>
+      <ALayout style={{ height: 'calc(100vh - 48px)', flexDirection: 'row' }}>
         {/* 一级图标栏 */}
         <div style={{
           width: 72, background: PALETTE.bgLayout, borderRight: `1px solid ${PALETTE.border}`,
