@@ -2,6 +2,7 @@ import { Button, Input, Modal, Select, Tabs, Tag, message } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import useSaveShortcut from '../hooks/useSaveShortcut'
 import { get, post, put } from '../api'
 import type { DebugResult, HttpApi } from '../api'
 import BodyEditor from '../components/BodyEditor'
@@ -9,6 +10,7 @@ import type { BodyValue } from '../components/BodyEditor'
 import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import ResponsePane from '../components/ResponsePane'
+import SplitPane from '../components/SplitPane'
 import { METHOD_COLORS, PALETTE } from '../theme'
 import { useLayout } from './Layout'
 
@@ -122,7 +124,8 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+
+  return () => window.removeEventListener('keydown', onKey)
   })
 
   const payload = () => ({
@@ -143,6 +146,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
       setSaveOpen(true)
     }
   }
+  useSaveShortcut(save)
 
   const doUpdate = async () => {
     try {
@@ -218,9 +222,11 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
         {dirty && <Tag color="warning" style={{ marginInlineEnd: 0 }}>未保存</Tag>}
       </div>
 
-      {/* 请求编排 tabs（上部，滚动） */}
-      <div style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '8px 16px' }}>
-        <Tabs
+      {/* 请求编排 tabs（上部）与响应面板（下部）——可拖拽分栏 */}
+      <div style={{ flex: 1, minHeight: 0 }}>
+        <SplitPane direction="vertical" initial="45%" min="20%" max="85%">
+          <div style={{ height: '100%', overflow: 'auto', padding: '8px 16px' }}>
+            <Tabs
           size="small"
           items={[
             {
@@ -257,14 +263,14 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
             },
           ]}
         />
-      </div>
-
-      {/* 响应面板（占约 55% 高度） */}
-      <div style={{
-        flex: '0 0 55%', minHeight: 0, overflow: 'auto', padding: '8px 16px',
-        borderTop: `1px solid ${PALETTE.border}`,
-      }}>
-        <ResponsePane result={debugResult} loading={loading} />
+          </div>
+          <div style={{
+            height: '100%', overflow: 'auto', padding: '8px 16px',
+            borderTop: `1px solid ${PALETTE.border}`,
+          }}>
+            <ResponsePane result={debugResult} loading={loading} />
+          </div>
+        </SplitPane>
       </div>
 
       {/* 新建保存（后端 create 无 name 列，此处仅作显示确认） */}
