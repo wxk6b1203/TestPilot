@@ -1,0 +1,9 @@
+/* 全局重置：去掉 body 默认 margin，根容器撑满视口（布局内各区域自行滚动） */
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* 页面级永不滚动：工作区内部各自 overflow:auto */
+}

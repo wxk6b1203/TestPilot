@@ -188,7 +188,7 @@ export default function Layout() {
           })}
         </div>
         {/* 内容区 */}
-        <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
+        <div style={{ flex: 1, minWidth: 0, height: '100%', overflow: 'auto' }}>
           <Outlet context={ctx} />
         </div>
       </ALayout>
