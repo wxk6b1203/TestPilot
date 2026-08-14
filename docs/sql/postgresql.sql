@@ -125,6 +125,7 @@ CREATE TABLE http_apis (
     id             BIGINT PRIMARY KEY,
     tenant_id      BIGINT        NOT NULL REFERENCES tenants (id),
     project_id     BIGINT        NOT NULL REFERENCES projects (id),
+    name           VARCHAR(255)  NOT NULL DEFAULT '',     -- 接口命名（展示兜底 METHOD uri）
     method         SMALLINT      NOT NULL,                -- HttpMethod
     uri            VARCHAR(1024) NOT NULL,                -- 可含 {{var}}
     params         JSONB,                                 -- KeyValue[]

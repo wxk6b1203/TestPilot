@@ -160,6 +160,7 @@ type HttpApi struct {
 	ID            int64          `json:"id" gorm:"primaryKey"`
 	TenantID      int64          `json:"tenant_id" gorm:"index:idx_http_tp"`
 	ProjectID     int64          `json:"project_id" gorm:"index:idx_http_tp"`
+	Name          string         `json:"name"` // 接口命名（可空；展示兜底 METHOD uri）
 	Method        int16          `json:"method"`
 	URI           string         `json:"uri"`
 	Params        JSON           `json:"params,omitempty" gorm:"type:text"`
@@ -189,6 +190,16 @@ type TreeNode struct {
 	Order     int    `json:"order"`
 	Path      string `json:"path" gorm:"index"`
 }
+
+// TreeNode.NodeType 取值（与 proto NodeType 编号一致）。
+const (
+	NodeTypeFolder   int16 = 1
+	NodeTypeHTTPAPI  int16 = 2
+	NodeTypeGRPCAPI  int16 = 3
+	NodeTypeTestCase int16 = 4
+	NodeTypeSuite    int16 = 5
+	NodeTypePlan     int16 = 6
+)
 
 // ---- 测试用例 / 计划 ----
 

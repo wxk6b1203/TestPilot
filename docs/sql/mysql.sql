@@ -136,6 +136,7 @@ CREATE TABLE http_apis (
     id             BIGINT PRIMARY KEY,
     tenant_id      BIGINT        NOT NULL,
     project_id     BIGINT        NOT NULL,
+    name           VARCHAR(255)  NOT NULL DEFAULT '' COMMENT '接口命名（展示兜底 METHOD uri）',
     method         SMALLINT      NOT NULL COMMENT 'HttpMethod',
     uri            VARCHAR(1024) NOT NULL COMMENT '可含 {{var}}',
     params         JSON          NULL COMMENT 'KeyValue[]',

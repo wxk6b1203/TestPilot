@@ -137,6 +137,14 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPut, "/plans/:id", auth.RoleMember, s.updatePlan)
 	h(fiber.MethodDelete, "/plans/:id", auth.RoleMember, s.deletePlan)
 
+	h(fiber.MethodGet, "/tree", auth.RoleViewer, s.getProjectTree)
+	h(fiber.MethodPost, "/tree/folders", auth.RoleMember, s.createFolder)
+	h(fiber.MethodPut, "/tree/folders/:id", auth.RoleMember, s.renameFolder)
+	h(fiber.MethodDelete, "/tree/folders/:id", auth.RoleMember, s.deleteFolder)
+	h(fiber.MethodPost, "/tree/nodes", auth.RoleMember, s.mountAPI)
+	h(fiber.MethodPut, "/tree/nodes/:id/move", auth.RoleMember, s.moveNode)
+	h(fiber.MethodDelete, "/tree/nodes/:id", auth.RoleMember, s.unmountAPI)
+
 	h(fiber.MethodGet, "/suites", auth.RoleViewer, s.listSuites)
 	h(fiber.MethodPost, "/suites", auth.RoleMember, s.createSuite)
 	h(fiber.MethodGet, "/suites/:id", auth.RoleViewer, s.getSuite)
