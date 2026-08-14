@@ -7,3 +7,15 @@ body,
   height: 100%;
   overflow: hidden; /* 页面级永不滚动：工作区内部各自 overflow:auto */
 }
+
+/* 目录树行交互（参考 file-browser ExplorerTree 的 hover/drop 视觉） */
+.ant-tree .ant-tree-node-content-wrapper {
+  border-radius: 6px;
+  transition: background-color 0.15s ease;
+}
+.ant-tree .ant-tree-node-content-wrapper:hover {
+  background: #e9ebef;
+}
+.ant-tree .ant-tree-treenode-drop-container {
+  transition: background-color 0.15s ease;
+}

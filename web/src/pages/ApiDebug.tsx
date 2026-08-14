@@ -1,4 +1,4 @@
-import { Button, Input, Modal, Select, Tabs, Tag, message } from 'antd'
+import { Button, Input, Modal, Select, Tabs, Tag, Typography, message } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -23,8 +23,8 @@ const EMPTY_BODY: BodyValue = { contentType: 0, raw: '' }
 const scriptOf = (rows?: ScriptRow[]) => rows?.find((s) => s.lang === 'python')?.source ?? ''
 
 // 表单快照（用于 dirty 判定：与"已保存/已回填"时刻的快照对比）
-const formOf = (method: number, uri: string, params: Kv[], headers: Kv[], body: BodyValue, pre: string, post: string) =>
-  JSON.stringify({ method, uri, params, headers, body, preScript: pre, postScript: post })
+const formOf = (name: string, method: number, uri: string, params: Kv[], headers: Kv[], body: BodyValue, pre: string, post: string) =>
+  JSON.stringify({ name, method, uri, params, headers, body, preScript: pre, postScript: post })
 
 const methodOptions = Object.entries(METHOD_COLORS).map(([v, m]) => ({
   value: Number(v),
@@ -32,12 +32,13 @@ const methodOptions = Object.entries(METHOD_COLORS).map(([v, m]) => ({
 }))
 
 // API 调试工作区（旗舰页）：/apis/:id 加载已有接口；newMode（/apis 右侧）为空白新建形态。
-export default function ApiDebug({ newMode }: { newMode?: boolean }) {
+export default function ApiDebug({ newMode, onSaved }: { newMode?: boolean; onSaved?: () => void }) {
   const nav = useNavigate()
   const { id } = useParams()
   const { projectId, envId, envs } = useLayout()
 
   const [method, setMethod] = useState(1)
+  const [name, setName] = useState('')
   const [uri, setUri] = useState('')
   const [params, setParams] = useState<Kv[]>([EMPTY_ROW])
   const [headers, setHeaders] = useState<Kv[]>([EMPTY_ROW])
@@ -51,7 +52,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
   const [saveOpen, setSaveOpen] = useState(false)
   const [saveName, setSaveName] = useState('')
   const [debugResult, setDebugResult] = useState<DebugResult>()
-  const [savedSnapshot, setSavedSnapshot] = useState(() => formOf(1, '', [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', ''))
+  const [savedSnapshot, setSavedSnapshot] = useState(() => formOf('', 1, '', [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', ''))
   const sendingRef = useRef(false)
 
   // 回填已有接口
@@ -67,6 +68,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
         const pre = scriptOf(a.pre_scripts)
         const post = scriptOf(a.post_scripts)
         setMethod(m)
+        setName(a.name ?? '')
         setUri(u)
         setParams(p)
         setHeaders(h)
@@ -74,7 +76,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
         setPreScript(pre)
         setPostScript(post)
         setSavedId(String(a.id))
-        setSavedSnapshot(formOf(m, u, p, h, b, pre, post))
+        setSavedSnapshot(formOf(a.name ?? '', m, u, p, h, b, pre, post))
       })
       .catch((e) => message.error(e.message))
   }, [id, newMode])
@@ -82,7 +84,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
   // 环境：默认跟随全局选择，工作区可临时改
   useEffect(() => setEnv(envId), [envId])
 
-  const currentSnapshot = formOf(method, uri, params, headers, body, preScript, postScript)
+  const currentSnapshot = formOf(name, method, uri, params, headers, body, preScript, postScript)
   const dirty = currentSnapshot !== savedSnapshot
 
   const clean = (rows: Kv[]) => rows.filter((r) => r.key.trim() !== '')
@@ -130,6 +132,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
 
   const payload = () => ({
     project_id: projectId,
+    name: name.trim(), // 始终发送：清空名称也要能保存（undefined 会被省略 → 后端保留旧值）
     method,
     uri,
     params: clean(params),
@@ -142,7 +145,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
   const save = () => {
     if (savedId) void doUpdate()
     else {
-      setSaveName(`${METHOD_COLORS[method]?.text ?? 'GET'} ${uri}`.trim())
+      setSaveName(name.trim() || `${METHOD_COLORS[method]?.text ?? 'GET'} ${uri}`.trim())
       setSaveOpen(true)
     }
   }
@@ -153,6 +156,7 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
       await put<HttpApi>(`/api/v1/apis/${savedId}`, payload())
       setSavedSnapshot(currentSnapshot)
       message.success('已保存')
+      onSaved?.()
     } catch (e: any) {
       message.error(e.message)
     }
@@ -167,6 +171,8 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
     try {
       const r = await post<HttpApi>('/api/v1/apis', payload())
       message.success('已保存')
+      setName(saveName.trim())
+      onSaved?.()
       nav(`/apis/${r.id}`)
     } catch (e: any) {
       message.error(e.message)
@@ -196,6 +202,30 @@ export default function ApiDebug({ newMode }: { newMode?: boolean }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#FFFFFF' }}>
+      {/* 名称 / ID 独立一行（不挤在发送/保存栏） */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+        borderBottom: `1px solid ${PALETTE.border}`, flexShrink: 0,
+      }}>
+        <span style={{ fontSize: 12, color: PALETTE.textSecondary, flexShrink: 0 }}>名称</span>
+        <Input
+          size="small"
+          style={{ width: 320 }}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="接口名称（可空，树/列表展示兜底 METHOD uri）"
+        />
+        <span style={{ flex: 1 }} />
+        {savedId && (
+          <Typography.Text
+            copyable={{ text: savedId, tooltips: ['复制 ID', '已复制'] }}
+            style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
+          >
+            ID {savedId}
+          </Typography.Text>
+        )}
+      </div>
+
       {/* 工具栏：方法 + URL + 环境 + 发送/保存 */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',

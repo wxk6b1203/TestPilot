@@ -97,11 +97,20 @@ export interface Variable {
 }
 export interface HttpApi {
   id: string
+  name?: string
   method: number
   uri: string
   params?: { key: string; value: string }[]
   headers?: { key: string; value: string }[]
   body?: { contentType: number; raw?: string }
+}
+export interface TreeNode {
+  id: string
+  node_type: number // 1=folder 2=http_api
+  name: string
+  ref_id?: string
+  ref?: { id: string; method: number; uri: string; name: string }
+  children?: TreeNode[]
 }
 export interface GrpcApi {
   id: string
