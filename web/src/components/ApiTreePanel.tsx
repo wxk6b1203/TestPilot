@@ -1,4 +1,5 @@
 import {
+  App as AntdApp,
   Button,
   Dropdown,
   Input,
@@ -9,13 +10,13 @@ import {
   Switch,
   Tree,
 } from 'antd'
-import type { MenuProps } from 'antd'
+import type { MenuProps, TreeProps } from 'antd'
 import {
   DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, FolderOutlined,
   MoreOutlined, PlusOutlined,
 } from '@ant-design/icons'
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { del, download, get, post, put, warnTruncated } from '../api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { del, download, get, post, put } from '../api'
 import type { HttpApi, ListResp, Project, TreeNode } from '../api'
 import { PALETTE } from '../theme'
 import MethodTag from './MethodTag'
@@ -24,9 +25,7 @@ import { message } from '../messageBridge'
 
 // 接口目录树面板（Apis 页左侧栏）：
 // - 树 = 根目录 + 目录嵌套 + 已挂载接口 + 遗留未挂载接口（堆在根末尾）
-// - 拖拽用 antd Tree 内置 draggable（原生 HTML5 DnD + 内置插入指示线），
-//   落点语义：目录行 上/下=兄弟间插入、中=拖入目录；接口行 上/下=插入（中视为下方）；根行=放入根
-// - 树外空白区释放 = 放入根目录末尾
+// - 拖拽使用 antd 6.6.0 Tree 原生 draggable/onDrop 行为（内置 DropIndicator，无自定义阴影/空白区拖放）
 // - 右键菜单（VSCode 式，光标处）：目录处支持「新建接口」落到该目录
 
 interface Props {
@@ -36,9 +35,12 @@ interface Props {
   refresh: number // 变化时重载树（ApiDebug 保存后触发）
   onPick: (apiId: string) => void
   onNewApi: (parentId?: string) => void
+  // 删除当前正在打开的接口时通知页面清掉 /apis/:id，避免右侧继续编辑已删除数据
+  onDeleted?: (apiId: string) => void
 }
 
-export default function ApiTreePanel({ projectId, projects, activeId, refresh, onPick, onNewApi }: Props) {
+export default function ApiTreePanel({ projectId, projects, activeId, refresh, onPick, onNewApi, onDeleted }: Props) {
+  const { modal } = AntdApp.useApp()
   const [rows, setRows] = useState<HttpApi[]>([])
   const [tree, setTree] = useState<TreeNode[]>([])
   const [search, setSearch] = useState('')
@@ -57,32 +59,74 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const [moveTarget, setMoveTarget] = useState<string>('')
   const [expandedKeys, setExpandedKeys] = useState<React.Key[]>(['__root__'])
   const [showDetail, setShowDetail] = useState(false) // 默认简略
-  // 树空白区右键菜单 + 拖拽悬停空白区的"放入根"阴影
+  // 树空白区右键菜单（与拖拽无关）
   const [blankMenu, setBlankMenu] = useState<{ x: number; y: number } | null>(null)
-  const [rootHover, setRootHover] = useState(false)
-  // 拖拽源 key（rc-tree 的 dataTransfer 只写空串，容器级空白区 fallback 需要它）
-  const dragNodeRef = useRef<string>('')
-  // 空目录"整行拖入"的悬停高亮
-  const [intoKey, setIntoKey] = useState('')
-  // "插到最前"高亮：展开容器的第一个子节点的顶部半区（内置逻辑会解析成拖入上个容器 → 末尾）
-  const [frontKey, setFrontKey] = useState('')
-  // frontKey 的持有行（'__root__' 或子节点 key）：enter/leave 乱序到达时，
-  // 只有持有行自己的 dragleave 才能清除，避免别行的 leave 误擦指示线
-  const frontOwnerRef = useRef('')
 
-  const load = () =>
-    Promise.all([
-      get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => { setRows(r.items); warnTruncated(r, '接口') }),
-      get<{ tree: TreeNode[] }>(`/api/v1/tree?project_id=${projectId}`).then((r) => setTree(r.tree)),
+  // 拉取数据：接口列表按 500/页循环取全量，避免截断导致树节点/搜索静默缺失。
+  const fetchData = useCallback(async () => {
+    const fetchAllApis = async (): Promise<HttpApi[]> => {
+      const out: HttpApi[] = []
+      const seen = new Set<string>()
+      let page = 1
+      let total = 0
+      do {
+        const r = await get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page=${page}&page_size=500`)
+        total = r.total
+        for (const item of r.items) {
+          if (!seen.has(item.id)) {
+            seen.add(item.id)
+            out.push(item)
+          }
+        }
+        if (r.items.length === 0) break
+        page += 1
+      } while (out.length < total)
+      return out
+    }
+    const [apiItems, treeRes] = await Promise.all([
+      fetchAllApis(),
+      get<{ tree: TreeNode[] }>(`/api/v1/tree?project_id=${projectId}`),
     ])
-  useEffect(() => {
-    setRows([])
-    setTree([])
-    load().catch((e) => message.error(e.message))
+    return { apiItems, tree: treeRes.tree }
   }, [projectId])
+
+  // 所有重载统一入口：内部捕获错误；seq 丢弃过期响应（快速切项目时防止旧数据覆盖新项目）。
+  const reloadSeqRef = useRef(0)
+  const reload = useCallback(async () => {
+    const seq = ++reloadSeqRef.current
+    try {
+      const data = await fetchData()
+      if (seq !== reloadSeqRef.current) return
+      setRows(data.apiItems)
+      setTree(data.tree)
+    } catch (e: any) {
+      if (seq !== reloadSeqRef.current) return
+      message.error(e.message)
+    }
+  }, [fetchData])
+
+  // 首次挂载只发一次请求；之后 projectId/refresh 变化各触发一次，互不重复。
+  const initialLoadRef = useRef(false)
+  const prevProjectRef = useRef(projectId)
+  const prevRefreshRef = useRef(refresh)
   useEffect(() => {
-    load().catch((e) => message.error(e.message))
-  }, [refresh])
+    const first = !initialLoadRef.current
+    const projectChanged = prevProjectRef.current !== projectId
+    const refreshChanged = prevRefreshRef.current !== refresh
+    if (!first) {
+      prevProjectRef.current = projectId
+      prevRefreshRef.current = refresh
+    } else {
+      initialLoadRef.current = true
+    }
+    if (first || projectChanged) {
+      setRows([])
+      setTree([])
+    }
+    if (first || projectChanged || refreshChanged) {
+      void reload()
+    }
+  }, [projectId, refresh, reload])
 
   // 已挂载接口 id：与 tree 同帧派生，避免同一接口在树内与未分类区并存
   const mountedIds = useMemo(() => {
@@ -97,22 +141,31 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     return ids
   }, [tree])
 
-  // 树索引：节点 id → 父节点 id / 接口 id → 节点 id / 父节点 id → 子节点列表
+  // 树索引：节点 id → 节点/父节点 id / 接口 id → 节点 id / 父节点 id → 子节点列表
   const nodeMeta = useMemo(() => {
+    const byId: Record<string, TreeNode> = {}
     const parent: Record<string, string> = {}
     const byRef: Record<string, string> = {}
     const children: Record<string, TreeNode[]> = {}
     const walk = (nodes: TreeNode[], p: string) => {
       children[p] = nodes
       for (const n of nodes) {
+        byId[n.id] = n
         parent[n.id] = p
         if (n.ref_id) byRef[n.ref_id] = n.id
         walk(n.children ?? [], n.id)
       }
     }
     walk(tree, '')
-    return { parent, byRef, children }
+    return { byId, parent, byRef, children }
   }, [tree])
+
+  // rows 的 id 索引：树构建从 O(n*m) 降到 O(n)
+  const rowsById = useMemo(() => {
+    const map = new Map<string, HttpApi>()
+    for (const a of rows) map.set(a.id, a)
+    return map
+  }, [rows])
 
   const filtered = useMemo(() => {
     const kw = search.trim().toLowerCase()
@@ -125,10 +178,23 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     try {
       await del(`/api/v1/apis/${a.id}`)
       message.success('已删除')
-      load()
+      onDeleted?.(a.id)
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     }
+  }
+
+  // 危险操作二次确认（目录删除会级联删除子目录）
+  const confirmRemoveApi = (a: HttpApi) => {
+    modal.confirm({
+      title: `删除接口「${a.name || a.uri}」？`,
+      content: '删除后不可恢复，相关目录挂载会一并移除。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => remove(a),
+    })
   }
 
   const exportAs = async (kind: 'openapi' | 'postman' | 'curl') => {
@@ -146,7 +212,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     try {
       const msg = await fn()
       message.success(msg)
-      load()
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -190,6 +256,18 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   }
 
   // ---- 目录操作 ----
+  // 新建目录统一入口：先清空上次可能残留的目录名（重命名取消后不能串到新建弹窗）
+  const openFolderCreate = (parentId?: string) => {
+    setFolderName('')
+    setFolderModal({ mode: 'create', parentId })
+    const targetKey = parentId ? `folder-${parentId}` : '__root__'
+    setExpandedKeys((prev) => (prev.includes(targetKey) ? prev : [...prev, targetKey]))
+  }
+  const openFolderRename = (n: TreeNode) => {
+    setFolderName(n.name)
+    setFolderModal({ mode: 'rename', node: n })
+  }
+
   const submitFolder = async () => {
     if (!folderName.trim()) {
       message.warning('请输入目录名')
@@ -208,7 +286,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       message.success('已保存')
       setFolderModal(undefined)
       setFolderName('')
-      load()
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     }
@@ -217,38 +295,72 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const removeFolder = async (n: TreeNode) => {
     try {
       await del(`/api/v1/tree/folders/${n.id}`)
-      message.success('已删除（接口仅摘挂）')
-      load()
+      message.success('目录及子目录已删除（接口仅摘挂）')
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     }
   }
 
-  const findApiNode = (nodes: TreeNode[], refId: string): TreeNode | undefined => {
-    for (const n of nodes) {
-      if (n.ref_id === refId) return n
-      const hit = n.children && findApiNode(n.children, refId)
-      if (hit) return hit
-    }
+  const confirmRemoveFolder = (n: TreeNode) => {
+    modal.confirm({
+      title: `删除目录「${n.name}」？`,
+      content: '目录及所有子目录会被删除；目录中的接口仅摘挂，接口本身不会被删除。',
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: () => removeFolder(n),
+    })
+  }
+
+  // 从目录摘挂（不删除接口）
+  const unmountApi = (node: TreeNode) => {
+    del(`/api/v1/tree/nodes/${node.id}`)
+      .then(() => { message.success('已从目录移除'); void reload() })
+      .catch((e: any) => message.error(e.message))
+  }
+
+  // 打开移动弹窗时重置目标，避免沿用上一次的选择造成误移动
+  const openMove = (a: HttpApi) => {
+    setMoveTarget('')
+    setMoveApi(a)
   }
 
   const submitMove = async () => {
     if (!moveApi) return
+    if (!moveTarget) {
+      message.warning('请选择目标目录')
+      return
+    }
+    const nodeId = nodeMeta.byRef[moveApi.id]
     try {
-      const node = findApiNode(tree, moveApi.id)
       if (moveTarget === '__unmount__') {
-        if (node) await del(`/api/v1/tree/nodes/${node.id}`)
-      } else if (moveTarget === '__root__' || moveTarget) {
+        if (!nodeId) {
+          message.info('该接口已在未分类中')
+          setMoveTarget('')
+          setMoveApi(null)
+          return
+        }
+        await del(`/api/v1/tree/nodes/${nodeId}`)
+      } else {
+        const targetParentId = moveTarget === '__root__' ? '' : moveTarget
+        if (nodeId && (nodeMeta.parent[nodeId] ?? '') === targetParentId) {
+          message.info('接口已在该目录中，无需移动')
+          setMoveTarget('')
+          setMoveApi(null)
+          return
+        }
         const parentId = moveTarget === '__root__' ? 0 : moveTarget
-        if (node) {
-          await put(`/api/v1/tree/nodes/${node.id}/move`, { parent_id: parentId })
+        if (nodeId) {
+          await put(`/api/v1/tree/nodes/${nodeId}/move`, { parent_id: parentId })
         } else {
           await post('/api/v1/tree/nodes', { project_id: projectId, api_id: moveApi.id, parent_id: parentId })
         }
       }
       message.success('已移动')
+      setMoveTarget('')
       setMoveApi(null)
-      load()
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     }
@@ -265,10 +377,12 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       { key: 'del', label: '删除目录', icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
-      if (key === 'new-api') onNewApi(n.id)
-      else if (key === 'new-folder') setFolderModal({ mode: 'create', parentId: n.id })
-      else if (key === 'rename') { setFolderName(n.name); setFolderModal({ mode: 'rename', node: n }) }
-      else if (key === 'del') void removeFolder(n)
+      if (key === 'new-api') {
+        setExpandedKeys((prev) => (prev.includes(`folder-${n.id}`) ? prev : [...prev, `folder-${n.id}`]))
+        onNewApi(n.id)
+      } else if (key === 'new-folder') openFolderCreate(n.id)
+      else if (key === 'rename') openFolderRename(n)
+      else if (key === 'del') confirmRemoveFolder(n)
     },
   })
 
@@ -280,14 +394,17 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       { key: 'del', label: '删除接口', icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
-      if (key === 'move') setMoveApi(a)
-      else if (key === 'unmount' && node) {
-        del(`/api/v1/tree/nodes/${node.id}`)
-          .then(() => { message.success('已从目录移除'); load() })
-          .catch((e: any) => message.error(e.message))
-      } else if (key === 'del') void remove(a)
+      if (key === 'move') openMove(a)
+      else if (key === 'unmount' && node) unmountApi(node)
+      else if (key === 'del') confirmRemoveApi(a)
     },
   })
+
+  // 根目录新建接口：确保根展开，保存后新节点可见
+  const openNewApiAtRoot = () => {
+    setExpandedKeys((prev) => (prev.includes('__root__') ? prev : [...prev, '__root__']))
+    onNewApi()
+  }
 
   // 根即普通目录：根/空白区菜单同构
   const rootMenuItems: MenuProps['items'] = [
@@ -295,150 +412,15 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     { key: 'new-folder', label: '新建目录', icon: <FolderAddOutlined /> },
   ]
   const rootMenuClick = ({ key }: { key: string }) => {
-    if (key === 'new-api') onNewApi()
-    else setFolderModal({ mode: 'create' })
+    if (key === 'new-api') openNewApiAtRoot()
+    else openFolderCreate()
   }
 
-  // 根的第一个子节点 key（根行"插到最前"的目标；空树返回 ''）
-  const firstChildKey = (): string => {
-    const first = tree[0]
-    if (!first) return ''
-    return first.node_type === 1 ? `folder-${first.id}` : `api-${first.ref_id}`
-  }
-
-  // 根行 = "插到最前"：与首个子节点顶部窄条同语义（统一树顶区域行为），
-  // "放入根末尾"由树底部空白区承担
-  const rootRowDragOver = (e: any) => {
-    const fk = firstChildKey()
-    if (!fk) return
-    e.preventDefault()
-    e.stopPropagation()
-    setFrontKey(fk)
-    frontOwnerRef.current = '__root__'
-  }
-  const rootRowDrop = (e: any) => {
-    const fk = firstChildKey()
-    if (!fk) return
-    e.preventDefault()
-    e.stopPropagation()
-    setFrontKey('')
-    frontOwnerRef.current = ''
-    const k = dragNodeRef.current
-    if (k && k !== fk) void handleDrop(k, fk, -1)
-  }
-
-  // ancestorId 的子树是否包含 targetId（防止把目录拖进自己的子孙空目录）
-  const isAncestorOf = (ancestorId: string, targetId: string): boolean => {
-    const walk = (nodes: TreeNode[]): boolean => {
-      for (const node of nodes) {
-        if (node.id === ancestorId) {
-          const search = (list: TreeNode[]): boolean =>
-            list.some((c) => c.id === targetId || search(c.children ?? []))
-          return search(node.children ?? [])
-        }
-        if (walk(node.children ?? [])) return true
-      }
-      return false
-    }
-    return walk(tree)
-  }
-
-  // 空目录整行 = "拖入"（内置逻辑对无子节点的目录不给 into 落点，这里自定义兜底）
-  const dropIntoEmptyFolder = (e: any, n: TreeNode) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIntoKey(`folder-${n.id}`)
-  }
-  const dropLeaveEmptyFolder = (e: any) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) setIntoKey('')
-  }
-  const onDropIntoEmptyFolder = (e: any, n: TreeNode) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setIntoKey('')
-    const k = dragNodeRef.current
-    if (!k) return
-    if (k === `folder-${n.id}`) return // 拖到自身
-    if (k.startsWith('folder-') && isAncestorOf(k.slice(7), n.id)) return // 拖入自己的子孙
-    setExpandedKeys((prev) => (prev.includes(`folder-${n.id}`) ? prev : [...prev, `folder-${n.id}`]))
-    void handleDrop(k, `folder-${n.id}`, 0)
-  }
-
-  // 展开容器的第一个子节点（含根）：顶部半区自定义为"插到最前"
-  const isFirstVisibleChild = (key: string): boolean => {
-    const id = key.startsWith('folder-') ? key.slice(7)
-      : key.startsWith('api-') ? nodeMeta.byRef[key.slice(4)] ?? ''
-      : ''
-    if (!id) return false
-    const parentId = nodeMeta.parent[id] ?? ''
-    const siblings = nodeMeta.children[parentId] ?? []
-    return siblings.length > 0 && siblings[0].id === id
-  }
-
-  // dragenter 与 dragover 共用：真实拖拽进入新元素时只触发 dragenter，
-  // 只有继续移动才有 dragover —— 只挂 dragover 会导致"停在缝隙上"时不显示指示线
-  const rowDragOver = (e: any, key: string) => {
-    const el = e.currentTarget as HTMLElement
-    if (isFirstVisibleChild(key) && e.clientY < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) {
-      e.preventDefault()
-      e.stopPropagation()
-      setFrontKey(key)
-      frontOwnerRef.current = key
-      return
-    }
-    setFrontKey('')
-    frontOwnerRef.current = ''
-    // 其余区域交给内置逻辑
-  }
-
-  // 目录行 enter/over 共用：先判"插到最前"（首个子节点顶部半区），再判空目录"整行拖入"
-  const folderRowDrag = (e: any, n: TreeNode, isEmpty: boolean) => {
-    const key = `folder-${n.id}`
-    const el = e.currentTarget as HTMLElement
-    if (isFirstVisibleChild(key) && e.clientY < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) {
-      e.preventDefault()
-      e.stopPropagation()
-      setFrontKey(key)
-      frontOwnerRef.current = key
-      return
-    }
-    setFrontKey('')
-    frontOwnerRef.current = ''
-    if (isEmpty) dropIntoEmptyFolder(e, n)
-  }
-
-  // 只有持有 frontKey 的行自己的 dragleave 才清除（enter/leave 到达顺序不保证）
-  const rowDragLeave = (e: any, key: string) => {
-    if (frontOwnerRef.current !== key) return
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
-      setFrontKey('')
-      frontOwnerRef.current = ''
-    }
-  }
-
-  const rowDrop = (e: any, key: string) => {
-    if (frontKey !== key) return // 非"插到最前"路径，交给内置 drop
-    e.preventDefault()
-    e.stopPropagation()
-    setFrontKey('')
-    frontOwnerRef.current = ''
-    const k = dragNodeRef.current
-    if (k && k !== key) void handleDrop(k, key, -1)
-  }
-
-  // ---- 拖拽（antd Tree 内置 draggable）----
+  // ---- 拖拽：使用 antd 6.6.0 Tree 原生 draggable + onDrop 语义 ----
   const parseKey = (k: string) =>
     k.startsWith('folder-') ? { kind: 'folder' as const, id: k.slice(7) }
     : k.startsWith('api-') ? { kind: 'api' as const, id: k.slice(4) }
     : { kind: 'root' as const, id: '' }
-
-  // 落点规则：根行只接受"放入"；接口行只接受上/下插入（中会由 rc-tree 回落为"下方"）；目录行全部接受
-  const allowDrop = ({ dropNode, dropPosition }: any): boolean => {
-    const k = String(dropNode.key)
-    if (k === '__root__') return dropPosition === 0
-    if (k.startsWith('api-')) return dropPosition !== 0
-    return true
-  }
 
   const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
     const d = parseKey(dragKey)
@@ -487,14 +469,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           parent_id: parentId || 0, index: index ?? undefined,
         })
       }
-      load()
+      void reload()
     } catch (e: any) {
       message.error(e.message)
     }
   }
 
-  const onTreeDrop = (info: any) => {
-    setRootHover(false)
+  const onTreeDrop: TreeProps['onDrop'] = (info) => {
     const dragKey = String(info.dragNode.key)
     const dropKey = String(info.node.key)
     const posArr = String(info.node.pos).split('-')
@@ -507,30 +488,29 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     setExpandedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
   }
 
-  // 文件夹下拉（移动目标）
+  // 文件夹下拉（移动目标）：禁用当前所在目录；未挂载接口禁用“未分类”
   const folderOptions = useMemo(() => {
-    const out: { value: string; label: string }[] = [{ value: '__root__', label: '（根目录）' }, { value: '__unmount__', label: '（未分类）' }]
+    const moveNodeId = moveApi ? nodeMeta.byRef[moveApi.id] : undefined
+    const currentParentId = moveNodeId ? nodeMeta.parent[moveNodeId] ?? '' : null
+    const isCurrent = (value: string) => currentParentId !== null && (value === '__root__' ? '' : value) === currentParentId
+    const out: { value: string; label: string; disabled?: boolean }[] = [
+      { value: '__root__', label: '（根目录）', disabled: isCurrent('__root__') },
+      { value: '__unmount__', label: '（未分类）', disabled: !!moveApi && !moveNodeId },
+    ]
     const walk = (nodes: TreeNode[], depth: number) => {
       for (const n of nodes) {
         if (n.node_type === 1) {
-          out.push({ value: n.id, label: `${'  '.repeat(depth)}📁 ${n.name}` })
+          out.push({ value: n.id, label: `${'  '.repeat(depth)}📁 ${n.name}`, disabled: isCurrent(n.id) })
           if (n.children) walk(n.children, depth + 1)
         }
       }
     }
     walk(tree, 0)
     return out
-  }, [tree])
+  }, [tree, moveApi, nodeMeta])
 
-  const apiTitle = (a: HttpApi, subtitle: boolean, dnd?: { key?: string; onDragEnter?: (e: any) => void; onDragOver?: (e: any) => void; onDragLeave?: (e: any) => void; onDrop?: (e: any) => void }) => (
-    <div
-      className={frontKey === dnd?.key ? 'tp-front-line' : undefined}
-      onDragEnter={dnd?.onDragEnter}
-      onDragOver={dnd?.onDragOver}
-      onDragLeave={dnd?.onDragLeave}
-      onDrop={dnd?.onDrop}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 4 }}
-    >
+  const apiTitle = (a: HttpApi, subtitle: boolean, node?: TreeNode) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingRight: 4 }}>
       <MethodTag method={a.method} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
@@ -550,11 +530,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         menu={{
           items: [
             { key: 'move', label: '移动到目录…' },
+            ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
             { key: 'del', label: '删除接口', danger: true },
           ],
           onClick: ({ key }) => {
-            if (key === 'move') setMoveApi(a)
-            else remove(a)
+            if (key === 'move') openMove(a)
+            else if (key === 'unmount' && node) unmountApi(node)
+            else if (key === 'del') confirmRemoveApi(a)
           },
         }}
       >
@@ -565,36 +547,24 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     </div>
   )
 
-  const unmounted = filtered.filter((a) => !mountedIds.has(a.id))
-  const treeData = useMemo(() => {
-    const walk = (nodes: TreeNode[], depth: number): any[] =>
+  const unmounted = useMemo(
+    () => filtered.filter((a) => !mountedIds.has(a.id)),
+    [filtered, mountedIds],
+  )
+  // 每次渲染直接构建 treeData。之前 useMemo 因 unmounted 引用不稳定实际每帧都重建，
+  // 还引入了一组缺失依赖的告警；这里改为显式每帧构建。
+  const treeData = (() => {
+    const walk = (nodes: TreeNode[]): any[] =>
       nodes.map((n) => {
         if (n.node_type === 1) {
-          const isEmpty = (n.children ?? []).length === 0
           return {
             key: `folder-${n.id}`,
-            className: intoKey === `folder-${n.id}` ? 'tp-into-hover' : undefined,
             title: (
               <Dropdown trigger={['contextMenu']} menu={folderMenu(n)}>
                 <div
-                  className={frontKey === `folder-${n.id}` ? 'tp-front-line' : undefined}
                   onDoubleClick={(e) => {
                     e.stopPropagation()
                     toggleFolder(`folder-${n.id}`)
-                  }}
-                  onDragEnter={(e: any) => folderRowDrag(e, n, isEmpty)}
-                  onDragOver={(e: any) => folderRowDrag(e, n, isEmpty)}
-                  onDragLeave={(e: any) => {
-                    rowDragLeave(e, `folder-${n.id}`)
-                    if (isEmpty) dropLeaveEmptyFolder(e)
-                  }}
-                  onDrop={(e: any) => {
-                    const key = `folder-${n.id}`
-                    if (frontKey === key) {
-                      rowDrop(e, key)
-                      return
-                    }
-                    if (isEmpty) onDropIntoEmptyFolder(e, n)
                   }}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 6, paddingRight: 4,
@@ -613,9 +583,9 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
                         { key: 'del', label: '删除目录', danger: true },
                       ],
                       onClick: ({ key }) => {
-                        if (key === 'sub') setFolderModal({ mode: 'create', parentId: n.id })
-                        else if (key === 'rename') { setFolderName(n.name); setFolderModal({ mode: 'rename', node: n }) }
-                        else removeFolder(n)
+                        if (key === 'sub') openFolderCreate(n.id)
+                        else if (key === 'rename') openFolderRename(n)
+                        else confirmRemoveFolder(n)
                       },
                     }}
                   >
@@ -628,27 +598,26 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
               </Dropdown>
             ),
             selectable: false,
-            children: walk(n.children ?? [], depth + 1),
+            children: walk(n.children ?? []),
           }
         }
-        const a = rows.find((r) => r.id === n.ref_id)
+        const refId = n.ref_id ?? n.ref?.id ?? ''
+        const a = rowsById.get(refId) ?? (
+          n.ref
+            ? { id: refId, method: n.ref.method, uri: n.ref.uri, name: n.ref.name } as HttpApi
+            : undefined
+        )
         if (!a) return null
         return {
           key: `api-${a.id}`,
           title: (
             <Dropdown trigger={['contextMenu']} menu={apiMenu(a, n)}>
-              {apiTitle(a, showDetail, {
-                key: `api-${a.id}`,
-                onDragEnter: (e: any) => rowDragOver(e, `api-${a.id}`),
-                onDragOver: (e: any) => rowDragOver(e, `api-${a.id}`),
-                onDragLeave: (e: any) => rowDragLeave(e, `api-${a.id}`),
-                onDrop: (e: any) => rowDrop(e, `api-${a.id}`),
-              })}
+              {apiTitle(a, showDetail, n)}
             </Dropdown>
           ),
         }
       }).filter(Boolean)
-    const folderNodes = walk(tree, 0)
+    const folderNodes = walk(tree)
     if (unmounted.length && search.trim() === '') {
       folderNodes.push(...unmounted.map((a) => ({
         key: `api-${a.id}`,
@@ -669,13 +638,8 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
               e.stopPropagation()
               toggleFolder('__root__')
             }}
-            onDragEnter={rootRowDragOver}
-            onDragOver={rootRowDragOver}
-            onDragLeave={(e: any) => rowDragLeave(e, '__root__')}
-            onDrop={rootRowDrop}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              boxShadow: rootHover ? '0 2px 8px rgba(0,0,0,.15)' : undefined,
               borderRadius: 6,
             }}
           >
@@ -687,7 +651,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       selectable: false,
       children: folderNodes,
     }]
-  }, [tree, unmounted, rows, search, projects, projectId, showDetail, rootHover, intoKey, frontKey])
+  })()
 
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -706,13 +670,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           <Space size={4}>
             <Button
               size="small" type="primary" icon={<FolderAddOutlined />}
-              onClick={() => setFolderModal({ mode: 'create' })}
+              onClick={() => openFolderCreate()}
             >
               目录
             </Button>
             <Button
               size="small" icon={<PlusOutlined />}
-              onClick={() => onNewApi() /* 顶部新建 = 挂根 */}
+              onClick={openNewApiAtRoot /* 顶部新建 = 挂根 */}
             >
               接口
             </Button>
@@ -725,23 +689,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         />
       </div>
       <div
-        className={frontKey || intoKey ? 'tp-custom-drop-active' : undefined}
         style={{ flex: 1, minHeight: 0, overflow: 'auto', padding: '4px 6px' }}
-        onDragOver={(e) => {
-          if ((e.target as HTMLElement).closest('.ant-tree-treenode')) return // 树内由 rc-tree 处理
-          e.preventDefault()
-          setRootHover(true) // 空白区 = 放入根目录末尾
-        }}
-        onDragLeave={(e) => {
-          if (!e.currentTarget.contains(e.relatedTarget as Node)) setRootHover(false)
-        }}
-        onDrop={(e) => {
-          e.preventDefault()
-          setRootHover(false)
-          const k = dragNodeRef.current
-          if (k) void handleDrop(k, '__root__', 0)
-        }}
         onContextMenu={(e) => {
+          if (search.trim()) {
+            // 搜索模式没有树空白区，结果行有自己的右键菜单；这里不再弹根目录菜单
+            e.preventDefault()
+            return
+          }
           if ((e.target as HTMLElement).closest('.ant-tree-treenode')) return // 节点自有菜单
           e.preventDefault()
           setBlankMenu({ x: e.clientX, y: e.clientY }) // 空白区 = 根目录菜单
@@ -750,12 +704,19 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         {search.trim() ? (
           <PanelList
             title="搜索结果"
-            search=""
-            onSearch={() => {}}
+            hideSearch
             data={filtered}
             activeId={activeId}
             onPick={(a) => onPick(a.id)}
-            renderItem={(a) => apiTitle(a, true)}
+            renderItem={(a) => {
+              const nodeId = nodeMeta.byRef[a.id]
+              const node = nodeId ? nodeMeta.byId[nodeId] : undefined
+              return (
+                <Dropdown trigger={['contextMenu']} menu={apiMenu(a, node)}>
+                  <div>{apiTitle(a, true, node)}</div>
+                </Dropdown>
+              )
+            }}
           />
         ) : (
           <Tree
@@ -765,11 +726,8 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
             expandedKeys={expandedKeys}
             onExpand={(keys) => setExpandedKeys(keys)}
             treeData={treeData}
-            draggable={{ icon: false, nodeDraggable: (n: any) => String(n.key) !== '__root__' }}
-            allowDrop={allowDrop}
+            draggable={{ icon: false, nodeDraggable: (node) => String(node.key) !== '__root__' }}
             onDrop={onTreeDrop}
-            onDragStart={(info: any) => { dragNodeRef.current = String(info.node.key) }}
-            onDragEnd={() => { dragNodeRef.current = ''; setRootHover(false); setIntoKey(''); setFrontKey(''); frontOwnerRef.current = '' }}
             onSelect={(keys) => {
               const k = String(keys[0] ?? '')
               if (k.startsWith('api-')) onPick(k.slice(4))
@@ -868,7 +826,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       <Modal
         title={folderModal?.mode === 'rename' ? '重命名目录' : '新建目录'}
         open={!!folderModal}
-        onCancel={() => setFolderModal(undefined)}
+        onCancel={() => { setFolderModal(undefined); setFolderName('') }}
         onOk={submitFolder}
         okText="保存"
         destroyOnHidden
@@ -884,7 +842,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       <Modal
         title={moveApi ? `移动「${moveApi.name || moveApi.uri}」` : ''}
         open={!!moveApi}
-        onCancel={() => setMoveApi(null)}
+        onCancel={() => { setMoveApi(null); setMoveTarget('') }}
         onOk={submitMove}
         okText="移动"
         destroyOnHidden
@@ -895,6 +853,8 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           onChange={setMoveTarget}
           options={folderOptions}
           placeholder="选择目标目录"
+          showSearch
+          optionFilterProp="label"
         />
       </Modal>
     </div>

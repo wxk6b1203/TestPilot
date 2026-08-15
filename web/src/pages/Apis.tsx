@@ -1,7 +1,7 @@
 import { Button } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
-import { useEffect, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useRef, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import IdeLayout from '../components/IdeLayout'
 import ApiTreePanel from '../components/ApiTreePanel'
 import ApiDebug from './ApiDebug'
@@ -13,15 +13,30 @@ import { PALETTE } from '../theme'
 export default function Apis() {
   const { projectId, projects } = useLayout()
   const { id } = useParams() // /apis/:id 时右侧渲染调试区，左侧面板保持
+  const location = useLocation()
   const nav = useNavigate()
-  const [newMode, setNewMode] = useState(false)
-  // 右键「新建接口」的目标目录（树节点 id）；undefined = 根
-  const [createParentId, setCreateParentId] = useState<string>()
   // 保存后触发面板重载
   const [refresh, setRefresh] = useState(0)
+  // 项目切换 / 当前接口被删除时锁定右侧工作区，显示提示而不是继续编辑失效数据
+  const [workspaceNotice, setWorkspaceNotice] = useState<string>()
+  const prevProjectRef = useRef(projectId)
 
+  // 新建模式放进路由 state：导航被未保存离开守卫拦截时，不会留下“newMode 已置位但路由没变”的脏状态
+  const locationState = location.state as { newApi?: boolean; parentId?: string } | null
+  const newMode = !id && locationState?.newApi === true
+  const createParentId = locationState?.parentId
+
+  // 项目变化：清掉当前接口/新建状态，避免右侧继续用旧项目 id 编辑（保存会把 project_id 写串）
   useEffect(() => {
-    if (id) setNewMode(false)
+    if (prevProjectRef.current === projectId) return
+    prevProjectRef.current = projectId
+    setWorkspaceNotice('项目已切换，请从左侧重新选择接口')
+    nav('/apis', { replace: true, state: null })
+  }, [projectId, nav])
+
+  // 选中有效接口后清除提示
+  useEffect(() => {
+    if (id) setWorkspaceNotice(undefined)
   }, [id])
 
   if (!projectId)
@@ -35,14 +50,13 @@ export default function Apis() {
     )
 
   const openNewApi = (parentId?: string) => {
-    setCreateParentId(parentId)
-    setNewMode(true)
-    nav('/apis') // 清掉 :id，让工作区切到新建形态
+    setWorkspaceNotice(undefined)
+    nav('/apis', { state: { newApi: true, parentId } })
   }
 
-  const workspace = id ? (
+  const workspace = !workspaceNotice && id ? (
     <ApiDebug key={id} onSaved={() => setRefresh((x) => x + 1)} />
-  ) : newMode ? (
+  ) : !workspaceNotice && newMode ? (
     <ApiDebug
       key={`new-${createParentId ?? 'root'}`} // 换目标目录时重置表单
       newMode
@@ -54,7 +68,9 @@ export default function Apis() {
       height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center',
       justifyContent: 'center', gap: 12, background: '#FFFFFF',
     }}>
-      <div style={{ color: PALETTE.textTertiary }}>从左侧选择接口，或直接输入 URL 调试</div>
+      <div style={{ color: PALETTE.textTertiary }}>
+        {workspaceNotice ?? '从左侧选择接口，或直接输入 URL 调试'}
+      </div>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewApi()}>新建接口</Button>
     </div>
   )
@@ -67,8 +83,17 @@ export default function Apis() {
           projects={projects}
           activeId={id}
           refresh={refresh}
-          onPick={(a) => nav(`/apis/${a}`)}
+          onPick={(a) => {
+            setWorkspaceNotice(undefined)
+            nav(`/apis/${a}`)
+          }}
           onNewApi={openNewApi}
+          onDeleted={(deletedId) => {
+            if (deletedId === id) {
+              setWorkspaceNotice('当前接口已删除，请重新选择接口')
+              nav('/apis', { replace: true, state: null })
+            }
+          }}
         />
       }
     >

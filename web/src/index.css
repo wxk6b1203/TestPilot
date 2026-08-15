@@ -17,22 +17,6 @@ body,
   background: rgba(0, 0, 0, 0.18);
 }
 
-/* 目录树行交互（参考 file-browser ExplorerTree 的 hover/drop 视觉） */
-.ant-tree {
-  user-select: none; /* 双击折叠/拖拽时禁止选中文字 */
-  -webkit-user-select: none;
-}
-.ant-tree .ant-tree-node-content-wrapper {
-  border-radius: 6px;
-  transition: background-color 0.15s ease;
-}
-.ant-tree .ant-tree-node-content-wrapper:hover {
-  background: #e9ebef;
-}
-.ant-tree .ant-tree-treenode-drop-container {
-  transition: background-color 0.15s ease;
-}
-
 /* 响应面板 Tabs：头部（响应体/响应头/断言/日志）固定，内容区独立滚动。
    antd v6 DOM：.ant-tabs-nav + .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content */
 .resp-tabs.ant-tabs {
@@ -50,48 +34,4 @@ body,
   flex: 1;
   min-height: 0;
   overflow: auto;
-}
-
-/* 拖拽指示线/悬停样式由 antd Tree 内置（draggable + DropIndicator）提供；
-   空目录整行"拖入"的自定义高亮： */
-.ant-tree-treenode.tp-into-hover {
-  background: rgba(0, 0, 0, 0.045);
-  box-shadow: inset 0 0 0 1px rgba(100, 106, 115, 0.35);
-  border-radius: 6px;
-}
-
-/* 自定义"插到最前"指示线（展开容器第一个子节点的顶部半区）：
-   悬浮在行上方缝隙的 3px 色条 + 左侧圆点（与 antd 内置指示线同款视觉语言），
-   和"拖入目录"的整行灰色填充明显区分 */
-.tp-front-line {
-  position: relative;
-}
-.tp-front-line::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: -5px;
-  height: 3px;
-  border-radius: 2px;
-  background: #4d6eeb;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
-}
-.tp-front-line::after {
-  content: '';
-  position: absolute;
-  left: -2px;
-  top: -9px;
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #4d6eeb;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
-}
-
-/* 自定义拦截激活期间隐藏内置指示线：
-   拖拽在行内移动时内置状态不会更新（dragover 被 stopPropagation），
-   残留的旧指示线会与自定义指示线叠加成两条 */
-.tp-custom-drop-active .ant-tree-drop-indicator {
-  display: none;
 }
