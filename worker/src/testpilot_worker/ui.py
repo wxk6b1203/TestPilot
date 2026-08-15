@@ -22,6 +22,27 @@ _DEFAULT_TIMEOUT_MS = 10_000
 _EXPECT_TIMEOUT_MS = 5_000
 
 
+def _normalize_goto(base_url: str, url: str) -> str:
+    """goto 出口校验目标归一化：返回带 scheme 的绝对 URL。
+
+    - http(s) 绝对 URL → 原样；
+    - 协议相对 URL（//host/path）：浏览器按页面协议解析为绝对地址，
+      必须归一后按绝对 URL 校验，否则 //127.0.0.1:8080 绕过私网拦截；
+    - 相对路径 → 拼 base_url。
+    非 http(s) scheme 直接拒绝（file:// 等本地文件外带面）。
+    """
+    from urllib.parse import urlparse
+    u = urlparse(url)
+    if u.scheme not in ("", "http", "https"):
+        raise ValueError(f"goto scheme not allowed: {u.scheme!r}")
+    if u.scheme:
+        return url
+    if u.netloc:
+        prefix = "http://" if not base_url.startswith("https") else "https://"
+        return prefix + url[2:]
+    return base_url.rstrip("/") + "/" + url.lstrip("/")
+
+
 class UiUnavailable(Exception):
     """Worker 未安装 playwright 变体。"""
 
@@ -87,12 +108,18 @@ class UiSession:
             # SSRF 出口校验：浏览器是第二个出网通道，必须与 http_exec 同策略；
             # 拒绝 file:// 等非 http(s) scheme（本地文件外带面）
             from urllib.parse import urlparse
-            if urlparse(url).scheme not in ("", "http", "https"):
-                raise ValueError(f"goto scheme not allowed: {urlparse(url).scheme!r}")
-            full = url if urlparse(url).scheme else self.base_url.rstrip("/") + "/" + url.lstrip("/")
+            u = urlparse(url)
+            full = _normalize_goto(self.base_url, url)
             from . import egress
             await egress.acheck_url(full)
             resp = await page.goto(url, wait_until="domcontentloaded")
+            # 重定向复核：goto 内部跟随 302/307，最终地址必须同样通过出口校验
+            # （否则 example.com -> 127.0.0.1:8080/metadata 可绕过单次检查）
+            final_url = page.url
+            if final_url:
+                fu = urlparse(final_url)
+                if fu.scheme in ("http", "https") and (fu.netloc != u.netloc or u.scheme != fu.scheme):
+                    await egress.acheck_url(final_url)
             logs.append(f"goto {url} -> {resp.status if resp else '?'}")
         elif action == pb.UI_ACTION_CLICK:
             await page.click(target)
@@ -156,11 +183,15 @@ class UiSession:
                 await page.wait_for_timeout(ms)
                 logs.append(f"wait {ms}ms")
         elif action == pb.UI_ACTION_UPLOAD:
-            # 路径穿越/任意文件读取防护：仅允许相对路径且不含 ..（本机文件上传
-            # 是任意文件读取外带面——值必须落在 artifact 根内）
+            # 路径穿越/任意文件读取防护：文件必须落在 case 目录（artifact 根）内。
+            # 只挡绝对路径和 .. 不够——".env" 等相对路径按 Worker cwd 解析即可
+            # 读取任意本机文件并经表单上传外带；resolve 后强制限定在 case_dir 内。
             if value.startswith("/") or ".." in value.split("/"):
                 raise ValueError(f"upload path not allowed: {value!r}")
-            await page.set_input_files(target, value)
+            upath = (self.case_dir / value).resolve()
+            if not upath.is_relative_to(self.case_dir.resolve()):
+                raise ValueError(f"upload path escapes case dir: {value!r}")
+            await page.set_input_files(target, str(upath))
             logs.append(f"upload {value} -> {target}")
         elif action == pb.UI_ACTION_DOWNLOAD:
             async with page.expect_download() as dl_info:

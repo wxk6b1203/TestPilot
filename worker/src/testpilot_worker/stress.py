@@ -326,10 +326,19 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
                 for b in backends]
         outcomes = await asyncio.gather(*runs, return_exceptions=True)
 
-    finished.set()
-    await asyncio.gather(sampler_task, pace_task, return_exceptions=True)
-    for b in backends:
-        b.set_loop_callback(None)
+    # 取消路径（worker 停机/断连）必须收尾采样与 pace 任务，否则它们成为孤儿
+    # 协程继续向 outbox emit；finished.set() 也可能被跳过导致门控语义错乱
+    try:
+        finished.set()
+        await asyncio.gather(sampler_task, pace_task, return_exceptions=True)
+    except asyncio.CancelledError:
+        for t in (sampler_task, pace_task):
+            t.cancel()
+        await asyncio.gather(sampler_task, pace_task, return_exceptions=True)
+        raise
+    finally:
+        for b in backends:
+            b.set_loop_callback(None)
 
     timed_out = any(isinstance(o, BaseException) or (hasattr(o, "timed_out") and o.timed_out)
                     for o in outcomes)

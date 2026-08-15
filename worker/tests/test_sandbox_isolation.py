@@ -45,3 +45,13 @@ def test_sandbox_limits_reads_env_lazily(monkeypatch):
     limits = SandboxLimits()
     assert limits.cpu_seconds == 77
     assert limits.require_isolation is True
+
+
+def test_protocol_line_overflow_kills_sandbox():
+    """回归：协议通道(fd1)无换行巨量输出必须终止沙箱（否则 Worker 无限缓冲 OOM）。"""
+    import asyncio
+    b = SubprocessBackend(lambda args: {"ok": True})
+    src = 'import os\nos.write(1, b"x" * (3 * 1024 * 1024))\n'
+    res = asyncio.run(b.run(src, "run", {"vars": {}, "base_url": "http://x"}, timeout_s=10))
+    assert not res.ok, res
+    assert any("line exceeded limit" in l for l in res.logs), res.logs[-3:]

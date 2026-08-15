@@ -134,13 +134,22 @@ def _apply_binop(op: ast.operator, left: Any, right: Any) -> Any:
         if isinstance(op, ast.Sub):
             return left - right
         if isinstance(op, ast.Mult):
-            # 字符串/序列乘法结果长度上限（"x"*10**9 可 OOM Worker 进程）
-            if isinstance(left, str) and isinstance(right, int):
-                if len(left) * right > _MAX_STR_MUL:
-                    raise ExprError("string multiplication result too large")
-            elif isinstance(left, (list, tuple, bytes)) and isinstance(right, int):
-                if len(left) * right > _MAX_LIST_MUL:
-                    raise ExprError("sequence multiplication result too large")
+            # 字符串/序列乘法结果长度上限——双向检查：int 在左同样能构造
+            # 巨量字符串（10**9 * "x" 绕过旧守卫即 OOM Worker 进程）
+            if isinstance(right, int):
+                if isinstance(left, str):
+                    if len(left) * right > _MAX_STR_MUL:
+                        raise ExprError("string multiplication result too large")
+                elif isinstance(left, (list, tuple, bytes)):
+                    if len(left) * right > _MAX_LIST_MUL:
+                        raise ExprError("sequence multiplication result too large")
+            elif isinstance(left, int):
+                if isinstance(right, str):
+                    if len(right) * left > _MAX_STR_MUL:
+                        raise ExprError("string multiplication result too large")
+                elif isinstance(right, (list, tuple, bytes)):
+                    if len(right) * left > _MAX_LIST_MUL:
+                        raise ExprError("sequence multiplication result too large")
             return left * right
         if isinstance(op, ast.Div):
             return left / right

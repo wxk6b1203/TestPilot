@@ -20,7 +20,8 @@ from .expr import ExprError, eval_expr, render
 from .sandbox import ExecutionBackend, SubprocessBackend, bridge_http_handler
 
 # 并行循环最大并发（P0 资源上限：每个迭代一个 httpx client，UI 步骤各起一个浏览器）
-_MAX_PARALLEL_LOOP = 16
+_MAX_PARALLEL_LOOP = 16          # 并行迭代并发上限
+_MAX_LOOP_PARALLEL_TOTAL = 1000  # 并行迭代总量上限（gather 会先物化全部协程，巨量 count 直接 OOM）
 
 _SDK_OP_MAP = {
     "eq": pb.ASSERTION_OP_EQ, "ne": pb.ASSERTION_OP_NE, "exists": pb.ASSERTION_OP_EXISTS,
@@ -380,7 +381,12 @@ class CaseRunner:
         （隔离：迭代内 SET_VAR 不互相可见，也不写回父作用域），步骤结果按迭代顺序合并。
         语义：全部迭代跑完（不 fail-fast 取消）；任一迭代失败则该 LOOP 步骤失败，
         错误信息带迭代号。
-        并发上限 _MAX_PARALLEL_LOOP：无上限时单用例可拉起上千浏览器/连接池（租户可触发 DoS）。"""
+        并发上限 _MAX_PARALLEL_LOOP：无上限时单用例可拉起上千浏览器/连接池（租户可触发 DoS）。
+        总量上限 _MAX_LOOP_PARALLEL_TOTAL：asyncio.gather(*生成器) 会在信号量生效前
+        物化全部迭代协程——10^6 级 count 直接 OOM Worker，必须限总量。"""
+        if len(rng) > _MAX_LOOP_PARALLEL_TOTAL:
+            raise StepFailure(
+                f"loop parallel iterations {len(rng)} exceed limit {_MAX_LOOP_PARALLEL_TOTAL}")
         base_vars = dict(self.vars)
         base_response = self.last_response
         sem = asyncio.Semaphore(_MAX_PARALLEL_LOOP)

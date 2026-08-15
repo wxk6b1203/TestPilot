@@ -189,3 +189,28 @@ def test_render_multi_segment_with_template_at_both_ends():
     assert render("{{base_url}}/api/{{user.name}}", scope) == "http://h/api/bob"
     # 单表达式仍返回原生类型
     assert render("{{ user }}", scope) == {"name": "bob"}
+
+# ---- 乘法上限（防 OOM）：两种操作数顺序都必须拦截 ----
+
+def test_mult_str_right_big_rejected():
+    with pytest.raises(ExprError):
+        eval_expr("2000000 * 'x'", {})
+    with pytest.raises(ExprError):
+        eval_expr("200000 * [0]", {})
+    with pytest.raises(ExprError):
+        eval_expr("2000000 * ('x' * 10)", {})
+
+def test_mult_int_left_big_rejected():
+    # 回归：旧守卫只查 str*int / list*int，int 在左完全绕过（可 OOM Worker）
+    with pytest.raises(ExprError):
+        eval_expr("999999999 * 'x'", {})
+    with pytest.raises(ExprError):
+        eval_expr("200000 * [0]", {})
+    with pytest.raises(ExprError):
+        eval_expr("5000000 * 'x'", {})
+
+def test_mult_within_limit_ok():
+    assert eval_expr("10 * 'ab'", {}) == "abababababababababab"
+    assert eval_expr("'ab' * 2", {}) == "abab"
+    assert eval_expr("3 * [1, 2]", {}) == [1, 2, 1, 2, 1, 2]
+

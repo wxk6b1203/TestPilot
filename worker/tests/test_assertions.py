@@ -218,3 +218,34 @@ def test_sdk_exists_on_none_fails():
 def test_sdk_type_is_mismatch_fails():
     with pytest.raises(AssertionError, match="type_is"):
         assert_that("text").type_is("number")
+
+
+# ---- MATCHES ReDoS 防护 ----
+
+def test_matches_nested_quantifier_rejected():
+    a = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected="(a+)+$")
+    r = evaluate(a, {"text": "aaaa"}, {})
+    assert not r.passed
+    assert "ReDoS" in r.message, r.message
+
+
+def test_matches_alternation_quantifier_rejected():
+    a = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected="(a|a)+")
+    r = evaluate(a, {"text": "aaaa"}, {})
+    assert not r.passed
+    assert "ReDoS" in r.message
+
+
+def test_matches_overlong_rejected():
+    a = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected="a" * 300)
+    r = evaluate(a, {"text": "aaaa"}, {})
+    assert not r.passed
+    assert "too long" in r.message
+
+
+def test_matches_normal_still_works():
+    a = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected=r"^a+$")
+    r = evaluate(a, {"text": "aaaa"}, {})
+    assert r.passed, r.message
+    b = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected=r"a{1,5}")
+    assert evaluate(b, {"text": "aaa"}, {}).passed

@@ -10,6 +10,22 @@ from testpilot.common.v1 import types_pb2 as pb
 
 from .expr import ExprError, eval_expr, render
 
+# ---- MATCHES 正则防护（ReDoS）----
+# 租户可控正则 + 最多 64KB 响应体：灾难性回溯（(a+)+$、(a|a)+ 类）可冻结
+# 事件循环数十秒（心跳/所有任务停摆）。Python re 无超时机制，用启发式拒绝：
+# 1) 长度上限；2) 内层量词/交替被外层量词包裹的嵌套模式。
+_MAX_REGEX_LEN = 200
+_RE_DOS_PATTERN = re.compile(r"\([^()]*[+*|][^()]*\)[+*]")
+
+
+def _regex_guard(pattern: str) -> str | None:
+    """返回拒绝原因；None=放行。"""
+    if len(pattern) > _MAX_REGEX_LEN:
+        return f"regex too long (> {_MAX_REGEX_LEN} chars)"
+    if _RE_DOS_PATTERN.search(pattern):
+        return "regex with nested quantifiers rejected (ReDoS guard)"
+    return None
+
 
 def _json_path(doc: Any, path: str) -> Any:
     """极简 JSONPath：$.a.b[0].c；找不到返回 None。"""
@@ -99,6 +115,8 @@ def _compare(op: int, actual: Any, expected: str) -> tuple[bool, str]:
             return expected in json.dumps(actual, ensure_ascii=False), f"contains {expected!r}"
         return expected in str(actual), f"contains {expected!r}"
     if op == pb.ASSERTION_OP_MATCHES:
+        if err := _regex_guard(expected):
+            return False, err
         try:
             return re.search(expected, str(actual)) is not None, f"matches /{expected}/"
         except re.error as e:

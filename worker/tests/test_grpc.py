@@ -124,3 +124,53 @@ def test_engine_grpc_call_missing_resolution():
             await r._do_grpc_call(step.grpc_call, [])
 
     asyncio.run(run())
+
+
+@pytest.fixture(scope="module")
+def blackhole_addr():
+    """accept 但从不回包的 TCP 服务器：模拟黑盒/挂死 gRPC 目标。"""
+    import socket
+    import threading
+
+    srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(16)
+    port = srv.getsockname()[1]
+    stop = threading.Event()
+
+    def _accept_loop():
+        while not stop.is_set():
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            # 保持连接打开但不回任何字节（grpc 握手挂起）
+            threading.Thread(target=lambda c: stop.wait(), args=(conn,), daemon=True).start()
+
+    t = threading.Thread(target=_accept_loop, daemon=True)
+    t.start()
+    yield f"127.0.0.1:{port}"
+    stop.set()
+    srv.close()
+
+
+def test_reflection_deadline_blackhole(blackhole_addr):
+    """回归：反射解析必须带超时——黑盒服务器不得挂死线程池。"""
+    api = _api()
+    api.request_message.update({"message": "hi"})
+    channel = grpc_exec.channel_for(blackhole_addr, False)
+    with pytest.raises(grpc_exec.GrpcCallError):
+        grpc_exec._resolve(channel, blackhole_addr, "testpilot.echo.v1.EchoService", "Echo")
+
+
+def test_call_timeout_blackhole_fast(blackhole_addr):
+    """call 的 timeout_s 应让反射/调用在 ~timeout 内失败，而不是无限阻塞。"""
+    import time
+    api = _api()
+    api.request_message.update({"message": "hi"})
+    start = time.monotonic()
+    with pytest.raises(grpc_exec.GrpcCallError):
+        asyncio.run(grpc_exec.call_async(blackhole_addr, api, timeout_s=2))
+    elapsed = time.monotonic() - start
+    assert elapsed < 15, f"call took {elapsed:.1f}s, expected bounded by reflection timeout"

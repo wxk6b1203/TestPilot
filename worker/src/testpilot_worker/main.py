@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import signal
 import sys
 
@@ -11,6 +13,9 @@ from testpilot.common.v1 import types_pb2 as pb
 
 from . import config
 from .client import WorkerClient
+
+# 敏感环境变量匹配：TOKEN/KEY/SECRET/PASSWORD 等（用于进程环境清理）
+_SENSITIVE_ENV_RE: re.Pattern | None = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|PASSWD)", re.I)
 
 _CAP_MAP = {
     "functional": pb.CAPABILITY_FUNCTIONAL,
@@ -50,9 +55,11 @@ def entry(argv: list[str] | None = None):
         name=s.name,
         token=s.token,
     )
-    # 沙箱缓解（B1）：token 已入内存，从进程环境移除——Linux 下沙箱可读
-    # /proc/<PPID>/environ 拿到 Worker 全部凭据，env scrub 形同虚设
-    os.environ.pop("TP_WORKER_TOKEN", None)
+    # 沙箱缓解（B1）：敏感 env 已入内存后从进程环境移除——Linux 下沙箱可读
+    # /proc/<PPID>/environ 拿到 Worker 全部凭据，env scrub 形同虚设。
+    # 除 token 外，运维可能注入其它 *_TOKEN/*_KEY/口令类变量，一并清理。
+    for _k in [k for k in os.environ if _SENSITIVE_ENV_RE.search(k)]:
+        os.environ.pop(_k, None)
     # 优雅停机：SIGTERM/SIGINT → 停止取任务、取消在途任务、关闭连接（防孤儿进程/沙箱泄漏）
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

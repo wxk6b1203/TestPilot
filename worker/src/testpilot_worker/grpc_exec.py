@@ -31,10 +31,18 @@ _channels: dict[tuple[str, bool], grpc.Channel] = {}
 _resolved: dict[tuple[str, str, str], tuple[Any, Any, Any]] = {}  # (target, service, method)
 _lock = threading.Lock()
 
+# 反射解析超时：黑盒服务器"accept 不回包"时，无 deadline 的反射调用会永久
+# 阻塞 to_thread 线程（默认 min(32, cpu+4) 个，逐一耗尽后所有 gRPC 工作排队）。
+_REFLECTION_TIMEOUT = 10.0
+# 进程级缓存上限：多目标长期运行防内存缓慢增长（超限整体清空，简单可预测）。
+_MAX_CACHE_ENTRIES = 64
+
 
 def channel_for(target: str, secure: bool) -> grpc.Channel:
     key = (target, secure)
     with _lock:
+        if len(_channels) >= _MAX_CACHE_ENTRIES:
+            _channels.clear()  # 防无界增长（长期运行多目标场景）
         ch = _channels.get(key)
         if ch is None:
             if secure:
@@ -56,7 +64,12 @@ def _resolve(channel: grpc.Channel, target: str, service: str, method: str):
 
     stub = reflection_pb2_grpc.ServerReflectionStub(channel)
     req = reflection_pb2.ServerReflectionRequest(file_containing_symbol=service)
-    resp = next(stub.ServerReflectionInfo(iter([req])))
+    try:
+        resp = next(stub.ServerReflectionInfo(iter([req]), timeout=_REFLECTION_TIMEOUT))
+    except (grpc.FutureTimeoutError, TimeoutError) as e:
+        raise GrpcCallError(f"reflection timed out after {_REFLECTION_TIMEOUT}s") from e
+    except grpc.RpcError as e:
+        raise GrpcCallError(f"reflection failed: {e}") from e
     if resp.HasField("error_response"):
         raise GrpcCallError(f"reflection error: {resp.error_response.error_message}")
     # grpc-reflection 新版返回序列化后的 FileDescriptorProto（bytes）
@@ -85,6 +98,8 @@ def _resolve(channel: grpc.Channel, target: str, service: str, method: str):
     out_cls = message_factory.GetMessageClass(m.output_type)
     entry = (m, in_cls, out_cls)
     with _lock:
+        if len(_resolved) >= _MAX_CACHE_ENTRIES:
+            _resolved.clear()
         _resolved[key] = entry
     return entry
 

@@ -96,3 +96,34 @@ def test_bridge_ui_handler_unknown_action_and_session_error():
     sess.fail = RuntimeError("browser down")
     with pytest.raises(RuntimeError):
         asyncio.run(handle({"action": "click", "target": "#x"}))
+
+
+# ---- goto 出口校验归一化（协议相对 URL 绕过回归） ----
+
+def test_normalize_goto_absolute():
+    from testpilot_worker.ui import _normalize_goto
+    assert _normalize_goto("http://h", "http://x/y") == "http://x/y"
+    assert _normalize_goto("https://h", "https://x/y") == "https://x/y"
+
+
+def test_normalize_goto_relative():
+    from testpilot_worker.ui import _normalize_goto
+    assert _normalize_goto("http://h/", "/a/b") == "http://h/a/b"
+    assert _normalize_goto("http://h", "a/b") == "http://h/a/b"
+
+
+def test_normalize_goto_protocol_relative_rejected_as_absolute():
+    # 回归：//127.0.0.1:8080/secret 曾按相对路径拼 base_url 检查（host=允许域），
+    # 但浏览器内实际导航到 http://127.0.0.1:8080/secret —— SSRF 通道。
+    # 归一化后必须产出带 scheme 的绝对 URL（供 egress 私网拦截）。
+    from testpilot_worker.ui import _normalize_goto
+    assert _normalize_goto("http://allowed.example", "//127.0.0.1:8080/secret") ==         "http://127.0.0.1:8080/secret"
+    assert _normalize_goto("https://allowed.example", "//127.0.0.1:8080/secret") ==         "https://127.0.0.1:8080/secret"
+
+
+def test_normalize_goto_scheme_whitelist():
+    from testpilot_worker.ui import _normalize_goto
+    import pytest
+    for bad in ("file:///etc/passwd", "javascript:alert(1)", "ftp://x/y"):
+        with pytest.raises(ValueError):
+            _normalize_goto("http://h", bad)

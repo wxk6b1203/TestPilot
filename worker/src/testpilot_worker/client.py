@@ -23,6 +23,7 @@ log = logging.getLogger("testpilot.worker")
 
 SDK_VERSION = "0.1.0"
 HEARTBEAT_INTERVAL = 10
+_OUTBOX_MAX = 4096  # outbox 上限：调度器消费停滞时丢弃事件保 Worker 存活（reaper 兜底）
 
 
 class WorkerClient:
@@ -39,13 +40,22 @@ class WorkerClient:
         self.token = token  # gRPC 认证令牌（Scheduler 侧 worker_token）
         self.sem = asyncio.Semaphore(self.max_concurrency)
         self.running = 0
-        self.outbox: asyncio.Queue[wpb.WorkerEvent] = asyncio.Queue()
+        # outbox 必须有界：调度器消费停滞（流控/断连前窗口）时无界积压会
+        # OOM Worker；满时丢弃并告警（结果丢失由 Scheduler reaper 兜底）
+        self.outbox: asyncio.Queue[wpb.WorkerEvent] = asyncio.Queue(maxsize=_OUTBOX_MAX)
         self.tasks: dict[str, asyncio.Task] = {}
         # 会话代次：断连后旧会话的结果/进度不得再发出（防错发 + outbox 无界积压）
         self._dead = False
         # 优雅停机（SIGTERM）：置位后主循环退出、在途任务取消、流关闭
         self._stop = asyncio.Event()
         self._channel: grpc.aio.Channel | None = None
+
+    async def _emit(self, ev: wpb.WorkerEvent) -> None:
+        """outbox 投递：满时丢弃并告警（保 Worker 存活优先）。"""
+        try:
+            self.outbox.put_nowait(ev)
+        except asyncio.QueueFull:
+            log.warning("outbox full (%d); dropping event", _OUTBOX_MAX)
 
     def request_stop(self) -> None:
         """信号回调（add_signal_handler 同 loop 线程）：停止主循环、取消任务、关流。"""
@@ -133,7 +143,7 @@ class WorkerClient:
             hb = wpb.Heartbeat(current_concurrency=self.running)
             hb.ts.CopyFrom(timestamp_pb2.Timestamp())
             hb.ts.GetCurrentTime()
-            await self.outbox.put(wpb.WorkerEvent(heartbeat=hb))
+            await self._emit(wpb.WorkerEvent(heartbeat=hb))
 
     def _cancel(self, task_id: str, reason: str):
         t = self.tasks.pop(task_id, None)
@@ -144,6 +154,10 @@ class WorkerClient:
     async def _run_one(self, task: wpb.TaskAssignment):
         # 任务从创建起即注册（含排队等待信号量阶段）——否则满载时调度器的
         # cancel 找不到任务，排队任务照常执行并产生副作用（M1）
+        if task.task_id in self.tasks:
+            # 重复 task_id（调度器重发）：忽略新任务，避免覆盖后旧任务失去可取消性
+            log.warning("duplicate task_id %s; ignoring", task.task_id)
+            return
         self.tasks[task.task_id] = asyncio.current_task()
         try:
             # 续链：Scheduler 派发时注入的 traceparent（无则开新 trace）
@@ -165,7 +179,7 @@ class WorkerClient:
                 payload = task.WhichOneof("payload")
                 if payload == "stress":
                     async def emit_metric(batch: wpb.StressMetricBatch):
-                        await self.outbox.put(wpb.WorkerEvent(stress_metrics=batch))
+                        await self._emit(wpb.WorkerEvent(stress_metrics=batch))
                     result = await run_stress(task, emit_metric)
                 elif payload == "functional":
                     async def progress(path: str, status: int, detail: dict):
@@ -176,7 +190,7 @@ class WorkerClient:
                             step_path=path,
                             status=status,
                         ))
-                        await self.outbox.put(ev)
+                        await self._emit(ev)
 
                     result = await run_task(task, on_progress=progress)
                 else:
@@ -196,7 +210,7 @@ class WorkerClient:
         if self._dead:
             return
         try:
-            await asyncio.shield(self.outbox.put(wpb.WorkerEvent(task_result=result)))
+            await asyncio.shield(self._emit(wpb.WorkerEvent(task_result=result)))
         except asyncio.CancelledError:
             pass
         log.info("task %s done: status=%s", task.task_id, result.status)

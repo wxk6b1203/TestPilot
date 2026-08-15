@@ -49,6 +49,8 @@ _BRIDGE_REQ_BODY_LIMIT = 1 * 1024 * 1024
 _MAX_LOG_LINES = 2000          # 日志/输出行数上限（超限丢弃并终止进程）
 _MAX_CONCURRENT_OPS = 64       # 桥 op 并发上限（超限拒绝）
 _MAX_RESP_HEADERS = 200        # 桥响应 header 条目上限
+_MAX_PROTO_LINE = 1 << 20      # 协议通道(fd1)单行上限：脚本 os.write(1, b"x"*1GB) 无换行
+                               # 可让 Worker 缓冲任意大小（rlimit 只限沙箱自身）——超限杀进程
 
 
 def _env_int(key: str, default: int) -> int:
@@ -137,6 +139,24 @@ _NET_DENY_PROFILE = """(version 1)
 _sandbox_exec_ok: bool | None = None
 
 
+async def _probe_sandbox_exec() -> None:
+    """异步探测 sandbox-exec 可用性（同步 subprocess.run 会冻结事件循环 5s）。"""
+    global _sandbox_exec_ok
+    if _sandbox_exec_ok is not None:
+        return
+    try:
+        probe = await asyncio.create_subprocess_exec(
+            "sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true",
+            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL)
+        rc = await asyncio.wait_for(probe.wait(), timeout=5)
+        _sandbox_exec_ok = rc == 0
+    except Exception:
+        _sandbox_exec_ok = False
+    if not _sandbox_exec_ok:
+        log.warning("sandbox-exec unavailable (restricted environment); "
+                    "sandbox runs WITHOUT network denial")
+
+
 def _kill_process_group(proc) -> None:
     """SIGKILL 整个进程组（沙箱 start_new_session 后为独立会话）；
     仅杀主进程会让其派生的子进程继续运行（rlimit 允许时）成孤儿。"""
@@ -150,33 +170,50 @@ def _kill_process_group(proc) -> None:
             pass
 
 
+class _LineReader:
+    """带行长上限的按行读取器：无换行的巨量输出（如 os.write(1, b'x'*1GB)）
+    不得让 Worker 无限缓冲——超过 max_len 返回 None（调用方应终止进程）。"""
+
+    def __init__(self, reader: asyncio.StreamReader, max_len: int):
+        self.reader = reader
+        self.max_len = max_len
+        self.buf = b""
+
+    async def readline(self) -> bytes | None:
+        while True:
+            idx = self.buf.find(b"\n")
+            if idx >= 0:
+                line, self.buf = self.buf[:idx], self.buf[idx + 1:]
+                return line
+            if len(self.buf) > self.max_len:
+                return None
+            chunk = await self.reader.read(4096)
+            if not chunk:
+                if self.buf:
+                    line, self.buf = self.buf, b""
+                    return line
+                return b""
+            self.buf += chunk
+
+
 def _net_deny_wrapper(cmd: list[str], scratch: str) -> tuple[list[str], bool]:
     """OS 级网络隔离（尽力而为）：macOS sandbox-exec / Linux bubblewrap。
     返回 (命令, 是否真正隔离)；无法隔离时返回原命令 + False（由调用方按
-    require_isolation 决定降级或 fail-closed）。"""
-    global _sandbox_exec_ok
-    if platform.system() == "Darwin" and shutil.which("sandbox-exec"):
-        if _sandbox_exec_ok is None:
-            try:
-                probe = subprocess.run(
-                    ["sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
-                    capture_output=True, timeout=5)
-                _sandbox_exec_ok = probe.returncode == 0
-            except Exception:
-                _sandbox_exec_ok = False
-            if not _sandbox_exec_ok:
-                log.warning("sandbox-exec unavailable (restricted environment); "
-                            "sandbox runs WITHOUT network denial")
-        if _sandbox_exec_ok:
-            profile = os.path.join(scratch, "sandbox.sb")
-            Path(profile).write_text(_NET_DENY_PROFILE)
-            return ["sandbox-exec", "-f", profile, *cmd], True
-        return cmd, False
+    require_isolation 决定降级或 fail-closed）。
+    sandbox-exec 可用性须先经 _probe_sandbox_exec（异步，不阻塞事件循环）确认。"""
+    if platform.system() == "Darwin" and shutil.which("sandbox-exec") and _sandbox_exec_ok:
+        profile = os.path.join(scratch, "sandbox.sb")
+        Path(profile).write_text(_NET_DENY_PROFILE)
+        return ["sandbox-exec", "-f", profile, *cmd], True
     if platform.system() == "Linux" and shutil.which("bwrap"):
         # 必须 --ro-bind / /：bwrap 默认空 rootfs，解释器不存在则 exec 必失败。
         # --die-with-parent：父进程退出时子进程连带终止（防孤儿）。
+        # --tmpfs /tmp 会用全新 tmpfs 遮蔽 host 的 /tmp——scratch（mkdtemp 默认在
+        # /tmp）与其中的 user_case.py/payload.json 将不可见，entry 必失败；因此
+        # 显式 --bind scratch scratch 重新挂载（可写；scratch 为专用临时目录）。
         return ["bwrap", "--ro-bind", "/", "/", "--proc", "/proc",
                 "--dev", "/dev", "--tmpfs", "/tmp",
+                "--bind", scratch, scratch,
                 "--unshare-net", "--die-with-parent", "--", *cmd], True
     log.warning("no OS sandbox tool found (sandbox-exec/bwrap); "
                 "sandbox runs WITHOUT network denial — 建议容器后端")
@@ -213,6 +250,9 @@ class SubprocessBackend(ExecutionBackend):
         cmd = [sys.executable, "-m", "testpilot_sdk.entry", src_path, entry]
         isolated = False
         if self.limits.net_deny:
+            # macOS sandbox-exec 可用性探测：异步执行，不阻塞事件循环 5s
+            if platform.system() == "Darwin" and shutil.which("sandbox-exec") and _sandbox_exec_ok is None:
+                await _probe_sandbox_exec()
             cmd, isolated = _net_deny_wrapper(cmd, scratch)
             if not isolated and self.limits.require_isolation:
                 # fail-closed：强制隔离但无工具（如本地无 gVisor/bwrap/sandbox-exec）
@@ -266,8 +306,14 @@ class SubprocessBackend(ExecutionBackend):
 
         async def _control_loop():
             nonlocal op_inflight
+            reader = _LineReader(proc.stdout, _MAX_PROTO_LINE)
             while True:
-                line = await proc.stdout.readline()
+                line = await reader.readline()
+                if line is None:
+                    # 协议行超限（无换行的巨量输出）：终止沙箱防 Worker OOM
+                    _append_log("[bridge protocol line exceeded limit; killing sandbox]")
+                    _kill_process_group(proc)
+                    break
                 if not line:
                     break
                 try:
