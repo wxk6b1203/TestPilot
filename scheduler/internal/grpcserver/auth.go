@@ -41,6 +41,9 @@ func bearerToken(ctx context.Context) string {
 }
 
 // requestContextOf 反射取出请求消息中的 *commonv1.RequestContext 字段。
+// 注意：proto 生成代码的字段名是 Ctx（proto 中 name=ctx），不是 "Context"——
+// 曾因 FieldByName("Context") 导致全部 Copilot 工具 RPC 被误拒（InvalidArgument）。
+// 契约：CopilotToolService 所有请求的第一个字段必须是 ctx（见 copilot.proto）。
 func requestContextOf(req any) *commonv1.RequestContext {
 	v := reflect.ValueOf(req)
 	if v.Kind() == reflect.Ptr {
@@ -49,7 +52,7 @@ func requestContextOf(req any) *commonv1.RequestContext {
 	if v.Kind() != reflect.Struct {
 		return nil
 	}
-	f := v.FieldByName("Context")
+	f := v.FieldByName("Ctx")
 	if !f.IsValid() || f.Kind() != reflect.Ptr {
 		return nil
 	}

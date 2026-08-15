@@ -37,8 +37,8 @@ type Worker struct {
 
 	Send chan *workerv1.SchedulerCommand
 
-	closedOnce sync.Once
-	closed     chan struct{} // 关闭信号：worker 断连/剔除时 close（Send 永不 close）
+	closedMu sync.Mutex
+	closed   chan struct{} // 关闭信号：worker 断连/剔除时 close（Send 永不 close）
 }
 
 // Load 返回当前负载。
@@ -51,23 +51,29 @@ func (w *Worker) InStress() bool { return w.stress.Load() }
 func (w *Worker) MarkSeen() { w.lastSeen.Store(time.Now().UnixNano()) }
 
 // Closed 返回关闭信号（惰性初始化，便于测试直接构造 Worker）。
+// 与 Shutdown 互斥（closedMu），保证并发调用无数据竞争。
 func (w *Worker) Closed() <-chan struct{} {
-	w.closedOnce.Do(func() {
-		if w.closed == nil {
-			w.closed = make(chan struct{})
-		}
-	})
+	w.closedMu.Lock()
+	defer w.closedMu.Unlock()
+	if w.closed == nil {
+		w.closed = make(chan struct{})
+	}
 	return w.closed
 }
 
-// Shutdown 关闭发送信号（幂等）；关闭后派发方经 select 感知并放弃该 Worker。
+// Shutdown 关闭关闭信号（幂等）；关闭后派发方经 select 感知并放弃该 Worker。
+// 注意：不能与 Closed 共用同一个 sync.Once——Closed 会先消费 once 导致 Shutdown 变 no-op。
 func (w *Worker) Shutdown() {
-	w.closedOnce.Do(func() {
-		if w.closed == nil {
-			w.closed = make(chan struct{})
-		}
+	w.closedMu.Lock()
+	defer w.closedMu.Unlock()
+	if w.closed == nil {
+		w.closed = make(chan struct{})
+	}
+	select {
+	case <-w.closed:
+	default:
 		close(w.closed)
-	})
+	}
 }
 
 // StressActive 判断压测独占是否仍有效（未过期）。
@@ -134,6 +140,14 @@ func New(db *gorm.DB) *Dispatcher {
 func (d *Dispatcher) Register(w *Worker) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	if w.ID == "" || len(w.ID) > 64 {
+		return apperr.BadRequest(apperr.CodeInvalidParam, "invalid worker id")
+	}
+	// 同 ID 重连（Worker 崩溃重启/网络闪断重连）：旧连接先触发关闭信号，
+	// 否则僵尸连接的 SetLoad 心跳会持续刷新新连接的 lastSeen（免于被 reaper 剔除）。
+	if old, ok := d.workers[w.ID]; ok && old != w {
+		old.Shutdown()
+	}
 	if w.TenantID != 0 {
 		limit := quota.Limit(d.db, w.TenantID, quota.MetricWorkerSlots)
 		if limit > 0 {
@@ -258,12 +272,14 @@ func (d *Dispatcher) Dispatch(task *workerv1.TaskAssignment) error {
 			best = w
 		}
 	}
+	if best != nil {
+		best.load.Add(1) // 锁内占位：并发派发串行化，避免多个任务同时选中同一 Worker 超 MaxConcurrency
+	}
 	d.mu.RUnlock()
 	if best == nil {
 		metrics.DispatchTotal.WithLabelValues("no_worker").Inc()
 		return ErrNoWorker
 	}
-	best.load.Add(1)
 	defer best.load.Add(-1)
 	// 发送前先检查关闭信号；select 同时监听 closed——worker 断连时放弃派发，
 	// Send 永不 close，杜绝 send-on-closed-channel panic。
@@ -491,8 +507,14 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 	}
 	return d.db.Transaction(func(tx *gorm.DB) error {
 		for _, cr := range res.GetCaseResults() {
+			crID := mustInt64(cr.GetId())
+			if crID <= 0 {
+				// Worker 伪造/损坏的 ID 拒绝落库（mustInt64 对非法串静默转 0，
+				// 落 id=0 会污染数据）；整个事务失败留日志。
+				return fmt.Errorf("invalid case result id %q", cr.GetId())
+			}
 			tx.Model(&model.TestCaseResult{}).
-				Where("id = ?", mustInt64(cr.GetId())).
+				Where("id = ?", crID).
 				Updates(map[string]any{
 					"status":      int16(cr.GetStatus()),
 					"duration_ms": int(cr.GetDuration().AsDuration().Milliseconds()),

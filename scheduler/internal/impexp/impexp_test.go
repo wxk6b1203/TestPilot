@@ -18,6 +18,14 @@ func openTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// project 归属校验（ensureProject）要求导入目标 project 存在且属于该租户；
+	// 同一 ID 可属于不同租户（隔离测试），冲突时保留已有行（DoNothing）
+	for _, p := range [][2]int64{{1, 1}, {1, 5}, {1, 10}, {1, 11}, {2, 20}, {9, 30}} {
+		proj := &model.Project{ID: p[1], TenantID: p[0], Name: "test project"}
+		if err := d.Create(proj).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
 	return d
 }
 
@@ -51,7 +59,7 @@ func TestImportOpenAPIJSON(t *testing.T) {
 		t.Fatalf("reimport got %+v", res2)
 	}
 	// 其他项目/租户互不影响
-	res3, err := ImportOpenAPI(d, 2, 10, []byte(openAPIJSON))
+	res3, err := ImportOpenAPI(d, 2, 20, []byte(openAPIJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +208,7 @@ func TestExportOpenAPI(t *testing.T) {
 		t.Fatalf("get params: %v", params)
 	}
 	// 其他租户导出为空 paths
-	out2, _ := ExportOpenAPI(d, 9, 10, "x")
+	out2, _ := ExportOpenAPI(d, 9, 30, "x")
 	var doc2 map[string]any
 	_ = json.Unmarshal(out2, &doc2)
 	if len(doc2["paths"].(map[string]any)) != 0 {
@@ -268,7 +276,7 @@ func TestExportCurl(t *testing.T) {
 		t.Fatalf("quote escape: %q", out2)
 	}
 	// 租户隔离
-	out3, _ := ExportCurl(d, 9, 10)
+	out3, _ := ExportCurl(d, 9, 30)
 	if out3 != "" {
 		t.Fatalf("tenant leak: %q", out3)
 	}
@@ -486,7 +494,7 @@ func TestImportPostman(t *testing.T) {
 	}
 
 	// 租户隔离
-	res3, err := ImportPostman(d, 2, 10, []byte(postmanJSON))
+	res3, err := ImportPostman(d, 2, 20, []byte(postmanJSON))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,3 +574,29 @@ func TestExportPostmanRoundtrip(t *testing.T) {
 		t.Fatalf("roundtrip import: %+v", res)
 	}
 }
+
+// TestImportCrossTenantProjectRejected 回归：导入入口必须校验 project 归属租户。
+// 此前 tenant 1 可把 API 挂到已知 id 的他租户 project 下（跨租户孤儿行）。
+func TestImportCrossTenantProjectRejected(t *testing.T) {
+	d := openTestDB(t)
+
+	// tenant 1 尝试导入到 tenant 2 的 project 20 → 拒绝
+	if _, err := ImportOpenAPI(d, 1, 20, []byte(openAPIJSON)); err == nil {
+		t.Fatal("cross-tenant import should be rejected")
+	}
+	if _, err := ImportCurl(d, 1, 20, "curl http://h/x"); err == nil {
+		t.Fatal("cross-tenant curl import should be rejected")
+	}
+	if _, err := ImportPostman(d, 1, 20, []byte(postmanJSON)); err == nil {
+		t.Fatal("cross-tenant postman import should be rejected")
+	}
+	// 本租户 project 正常
+	if _, err := ImportOpenAPI(d, 2, 20, []byte(openAPIJSON)); err != nil {
+		t.Fatalf("own-tenant import should pass: %v", err)
+	}
+	// 不存在的 project 同样拒绝
+	if _, err := ImportOpenAPI(d, 1, 9999, []byte(openAPIJSON)); err == nil {
+		t.Fatal("import into missing project should be rejected")
+	}
+}
+

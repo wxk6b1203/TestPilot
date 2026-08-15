@@ -5,7 +5,6 @@ import (
 
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/model"
-	"github.com/testpilot/testpilot/internal/quota"
 	"gorm.io/gorm"
 )
 
@@ -76,12 +75,8 @@ func (s *Server) appendCopilotMessage(ctx fiber.Ctx) error {
 	if !decode(ctx, &in) {
 		return nil
 	}
-	// 用户消息计 ai_calls 配额（与 Copilot 工具面一致；超限 429）
-	if in.Role == 1 {
-		if err := quota.Check(s.db, c.TenantID, quota.MetricAICalls, 1); err != nil {
-			return writeAppErr(ctx, err)
-		}
-	}
+	// 注意：用户消息的 ai_calls 计费已上移到 chat 代理层（/copilot-api/chat）——
+	// Copilot 按内容去重会跳过本 POST，在持久化处扣费可被重复消息绕过。
 	row := &model.CopilotMessage{
 		ID:        model.NextID(),
 		TenantID:  c.TenantID,

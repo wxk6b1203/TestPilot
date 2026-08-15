@@ -18,9 +18,14 @@ import (
 )
 
 // newCopilotClient 起 CopilotToolService（runner 仅 Trigger* 用到，本组用例传 nil）。
+// 写面 RPC（CreateApi/ImportOpenApi/ApplyOpenApiDiff）要求 project 属于该租户，
+// 故统一 seed 租户 1 的 project 100。
 func newCopilotClient(t *testing.T) (copilotv1.CopilotToolServiceClient, *gorm.DB) {
 	t.Helper()
 	d := openTestDB(t)
+	if err := d.Create(&model.Project{ID: 100, TenantID: 1, Name: "test"}).Error; err != nil {
+		t.Fatal(err)
+	}
 	conn := bufConn(t, func(srv *grpc.Server) {
 		copilotv1.RegisterCopilotToolServiceServer(srv, grpcserver.NewCopilotService(d, nil))
 	})
@@ -132,7 +137,7 @@ func TestListProjectsTenantFilterAndPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if p1.GetPage().GetTotal() != 3 || p1.GetPage().GetPage() != 1 || p1.GetPage().GetPageSize() != 2 {
+	if p1.GetPage().GetTotal() != 4 || p1.GetPage().GetPage() != 1 || p1.GetPage().GetPageSize() != 2 { // 含 newCopilotClient seed 的 project 100
 		t.Fatalf("page mismatch: %+v", p1.GetPage())
 	}
 	if len(p1.GetProjects()) != 2 {
@@ -145,8 +150,8 @@ func TestListProjectsTenantFilterAndPagination(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(p2.GetProjects()) != 1 {
-		t.Fatalf("page2 items=%d, want 1", len(p2.GetProjects()))
+	if len(p2.GetProjects()) != 2 {
+		t.Fatalf("page2 items=%d, want 2", len(p2.GetProjects()))
 	}
 
 	q, err := cli.ListProjects(ctx, &copilotv1.ListProjectsRequest{
@@ -491,3 +496,45 @@ func TestImportOpenApiFromURL(t *testing.T) {
 		t.Fatalf("apis=%d", n)
 	}
 }
+
+// TestCreateApiCrossTenantProjectRejected 回归：写面 RPC 必须校验 project 归属租户。
+// 此前 tenant 1 的 LLM 上下文可把 API/case/plan 挂到他租户 project 下（孤儿行）。
+func TestCreateApiCrossTenantProjectRejected(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	// tenant 2 的 project（id=20）
+	if err := d.Create(&model.Project{ID: 20, TenantID: 2, Name: "t2"}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	api := &copilotv1.CreateApiRequest_Http{Http: &commonv1.HttpApi{
+		Method: commonv1.HttpMethod_HTTP_METHOD_GET, Uri: "/x"}}
+	if _, err := cli.CreateApi(ctx, &copilotv1.CreateApiRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "20", Api: api}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant CreateApi: want NotFound, got %v", err)
+	}
+
+	if _, err := cli.CreateTestCase(ctx, &copilotv1.CreateTestCaseRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "20",
+		Case: &commonv1.TestCase{Name: "c", Definition: &commonv1.TestCase_Declarative{
+			Declarative: &commonv1.DeclarativeCase{}}}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant CreateTestCase: want NotFound, got %v", err)
+	}
+
+	if _, err := cli.CreateTestPlan(ctx, &copilotv1.CreateTestPlanRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "20",
+		Plan: &commonv1.TestPlan{Name: "p"}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant CreateTestPlan: want NotFound, got %v", err)
+	}
+
+	// 本租户 project 正常创建
+	resp, err := cli.CreateApi(ctx, &copilotv1.CreateApiRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100", Api: api})
+	if err != nil {
+		t.Fatalf("own-tenant CreateApi should pass: %v", err)
+	}
+	if resp.GetApiId() == "" {
+		t.Fatal("empty api id")
+	}
+}
+

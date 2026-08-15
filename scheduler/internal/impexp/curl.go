@@ -129,6 +129,9 @@ func ParseCurl(command string) (*curlRequest, error) {
 
 // ImportCurl 解析 curl 命令并插入一条 HttpApi。
 func ImportCurl(db *gorm.DB, tenantID, projectID int64, command string) (int64, error) {
+	if err := ensureProject(db, tenantID, projectID); err != nil {
+		return 0, err
+	}
 	req, err := ParseCurl(command)
 	if err != nil {
 		return 0, err

@@ -20,6 +20,9 @@ const postmanSchema = "https://schema.getpostman.com/json/collection/v2.1.0/coll
 // 导入为 HttpApi（method+uri 幂等，与 OpenAPI 导入同语义）。URL 取 raw（剥协议与 host），
 // query 拆入 Params；headers 落 Headers；raw body 落 Body（JSON 探测）。
 func ImportPostman(db *gorm.DB, tenantID, projectID int64, doc []byte) (*ImportResult, error) {
+	if err := ensureProject(db, tenantID, projectID); err != nil {
+		return nil, err
+	}
 	var root map[string]any
 	if err := json.Unmarshal(doc, &root); err != nil {
 		return nil, fmt.Errorf("invalid postman collection json: %v", err)

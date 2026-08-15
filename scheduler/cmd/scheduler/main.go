@@ -54,7 +54,10 @@ func main() {
 	logging.L.Infow("db ready", "path", cfg.DBPath, "dsn_set", cfg.DBDSN != "")
 
 	// A3：启动恢复——终结进程重启遗留的 RUNNING run（防止永久卡死 + cron overlap 卡住）
-	runner.RecoverInterruptedRuns(gormDB)
+	// 多实例部署必须关闭（TP_RECOVER_INTERRUPTED=false），否则第二实例会误杀在跑 run。
+	if cfg.RecoverInterrupted {
+		runner.RecoverInterruptedRuns(gormDB)
+	}
 
 	disp := dispatch.New(gormDB)
 	run := runner.New(gormDB, disp)
@@ -115,7 +118,10 @@ func main() {
 		}
 	}()
 
-	// 优雅停机：SIGINT/SIGTERM → 停收新请求 → gRPC GracefulStop（等在途任务落库）→ 退出
+	// 优雅停机：SIGINT/SIGTERM → 停收新请求 → 先通知 Worker 断开流
+	// （否则双向流不结束，GracefulStop 永久阻塞；reaper 的 stop 是 defer，排在
+	// GracefulStop 之后执行，不能依赖它结束 Worker 流）→ GracefulStop（等在途
+	// 任务落库，带超时兜底，超时强制 Stop）→ 退出
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	<-ctx.Done()
@@ -123,6 +129,20 @@ func main() {
 	if err := app.Shutdown(); err != nil {
 		logging.L.Warnw("http shutdown failed", "err", err)
 	}
-	gs.GracefulStop()
+	for _, w := range disp.Workers() {
+		w.Shutdown() // 结束双向流，让 GracefulStop 能返回
+	}
+	gracefulDone := make(chan struct{})
+	go func() {
+		gs.GracefulStop()
+		close(gracefulDone)
+	}()
+	select {
+	case <-gracefulDone:
+	case <-time.After(15 * time.Second):
+		logging.L.Warnw("grpc graceful stop timed out, forcing stop")
+		gs.Stop()
+		<-gracefulDone
+	}
 	logging.L.Infow("shutdown complete")
 }

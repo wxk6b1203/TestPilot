@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -66,7 +67,8 @@ func Open(path, dsn string, pool Pool) (*gorm.DB, error) {
 	return d, nil
 }
 
-// seed 保证存在默认租户(id=1)与 admin/admin123（owner）。
+// seed 保证存在默认租户(id=1)与 admin 账号（owner）。
+// 口令取 TP_ADMIN_PASSWORD（生产必须显式设置强口令），空则回落 admin123（仅本地开发）。
 func seed(d *gorm.DB) error {
 	var cnt int64
 	d.Model(&model.Tenant{}).Where("id = 1").Count(&cnt)
@@ -77,7 +79,11 @@ func seed(d *gorm.DB) error {
 	}
 	d.Model(&model.User{}).Where("username = ?", "admin").Count(&cnt)
 	if cnt == 0 {
-		hash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		adminPw := os.Getenv("TP_ADMIN_PASSWORD")
+		if adminPw == "" {
+			adminPw = "admin123"
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(adminPw), bcrypt.DefaultCost)
 		if err != nil {
 			return err
 		}

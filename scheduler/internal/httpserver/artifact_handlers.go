@@ -9,18 +9,32 @@ import (
 	"github.com/testpilot/testpilot/internal/model"
 )
 
-// selfClosingReader 读尽（EOF/出错）时自动 Close 底层流：
+// selfClosingReader 读尽（EOF/出错/读满 size）时自动 Close 底层流：
 // fasthttp 在 handler 返回后才消费流，无法 defer Close；S3 连接必须显式释放。
+// 注意：fasthttp 按 Size 精确读完后不再调用 Read（无 EOF），
+// 因此必须以 remaining 计数在"读满 size"时主动释放，否则句柄/S3 连接常态泄漏。
 type selfClosingReader struct {
-	r      io.ReadCloser
-	closed bool
+	r         io.ReadCloser
+	remaining int64
+	closed    bool
 }
 
 func (s *selfClosingReader) Read(p []byte) (int, error) {
+	if s.closed {
+		return 0, io.EOF
+	}
 	n, err := s.r.Read(p)
-	if err != nil && !s.closed {
+	if n > 0 {
+		s.remaining -= int64(n)
+	}
+	if err != nil || s.remaining <= 0 {
 		s.closed = true
 		_ = s.r.Close()
+		if err == nil {
+			// 读满 size：以 EOF 优雅结束——fasthttp 读满后还会再调一次 Read
+			// 确认流结束，若底层已被关闭会报错并中断连接（RemoteProtocolError）
+			err = io.EOF
+		}
 	}
 	return n, err
 }
@@ -63,5 +77,5 @@ func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	}
 	ctx.Set(fiber.HeaderContentDisposition,
 		`inline; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
-	return ctx.SendStream(&selfClosingReader{r: f}, int(art.Size))
+	return ctx.SendStream(&selfClosingReader{r: f, remaining: art.Size}, int(art.Size))
 }

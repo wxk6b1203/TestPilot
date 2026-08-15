@@ -66,6 +66,11 @@ type Config struct {
 	// 生产建议配置 Prometheus 出口网段（如 "10.0.0.0/8,192.168.0.0/16"）。
 	MetricsAllowedCIDRs string `yaml:"metrics_allowed_cidrs"`
 
+	// RecoverInterrupted 启动时把遗留 RUNNING run 标记失败（防永久卡死）。
+	// 多实例部署必须关闭（第二实例会误杀第一实例在跑的 run），默认开启。
+	RecoverInterrupted bool `yaml:"recover_interrupted"`
+
+
 	DefaultTenantID int64 `yaml:"-"` // 存根租户（不开放配置）
 }
 
@@ -86,6 +91,7 @@ func Defaults() Config {
 		BodyLimitMB:          64,
 		OTelEndpoint:         "127.0.0.1:4317",
 		CopilotURL:           "http://127.0.0.1:8100",
+		RecoverInterrupted:   true,
 		DefaultTenantID:      1,
 	}
 }

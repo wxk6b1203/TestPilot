@@ -26,27 +26,28 @@ import (
 // GET  /api/v1/auth/oidc/{id}/callback        code 换 token、验签、建/联账号、签发本地 JWT
 
 type oidcStateEntry struct {
-	at       time.Time
-	redirect string // 登录成功后 302 回跳的浏览器 origin（前端 SSE 登录页用）
+	at         time.Time
+	redirect   string // 登录成功后 302 回跳的浏览器 origin（前端 SSE 登录页用）
+	providerID int64  // 发起登录的 IdP（防 A 的 state 在 B 的 callback 兑现）
 }
 
 var oidcStates sync.Map // state → oidcStateEntry（10min 有效）
 
-func newOIDCState(redirect string) string {
+func newOIDCState(redirect string, providerID int64) string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
 	s := hex.EncodeToString(b)
-	oidcStates.Store(s, oidcStateEntry{at: time.Now(), redirect: redirect})
+	oidcStates.Store(s, oidcStateEntry{at: time.Now(), redirect: redirect, providerID: providerID})
 	return s
 }
 
-func takeOIDCState(s string) (string, bool) {
+func takeOIDCState(s string, providerID int64) (string, bool) {
 	v, ok := oidcStates.LoadAndDelete(s)
 	if !ok {
 		return "", false
 	}
 	e := v.(oidcStateEntry)
-	if time.Since(e.at) > 10*time.Minute {
+	if time.Since(e.at) > 10*time.Minute || e.providerID != providerID {
 		return "", false
 	}
 	return e.redirect, true
@@ -71,9 +72,11 @@ func redirectAllowed(redirect string, ctx fiber.Ctx) bool {
 }
 
 func (s *Server) oidcCallbackURI(ctx fiber.Ctx, id int64) string {
-	proto := ctx.Get("X-Forwarded-Proto")
-	if proto == "" {
-		proto = "http"
+	// X-Forwarded-Proto 仅信任 https 值（反代场景覆盖客户端伪造）；
+	// 其余一律按 http，杜绝任意 scheme 拼进回调 URL。
+	proto := "http"
+	if ctx.Get("X-Forwarded-Proto") == "https" {
+		proto = "https"
 	}
 	return fmt.Sprintf("%s://%s/api/v1/auth/oidc/%d/callback", proto, ctx.Host(), id)
 }
@@ -128,7 +131,7 @@ func (s *Server) oidcLogin(ctx fiber.Ctx) error {
 	// strings.Clone：fiber v3 ctx.Query 是 fasthttp 查询缓冲的零拷贝视图，
 	// 连接复用后缓冲区会被后续请求覆盖，跨请求存活的 state 必须拷贝。
 	rd := strings.Clone(ctx.Query("redirect"))
-	state := newOIDCState(rd)
+	state := newOIDCState(rd, id)
 	return ctx.Redirect().Status(fiber.StatusFound).To(auth.AuthURL(doc, p.ClientID, s.oidcCallbackURI(ctx, id), state))
 }
 
@@ -137,7 +140,7 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "invalid provider id"))
 	}
-	redirect, ok := takeOIDCState(strings.Clone(ctx.Query("state")))
+	redirect, ok := takeOIDCState(strings.Clone(ctx.Query("state")), id)
 	if !ok {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeOIDCState, "invalid or expired state"))
 	}

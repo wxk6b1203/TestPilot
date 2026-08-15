@@ -90,19 +90,6 @@ type DebugStepResult struct {
 // Debug 执行一次接口调试：构造单步声明式 case 派发并同步等待结果。
 // api_id 与 uri 二选一（api_id 时其余字段为覆盖）；env 回退：env_id → 项目首个 env。
 func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*DebugResult, error) {
-	// 配额检查与 run/cr 创建同事务（CheckTx 串行化，防并发穿透）
-	if err := r.db.Transaction(func(tx *gorm.DB) error {
-		if err := quota.CheckTx(tx, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
-			return err
-		}
-		if err := quota.CheckTx(tx, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-
 	// 基础接口：api_id 加载（租户过滤）或裸 uri
 	api := &commonv1.HttpApi{}
 	if in.APIID != 0 {
@@ -147,7 +134,8 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 		tenantID, in.ProjectID, env.ID).Find(&vars)
 	execEnv := buildExecutionEnv(&env, envExists, vars)
 
-	// 落库：调试 run（PlanID=0）+ case result
+	// 配额检查与 run/cr 创建同事务（CheckTx 串行化，防并发穿透；
+	// 创建失败时配额计数一并回滚）
 	run := &model.TestRun{
 		ID:          model.NextID(),
 		TenantID:    tenantID,
@@ -157,9 +145,6 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 		TriggeredBy: "debug",
 		StartedAt:   time.Now(),
 	}
-	if err := r.db.Create(run).Error; err != nil {
-		return nil, err
-	}
 	cr := &model.TestCaseResult{
 		ID:       model.NextID(),
 		TenantID: tenantID,
@@ -167,7 +152,18 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 		CaseID:   in.APIID, // 0=未保存的临时请求
 		Status:   int16(commonv1.CaseStatus_CASE_STATUS_RUNNING),
 	}
-	if err := r.db.Create(cr).Error; err != nil {
+	if err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := quota.CheckTx(tx, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
+			return err
+		}
+		if err := quota.CheckTx(tx, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
+			return err
+		}
+		if err := tx.Create(run).Error; err != nil {
+			return err
+		}
+		return tx.Create(cr).Error
+	}); err != nil {
 		return nil, err
 	}
 
@@ -202,6 +198,7 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 
 	waiter := r.disp.RegisterWaiter(task.TaskId) // 先注册后派发（防结果竞态）
 	if err := r.disp.Dispatch(task); err != nil {
+		r.disp.TakeWaiter(task.TaskId) // 消费掉等待器，防 waiters 无界泄漏
 		now := time.Now()
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED), "error": err.Error()})
@@ -220,6 +217,10 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 	case <-time.After(timeout):
 		r.disp.Cancel(task.TaskId, "debug timeout")
 		now := time.Now()
+		r.disp.TakeWaiter(task.TaskId)
+		// case result 一并收尾，避免 UI 上永久 RUNNING
+		r.db.Model(cr).Updates(map[string]any{
+			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED), "error": "debug timed out"})
 		r.db.Model(run).Updates(map[string]any{
 			"status": int16(commonv1.RunStatus_RUN_STATUS_ABORTED), "finished_at": &now})
 		return nil, apperr.New(504, apperr.CodeDebugTimeout, fmt.Sprintf("debug timed out after %s", timeout))

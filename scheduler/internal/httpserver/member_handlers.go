@@ -69,7 +69,8 @@ func (s *Server) addMember(ctx fiber.Ctx) error {
 		}
 	}
 	// 用户不存在 → 创建（默认密码 changeme123，要求首登修改——v1 简化）；
-	// 用户 + 成员同一事务（防并发重复创建撞唯一索引）
+	// 用户已存在 → 复用其 ID 只建成员（重建用户会撞 username 唯一索引）；
+	// 用户+成员同一事务（防并发重复创建撞唯一索引），事务外不再重复 Create。
 	pw := in.Password
 	if pw == "" {
 		pw = "changeme123"
@@ -78,21 +79,21 @@ func (s *Server) addMember(ctx fiber.Ctx) error {
 	if herr != nil {
 		return writeAppErr(ctx, apperr.Internal(herr.Error()))
 	}
-	u = model.User{ID: model.NextID(), Username: in.Username, Email: in.Email,
-		PasswordHash: string(hash), DisplayName: in.Username, Status: 1}
 	m := &model.TenantMember{ID: model.NextID(), TenantID: c.TenantID, UserID: u.ID, Role: in.Role}
 	if err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(&u).Error; err != nil {
-			return err
+		if err != nil { // 用户不存在：同事务创建用户
+			nu := model.User{ID: model.NextID(), Username: in.Username, Email: in.Email,
+				PasswordHash: string(hash), DisplayName: in.Username, Status: 1}
+			if err := tx.Create(&nu).Error; err != nil {
+				return err
+			}
+			m.UserID = nu.ID
 		}
 		return tx.Create(m).Error
 	}); err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
-	if err := s.db.Create(m).Error; err != nil {
-		return writeAppErr(ctx, apperr.Internal(err.Error()))
-	}
-	return writeJSON(ctx, fiber.StatusOK, memberView{UserID: u.ID, Username: u.Username,
+	return writeJSON(ctx, fiber.StatusOK, memberView{UserID: m.UserID, Username: in.Username,
 		Role: m.Role, RoleName: auth.RoleName(m.Role)})
 }
 

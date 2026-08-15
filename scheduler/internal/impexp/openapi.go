@@ -123,6 +123,9 @@ func parseSpecAPIs(doc []byte) ([]specAPI, error) {
 
 // ImportOpenAPI 解析 OpenAPI 3.x 文档（JSON 或 YAML），导入全部 path 操作为 HttpApi。
 func ImportOpenAPI(db *gorm.DB, tenantID, projectID int64, doc []byte) (*ImportResult, error) {
+	if err := ensureProject(db, tenantID, projectID); err != nil {
+		return nil, err
+	}
 	entries, err := parseSpecAPIs(doc)
 	if err != nil {
 		return nil, err
@@ -337,6 +340,9 @@ func apiKey(method int16, uri string) string {
 // runner 解析为内联快照，这里把新 spec 的 inline 直接写回用例 definition，
 // 使控制台展示与运行行为一致。
 func ApplyOpenAPIDiff(db *gorm.DB, tenantID, projectID int64, doc []byte, autoUpdateCases bool) (*DiffResult, error) {
+	if err := ensureProject(db, tenantID, projectID); err != nil {
+		return nil, err
+	}
 	entries, err := parseSpecAPIs(doc)
 	if err != nil {
 		return nil, err

@@ -380,11 +380,30 @@ func (s *CopilotService) QueryCoverage(_ context.Context, req *copilotv1.QueryCo
 	return out, nil
 }
 
+// ensureProjectTenant 校验 project 属于该租户（写面防跨租户孤儿行：
+// LLM 提供的 project_id 可指向他租户项目，挂进去即污染隔离视图）。
+func (s *CopilotService) ensureProjectTenant(rc *commonv1.RequestContext, projectID int64) error {
+	var n int64
+	if err := s.db.Model(&model.Project{}).Where("id = ? AND tenant_id = ?", projectID, rc.GetTenantId()).
+		Count(&n).Error; err != nil {
+		return status.Error(codes.Internal, err.Error())
+	}
+	if n == 0 {
+		return status.Error(codes.NotFound, "project not found in tenant")
+	}
+	return nil
+}
+
 // ---- 写工具（HITL 审批后由 Copilot 调用；全部落审计）----
 
 func (s *CopilotService) CreateApi(_ context.Context, req *copilotv1.CreateApiRequest) (*copilotv1.CreateApiResponse, error) {
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err
+	}
+	if pid := mustID(req.GetProjectId()); pid != 0 {
+		if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+			return nil, err
+		}
 	}
 	switch spec := req.GetApi().(type) {
 	case *copilotv1.CreateApiRequest_Http:
@@ -476,6 +495,11 @@ func (s *CopilotService) CreateTestCase(_ context.Context, req *copilotv1.Create
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err
 	}
+	if pid := mustID(req.GetProjectId()); pid != 0 {
+		if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+			return nil, err
+		}
+	}
 	c := req.GetCase()
 	if c == nil {
 		return nil, status.Error(codes.InvalidArgument, "case required")
@@ -518,6 +542,11 @@ func (s *CopilotService) CreateTestCase(_ context.Context, req *copilotv1.Create
 func (s *CopilotService) CreateTestPlan(_ context.Context, req *copilotv1.CreateTestPlanRequest) (*copilotv1.CreateTestPlanResponse, error) {
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err
+	}
+	if pid := mustID(req.GetProjectId()); pid != 0 {
+		if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+			return nil, err
+		}
 	}
 	p := req.GetPlan()
 	if p == nil {

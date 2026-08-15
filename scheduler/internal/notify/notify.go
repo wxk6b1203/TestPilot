@@ -157,6 +157,10 @@ func deliver(ch *model.NotificationChannel, payload map[string]any, title, text 
 }
 
 // webhookTargetAllowed 校验通知目标 URL：仅 http/https，且（默认）非私网/环回/链路本地。
+// 已知残余风险：DNS rebinding TOCTOU——判定与连接是两次独立解析，受控域名可在
+// 其间切换（公网→内网）绕过私网拦截。缓解：allow 白名单语义由通知渠道配置者
+// 掌控（管理端可见），攻击面为"已配置任意 URL 的管理员"；彻底修复需连接阶段
+// 绑定已解析 IP（httpx/Go http 层无标准 hook，改动面大，暂留文档说明）。
 func webhookTargetAllowed(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {

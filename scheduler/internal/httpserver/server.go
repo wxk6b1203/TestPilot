@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"errors"
+	"net"
 	"strings"
 	"time"
 
@@ -71,8 +72,21 @@ func (s *Server) App() *fiber.App {
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		return writeJSON(c, fiber.StatusOK, map[string]any{"ok": true})
 	})
-	app.Post("/api/v1/auth/login", s.login)
-	app.Post("/api/v1/auth/register", s.register)
+	// 登录/注册同享登录限流（防暴力破解与批量注册：同 IP 10 次/分钟）。
+	// 回环来源（本地开发/e2e/同机工具）不限流——攻击者无法伪造 TCP 源 IP，
+	// 限流只对真实远程来源生效。
+	app.Post("/api/v1/auth/login", func(c fiber.Ctx) error {
+		if !isLoopbackAddr(c) && !loginLimit.Allow(c.IP()) {
+			return writeErr(c, fiber.StatusTooManyRequests, "too many login attempts, try again later")
+		}
+		return s.login(c)
+	})
+	app.Post("/api/v1/auth/register", func(c fiber.Ctx) error {
+		if !isLoopbackAddr(c) && !loginLimit.Allow(c.IP()) {
+			return writeErr(c, fiber.StatusTooManyRequests, "too many attempts, try again later")
+		}
+		return s.register(c)
+	})
 	// OIDC 登录链路（公开）
 	app.Get("/api/v1/auth/oidc/providers", s.listOIDCProvidersPublic)
 	app.Get("/api/v1/auth/oidc/:id/login", s.oidcLogin)
@@ -252,12 +266,22 @@ func errorHandler(c fiber.Ctx, err error) error {
 }
 
 // corsDev 开发态宽松 CORS（生产经同源嵌入托管，不需要）。
+// 仅当 HTTP 监听绑定在回环地址时才放行任意 Origin；生产监听（0.0.0.0/内网 IP）
+// 时不设置 ACAO（同源托管场景浏览器不依赖 CORS 头，避免凭证被任意站点读取）。
 func corsDev(c fiber.Ctx) error {
-	c.Set("Access-Control-Allow-Origin", "*")
-	c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-	c.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-	if c.Method() == fiber.MethodOptions {
-		return c.SendStatus(fiber.StatusNoContent)
+	if isLoopbackAddr(c) {
+		c.Set("Access-Control-Allow-Origin", "*")
+		c.Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		c.Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		if c.Method() == fiber.MethodOptions {
+			return c.SendStatus(fiber.StatusNoContent)
+		}
 	}
 	return c.Next()
+}
+
+// isLoopbackAddr 判断请求来源地址是否为回环（CORS 宽松只给本地开发）。
+func isLoopbackAddr(c fiber.Ctx) bool {
+	ip := net.ParseIP(c.IP())
+	return ip != nil && ip.IsLoopback()
 }
