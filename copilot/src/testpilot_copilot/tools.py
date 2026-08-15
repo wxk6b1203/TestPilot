@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,6 +17,21 @@ from testpilot.common.v1 import types_pb2 as pb
 from testpilot.copilot.v1 import copilot_pb2 as cpb
 
 from .scheduler_client import SchedulerClient, parse_struct, to_dict
+
+# 敏感头掩码：租户可能把 Authorization/Cookie 等存在接口定义头里，
+# 原样返回会把凭据送进外部 LLM 供应商上下文并落库（P2）
+_SENSITIVE_HEADER_RE = re.compile(
+    r"^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|"
+    r"x-auth-token|api[-_]?key|token)$", re.I)
+
+
+def _redact_headers(headers: Any) -> None:
+    """就地掩码敏感 header 的 value（key 保留便于 LLM 理解结构）。"""
+    if not isinstance(headers, list):
+        return
+    for h in headers:
+        if isinstance(h, dict) and _SENSITIVE_HEADER_RE.match(str(h.get("key", ""))):
+            h["value"] = "***"
 
 
 @dataclass
@@ -52,7 +68,10 @@ async def list_apis(ctx: RunContext[CopilotDeps], project_id: str, query: str = 
     r = await ctx.deps.sched.stub.ListApis(
         cpb.ListApisRequest(ctx=ctx.deps.ctx(), project_id=project_id, query=query,
                             page=pb.PageRequest(page_size=200)))
-    return to_dict(r).get("httpApis", [])
+    apis = to_dict(r).get("httpApis", [])
+    for a in apis:
+        _redact_headers(a.get("headers"))
+    return apis
 
 
 @readonly.tool
@@ -60,7 +79,9 @@ async def get_api(ctx: RunContext[CopilotDeps], api_id: str) -> dict:
     """获取单个接口详情。"""
     r = await ctx.deps.sched.stub.GetApi(
         cpb.GetApiRequest(ctx=ctx.deps.ctx(), api_id=api_id, kind=cpb.API_KIND_HTTP))
-    return to_dict(r)
+    d = to_dict(r)
+    _redact_headers(d.get("http", {}).get("headers"))
+    return d
 
 
 @readonly.tool

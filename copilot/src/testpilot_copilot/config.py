@@ -138,6 +138,10 @@ def load(argv: list[str] | None = None, env: dict[str, str] | None = None,
 
 def apply_environ(s: Settings) -> None:
     """把解析结果回写环境：entry() 的 CLI 覆盖经此提升为 env 层，
-    lifespan 内 load() 与 tracing 等下游按原约定读取即得最终值。"""
+    lifespan 内 load() 与 tracing 等下游按原约定读取即得最终值。
+    api_key 刻意不回写（对比 worker 侧 token 的处理）：/proc/<pid>/environ
+    可读、子进程继承，密钥只应存在于进程内存。"""
     for dest, (_key, env_key, _default, _typ, _cli) in _FIELDS.items():
+        if env_key == "TP_COPILOT_API_KEY":
+            continue
         os.environ[env_key] = str(getattr(s, dest))

@@ -36,6 +36,12 @@ from .tools import CopilotDeps
 
 log = logging.getLogger("testpilot.copilot")
 
+# chat 请求体上限（SSE 消息体通常 <100KB；防大 body 占用内存）
+_MAX_CHAT_BODY = 1 << 20
+
+# chat 请求体上限（SSE 消息体通常 <100KB；防大 body 占用内存）
+_MAX_CHAT_BODY = 1 << 20
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -61,6 +67,28 @@ async def healthz() -> dict:
     return {"ok": True, "provider": s.provider, "model": s.model}
 
 
+def attach_auth_stream(response, token: str) -> None:
+    """把 JWT 认证上下文转交流式响应：迭代窗口内 set/reset（P0 修复）。
+
+    async generator 执行时使用的是消费方的 context 而非创建时的 context——
+    handler 返回前 set/reset 对 agent 执行期（流消费时）完全无效。
+    """
+    it = getattr(response, "body_iterator", None)
+    if it is None:
+        return
+    from .scheduler_client import auth_token as _auth_var
+
+    async def _resume(inner, tok):
+        ctx_tok = _auth_var.set(tok)
+        try:
+            async for chunk in inner:
+                yield chunk
+        finally:
+            _auth_var.reset(ctx_tok)
+
+    response.body_iterator = _resume(it, token)
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     # span 覆盖鉴权/会话/持久化 + 流式 agent 运行全程（body 迭代器收尾时 end）
@@ -81,19 +109,33 @@ async def _chat_inner(request: Request):
     token = auth[7:].strip()
     http: httpx.AsyncClient = app.state.http
 
-    me = await http.get("/api/v1/me", headers={"Authorization": f"Bearer {token}"})
+    me = await http.get("/api/v1/me",
+                         headers=tracing.inject_headers({"Authorization": f"Bearer {token}"}))
     if me.status_code != 200:
         return JSONResponse({"error": "invalid scheduler token"}, status_code=401)
     info = me.json()
     tenant_id = int(info["tenant_id"])
     user_id = str(info["user"]["id"])
 
+    # body 解析前置：非法 JSON → 400（此前抛 JSONDecodeError → 500）；
+    # 超大 body 拒绝（防内存占用）
+    raw = await request.body()
+    if len(raw) > _MAX_CHAT_BODY:
+        return JSONResponse({"error": f"body too large (> {_MAX_CHAT_BODY} bytes)"},
+                            status_code=413)
+    try:
+        body = json.loads(raw) if raw else {}
+    except ValueError:
+        return JSONResponse({"error": "invalid json body"}, status_code=400)
+
     sid = request.headers.get("x-session-id", "")
     if sid:
         session_id = sid
     else:
+        # 仅在有效请求上建 session（此前任何带合法 token 的请求都会先建，
+        # 产生垃圾行）
         r = await http.post("/api/v1/copilot/sessions", json={"title": ""},
-                            headers={"Authorization": f"Bearer {token}"})
+                            headers=tracing.inject_headers({"Authorization": f"Bearer {token}"}))
         if r.status_code != 200:
             return JSONResponse({"error": f"create session: {r.text}"}, status_code=502)
         session_id = str(r.json()["id"])
@@ -101,26 +143,24 @@ async def _chat_inner(request: Request):
     deps = CopilotDeps(sched=app.state.sched, tenant_id=tenant_id, user_id=user_id,
                        http=http, token=token)
 
-    body = await request.json()
     await _persist_incoming_user(app, session_id, token, body)
 
     async def on_complete(result):
         await _persist_turn(app, session_id, token, result)
 
+    response = await VercelAIAdapter.dispatch_request(
+        request,
+        agent=app.state.agent,
+        sdk_version=7,
+        deps=deps,
+        on_complete=on_complete,
+    )
     # gRPC 认证上下文：工具调用经 scheduler_client 注入当前用户的 JWT
-    # （Scheduler CopilotAuthUnary 校验 Bearer + RequestContext 一致性）
-    from .scheduler_client import auth_token as _auth_var
-    tok = _auth_var.set(token)
-    try:
-        response = await VercelAIAdapter.dispatch_request(
-            request,
-            agent=app.state.agent,
-            sdk_version=7,
-            deps=deps,
-            on_complete=on_complete,
-        )
-    finally:
-        _auth_var.reset(tok)
+    # （Scheduler CopilotAuthUnary 校验 Bearer + RequestContext 一致性）。
+    # 必须在流窗口内 set：dispatch_request 返回的是惰性 StreamingResponse，
+    # agent 在 body 迭代时才执行（async generator 不继承创建时的 contextvar），
+    # handler 内 set/reset 会让工具调用读不到 token → 401。
+    attach_auth_stream(response, token)
     response.headers["X-Session-Id"] = session_id
     return response
 
@@ -138,13 +178,14 @@ async def _persist_incoming_user(app: FastAPI, session_id: str, token: str, body
         return
     http: httpx.AsyncClient = app.state.http
     h = {"Authorization": f"Bearer {token}"}
-    r = await http.get(f"/api/v1/copilot/sessions/{session_id}/messages", headers=h)
+    r = await http.get(f"/api/v1/copilot/sessions/{session_id}/messages",
+                       headers=tracing.inject_headers(h))
     if r.status_code == 200:
         existing = [m for m in r.json().get("items", []) if m.get("role") == 1]
         if existing and existing[-1].get("content") == text:
             return
     await http.post(f"/api/v1/copilot/sessions/{session_id}/messages",
-                    json={"role": 1, "content": text}, headers=h)
+                    json={"role": 1, "content": text}, headers=tracing.inject_headers(h))
 
 
 async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> None:
@@ -159,7 +200,13 @@ async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> No
     http: httpx.AsyncClient = app.state.http
     h = {"Authorization": f"Bearer {token}"}
     for row in rows:
-        r = await http.post(f"/api/v1/copilot/sessions/{session_id}/messages", json=row, headers=h)
+        try:
+            r = await http.post(f"/api/v1/copilot/sessions/{session_id}/messages", json=row,
+                                headers=tracing.inject_headers(h))
+        except httpx.HTTPError as e:
+            # 持久化失败不应让已完成的流以 error 结尾——记录即可
+            log.warning("persist message network error: %s", e)
+            continue
         if r.status_code != 200:
             log.warning("persist message failed: %s %s", r.status_code, r.text[:200])
 
