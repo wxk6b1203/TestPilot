@@ -107,13 +107,20 @@ async def _chat_inner(request: Request):
     async def on_complete(result):
         await _persist_turn(app, session_id, token, result)
 
-    response = await VercelAIAdapter.dispatch_request(
-        request,
-        agent=app.state.agent,
-        sdk_version=6,
-        deps=deps,
-        on_complete=on_complete,
-    )
+    # gRPC 认证上下文：工具调用经 scheduler_client 注入当前用户的 JWT
+    # （Scheduler CopilotAuthUnary 校验 Bearer + RequestContext 一致性）
+    from .scheduler_client import auth_token as _auth_var
+    tok = _auth_var.set(token)
+    try:
+        response = await VercelAIAdapter.dispatch_request(
+            request,
+            agent=app.state.agent,
+            sdk_version=7,
+            deps=deps,
+            on_complete=on_complete,
+        )
+    finally:
+        _auth_var.reset(tok)
     response.headers["X-Session-Id"] = session_id
     return response
 

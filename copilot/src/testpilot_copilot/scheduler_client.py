@@ -1,6 +1,13 @@
-"""Scheduler CopilotToolService gRPC 客户端（Copilot 不直连 DB —— 全部经此）。"""
+"""Scheduler CopilotToolService gRPC 客户端（Copilot 不直连 DB —— 全部经此）。
+
+认证：Scheduler 侧 CopilotAuthUnary 校验 authorization: Bearer <JWT>，并要求请求
+RequestContext 与 JWT claims 一致。本客户端从 contextvar 读取当前请求的用户 JWT
+（chat 入口设置），经 interceptor 注入 gRPC metadata —— 不信任任何自报身份。
+"""
 
 from __future__ import annotations
+
+import contextvars
 
 import grpc
 from google.protobuf import json_format
@@ -11,10 +18,25 @@ from testpilot.copilot.v1 import copilot_pb2_grpc as cgrpc
 
 from .tracing import TraceparentInterceptor
 
+# 当前请求的用户 JWT（chat 协程设置；工具调用同任务链读取）
+auth_token: contextvars.ContextVar[str] = contextvars.ContextVar("tp_sched_auth", default="")
+
+
+class AuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
+    """给 Scheduler gRPC 调用注入 authorization: Bearer <JWT>。"""
+
+    async def intercept_unary_unary(self, continuation, client_call_details, request):
+        token = auth_token.get()
+        if token:
+            md = list(client_call_details.metadata or []) + [("authorization", f"Bearer {token}")]
+            client_call_details = client_call_details._replace(metadata=md)
+        return await continuation(client_call_details, request)
+
 
 class SchedulerClient:
     def __init__(self, addr: str):
-        self._channel = grpc.aio.insecure_channel(addr, interceptors=[TraceparentInterceptor()])
+        self._channel = grpc.aio.insecure_channel(
+            addr, interceptors=[TraceparentInterceptor(), AuthInterceptor()])
         self.stub = cgrpc.CopilotToolServiceStub(self._channel)
 
     async def close(self) -> None:
