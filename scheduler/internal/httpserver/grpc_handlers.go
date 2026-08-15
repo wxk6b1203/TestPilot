@@ -31,7 +31,7 @@ func (s *Server) createGrpcAPI(ctx fiber.Ctx) error {
 	}
 	assignIDs(&in, c.TenantID)
 	if err := s.db.Create(&in).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }
@@ -63,7 +63,7 @@ func (s *Server) createProtoFile(ctx fiber.Ctx) error {
 	}
 	assignIDs(&in, c.TenantID)
 	if err := s.db.Create(&in).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }

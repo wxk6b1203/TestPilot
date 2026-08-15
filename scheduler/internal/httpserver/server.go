@@ -77,8 +77,9 @@ func (s *Server) App() *fiber.App {
 	app.Get("/api/v1/auth/oidc/providers", s.listOIDCProvidersPublic)
 	app.Get("/api/v1/auth/oidc/:id/login", s.oidcLogin)
 	app.Get("/api/v1/auth/oidc/:id/callback", s.oidcCallback)
-	// Prometheus 抓取（生产应仅对内网/Prom 可达）
-	app.Get("/metrics", adaptor.HTTPHandler(metrics.Handler()))
+	// Prometheus 抓取：来源白名单由 metrics_allowed_cidrs 控制（空=不限制，本地默认）；
+	// 生产配置后非白名单来源一律 403（也可在反向代理层做同等限制）
+	app.Get("/metrics", s.metricsGuard(), adaptor.HTTPHandler(metrics.Handler()))
 
 	// 受保护 API：组中间件 = JWT 认证 + 人工变更审计
 	api := app.Group("/api/v1", auth.Middleware(s.cfg.JWTSecret), audit.Middleware(s.db))
@@ -218,8 +219,10 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/workers", auth.RoleViewer, s.listWorkers)
 
 	// Copilot SSE 反代（生产前端托管后，/copilot-api/* → copilot /api/*）。
+	// 必须认证：不允许未登录流量直达 Copilot 服务（Authorization 原样透传由 Copilot 复核）。
 	if s.cfg.CopilotURL != "" {
-		app.All("/copilot-api/*", s.proxyCopilot)
+		app.All("/copilot-api/*", auth.Middleware(s.cfg.JWTSecret),
+			auth.RequireRole(auth.RoleViewer, s.proxyCopilot))
 	}
 
 	// 可选：托管前端构建产物（static_dir；HashRouter，无需 history 回退）。

@@ -34,7 +34,7 @@ func (s *Server) createScript(ctx fiber.Ctx) error {
 		in.Language = "python"
 	}
 	if err := s.db.Create(&in).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }

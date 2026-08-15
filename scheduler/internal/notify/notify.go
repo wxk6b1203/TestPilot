@@ -12,8 +12,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +26,12 @@ import (
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
 )
+
+// allowPrivateWebhook 允许通知目标为私网/环回地址（内网 webhook 场景）。
+// 惰性读取：默认 false——防止租户配置的 webhook URL 被用于 SSRF（Scheduler 打内网/云 metadata）。
+func allowPrivateWebhook() bool {
+	return os.Getenv("TP_NOTIFY_ALLOW_PRIVATE") == "1"
+}
 
 var client = &http.Client{Timeout: 5 * time.Second}
 
@@ -103,6 +112,10 @@ func eventSubscribed(events, event string) bool {
 }
 
 func deliver(ch *model.NotificationChannel, payload map[string]any, title, text string) error {
+	// SSRF 防护：仅 http/https + 拒绝私网/环回（默认；TP_NOTIFY_ALLOW_PRIVATE=1 放开内网 webhook）
+	if !webhookTargetAllowed(ch.URL) {
+		return fmt.Errorf("webhook url not allowed: %q", ch.URL)
+	}
 	var body []byte
 	target := ch.URL
 	var err error
@@ -136,10 +149,41 @@ func deliver(ch *model.NotificationChannel, payload map[string]any, title, text 
 		return err
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, resp.Body) // 读尽 body：连接可复用
 	if resp.StatusCode >= 300 {
 		return fmt.Errorf("webhook status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// webhookTargetAllowed 校验通知目标 URL：仅 http/https，且（默认）非私网/环回/链路本地。
+func webhookTargetAllowed(rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Hostname() == "" {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if allowPrivateWebhook() {
+		return true
+	}
+	ip := net.ParseIP(u.Hostname())
+	if ip != nil {
+		return !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified())
+	}
+	// 主机名：解析后任一地址为私网即拒绝；解析失败不拦截（连接阶段自然报错）
+	addrs, err := net.LookupHost(u.Hostname())
+	if err != nil {
+		return true
+	}
+	for _, a := range addrs {
+		if parsed := net.ParseIP(a); parsed != nil &&
+			(parsed.IsPrivate() || parsed.IsLoopback() || parsed.IsLinkLocalUnicast()) {
+			return false
+		}
+	}
+	return true
 }
 
 // dingSign 钉钉加签：url 追加 timestamp/sign 参数。

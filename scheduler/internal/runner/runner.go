@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
@@ -44,6 +45,7 @@ func taskTypeFor(caseType int16) commonv1.TaskType {
 func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, trigger int16, triggeredBy string) (int64, error) {
 	ctx, span := otel.Tracer("testpilot/scheduler").Start(ctx, "runner.trigger")
 	defer span.End()
+	// 配额快速失败（保持"配额优先于资源校验"的既有语义）；权威并发检查在事务内 CheckTx
 	if err := quota.Check(r.db, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
 		return 0, err
 	}
@@ -81,7 +83,16 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 		TriggeredBy: triggeredBy,
 		StartedAt:   time.Now(),
 	}
-	if err := r.db.Create(run).Error; err != nil {
+	// 配额检查与 run 创建同事务（CheckTx 行锁/串行事务防止并发穿透 TOCTOU）
+	if err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := quota.CheckTx(tx, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
+			return err
+		}
+		if err := quota.CheckTx(tx, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
+			return err
+		}
+		return tx.Create(run).Error
+	}); err != nil {
 		return 0, err
 	}
 	span.SetAttributes(attribute.Int64("run_id", run.ID), attribute.Int64("plan_id", planID),
@@ -410,8 +421,14 @@ func applyOverrides(raw model.JSON, pcase *commonv1.TestCase,
 
 	vars := make([]*commonv1.Variable, 0, len(execEnv.GetVariables())+len(ov))
 	vars = append(vars, execEnv.GetVariables()...)
-	for k, v := range ov {
-		vars = append(vars, &commonv1.Variable{Key: k, Value: overrideString(v)})
+	// 按 key 排序输出（Go map 迭代无序会破坏确定性；同 key 覆盖值排在 env 之后，取末值语义不变）
+	keys := make([]string, 0, len(ov))
+	for k := range ov {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		vars = append(vars, &commonv1.Variable{Key: k, Value: overrideString(ov[k])})
 	}
 	return &workerv1.ExecutionEnv{
 		Environment: execEnv.GetEnvironment(),

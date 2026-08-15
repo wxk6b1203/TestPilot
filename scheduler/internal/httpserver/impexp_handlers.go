@@ -75,7 +75,7 @@ func (s *Server) exportOpenAPI(ctx fiber.Ctx) error {
 	}
 	doc, err := impexp.ExportOpenAPI(s.db, c.TenantID, pid, title)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="openapi.json"`)
@@ -117,7 +117,7 @@ func (s *Server) exportPostman(ctx fiber.Ctx) error {
 	}
 	doc, err := impexp.ExportPostman(s.db, c.TenantID, pid, title)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	ctx.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
 	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="collection.json"`)
@@ -132,7 +132,7 @@ func (s *Server) exportCurl(ctx fiber.Ctx) error {
 	}
 	out, err := impexp.ExportCurl(s.db, c.TenantID, pid)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	ctx.Set(fiber.HeaderContentType, "text/plain; charset=utf-8")
 	ctx.Set(fiber.HeaderContentDisposition, `attachment; filename="apis.sh"`)

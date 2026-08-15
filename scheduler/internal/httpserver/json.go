@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/auth"
+	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
 )
@@ -56,6 +57,12 @@ func stringifyIDs(v any) {
 
 func isIDKey(k string) bool {
 	return k == "id" || strings.HasSuffix(k, "_id")
+}
+
+// writeInternalErr 内部错误出口：细节进日志，客户端只见通用文案（防 SQLSTATE/路径泄漏）。
+func writeInternalErr(ctx fiber.Ctx, err error) error {
+	logging.L.Warnw("internal error", "path", ctx.Path(), "err", err)
+	return writeErr(ctx, fiber.StatusInternalServerError, "internal error")
 }
 
 // writeErr 通用错误（按状态码映射到通用码）；领域错误请用 writeAppErr + apperr 构造器。
@@ -233,35 +240,43 @@ func forceIntField(v any, name string, val int64) {
 	}
 }
 
-// assignIDs 给新建实体分配主键与租户。
+// assignIDs 给新建实体强制分配主键与租户（无条件覆盖请求体中的 id/tenant_id——
+// 防止客户端跨租户创建：setIntField 的条件赋值已被证明可被 body 注入绕过）。
 func assignIDs(v any, tenantID int64) {
-	setIntField(v, "ID", model.NextID())
-	setIntField(v, "TenantID", tenantID)
+	forceIntField(v, "ID", model.NextID())
+	forceIntField(v, "TenantID", tenantID)
 }
 
 // listOf 通用分页列表：apply 注入租户/过滤条件。
 func listOf[T any](db *gorm.DB, ctx fiber.Ctx, apply func(*gorm.DB) *gorm.DB) error {
 	var total int64
 	if err := apply(db.Model(new(T))).Count(&total).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	items := make([]T, 0)
 	offset, limit := pageParams(ctx)
 	if err := apply(db).Order("id desc").Offset(offset).Limit(limit).Find(&items).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"items": items, "total": total})
 }
 
-// createOf 通用创建：decode → 分配 ID/租户 → 落库。
+// createOf 通用创建：decode → 分配 ID/租户（强制覆盖）→ 落库。
 func createOf[T any](db *gorm.DB, ctx fiber.Ctx, bind func(*T)) error {
 	var v T
 	if !decode(ctx, &v) {
 		return nil
 	}
 	bind(&v)
+	// 兜底强制：无论 bind 实现如何，ID/TenantID 一律以服务端为准
+	forceIntField(&v, "ID", model.NextID())
+	forceIntField(&v, "TenantID", claimsOf(ctx).TenantID)
+	// C6：引用实体必须属于本租户
+	if !validateRefs(db, ctx, &v) {
+		return nil
+	}
 	if err := db.Create(&v).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &v)
 }
@@ -294,10 +309,14 @@ func updateOf[T any](db *gorm.DB, ctx fiber.Ctx) error {
 	if !decode(ctx, &v) {
 		return nil
 	}
+	// C6：请求体可能改写了引用 ID——先校验归属再落库
+	if !validateRefs(db, ctx, &v) {
+		return nil
+	}
 	forceIntField(&v, "ID", id) // ID/TenantID 不可变
 	forceIntField(&v, "TenantID", c.TenantID)
 	if err := db.Save(&v).Error; err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &v)
 }

@@ -95,6 +95,9 @@ type User struct {
 	DisplayName  string    `json:"display_name"`
 	Status       int16     `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
+	// OIDC 身份绑定（IdP sub 锚点）：优先于 email 联结，防账户接管
+	OIDCProviderID int64  `json:"-" gorm:"index"`
+	OIDCSub        string `json:"-" gorm:"index"`
 }
 
 type TenantMember struct {

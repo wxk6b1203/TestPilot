@@ -28,7 +28,16 @@ func Open(path, dsn string, pool Pool) (*gorm.DB, error) {
 	if dsn != "" {
 		d, err = gorm.Open(postgres.Open(dsn), cfg)
 	} else {
-		d, err = gorm.Open(sqlite.Open(path), cfg)
+		// WAL：读写不互斥；busy_timeout：并发写等锁而非直接 SQLITE_BUSY；
+		// _txlock=immediate：所有事务立即取写锁 → 事务内读取一致、配额检查串行化。
+		// 注意：glebarez/go-sqlite 要求 '?' 位于 DSN 位置 >=1 才解析查询参数——
+		// path 为空（SQLite 私有临时库，测试场景）时绝不能拼接，否则整个字符串
+		// 会被当成数据库文件名（曾误创建 "?_pragma=…" 垃圾文件）。
+		dsn := path
+		if path != "" {
+			dsn += "?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
+		}
+		d, err = gorm.Open(sqlite.Open(dsn), cfg)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("open db: %w", err)

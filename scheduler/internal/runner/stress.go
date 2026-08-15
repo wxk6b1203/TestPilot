@@ -163,11 +163,16 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 			Traceparent: traceparent,
 		}
 		if err := r.disp.DispatchStress(workers[i], task); err != nil {
+			// 失败不递减的话 remaining 与实际派发数不一致 → 压测永久挂起、
+			// 已派发 Worker 永久独占。这里同步回退计数。
+			r.disp.AdjustStressRun(run.ID, -1)
+			logging.L.Warnw("stress dispatch failed", "run_id", run.ID, "worker", workers[i].ID, "err", err)
 			continue
 		}
 		dispatched++
 	}
 	if dispatched == 0 {
+		r.disp.DropStressRun(run.ID) // 全部失败：放弃收尾跟踪，避免泄漏
 		now := time.Now()
 		r.db.Model(run).Updates(map[string]any{
 			"status":      int16(commonv1.RunStatus_RUN_STATUS_FAILED),

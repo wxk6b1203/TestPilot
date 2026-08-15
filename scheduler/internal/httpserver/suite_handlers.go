@@ -30,6 +30,15 @@ func (s *Server) createSuite(ctx fiber.Ctx) error {
 	if !decode(ctx, &in) {
 		return nil
 	}
+	if !validateRefs(s.db, ctx, &in.TestSuite) {
+		return nil
+	}
+	// 套件引用的 case 必须属于本租户（否则运行期被 runner 静默跳过/跨租户污染）
+	for _, cid := range in.CaseIDs {
+		if !ensureEntity(s.db, ctx, "case", cid) {
+			return nil
+		}
+	}
 	assignIDs(&in.TestSuite, c.TenantID)
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&in.TestSuite).Error; err != nil {
@@ -41,7 +50,7 @@ func (s *Server) createSuite(ctx fiber.Ctx) error {
 		return nil
 	})
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }
@@ -85,7 +94,7 @@ func (s *Server) updateSuite(ctx fiber.Ctx) error {
 		return nil
 	})
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }
@@ -110,7 +119,7 @@ func (s *Server) deleteSuite(ctx fiber.Ctx) error {
 		return writeErr(ctx, fiber.StatusNotFound, "not found")
 	}
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }

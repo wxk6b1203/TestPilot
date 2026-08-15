@@ -66,6 +66,38 @@ func bodySpec(raw model.JSON) *commonv1.BodySpec {
 	}
 	b := &commonv1.BodySpec{}
 	if err := protojson.Unmarshal([]byte(raw), b); err != nil {
+		b = legacyFormBody(raw) // 兼容旧前端形状：form 为数组（proto 需 {fields:[…]}）
+		if b == nil {
+			return nil
+		}
+	}
+	return b
+}
+
+// legacyFormBody 把旧形状 {"contentType":n,"form":[{key,value}…]} 重组为
+// protojson 形状 {"contentType":n,"form":{"fields":[…]}} 再解析；非该形状返回 nil。
+func legacyFormBody(raw model.JSON) *commonv1.BodySpec {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(raw), &doc); err != nil {
+		return nil
+	}
+	f, ok := doc["form"]
+	if !ok {
+		return nil
+	}
+	var fields []json.RawMessage
+	if err := json.Unmarshal(f, &fields); err != nil {
+		return nil // 已是对象形状（proto 原生）或非法，无需重组
+	}
+	buf, err := json.Marshal(map[string]any{
+		"contentType": doc["contentType"],
+		"form":        map[string]any{"fields": fields},
+	})
+	if err != nil {
+		return nil
+	}
+	b := &commonv1.BodySpec{}
+	if err := protojson.Unmarshal(buf, b); err != nil {
 		return nil
 	}
 	return b

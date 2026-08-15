@@ -41,7 +41,13 @@ func (s *Server) createSchedule(ctx fiber.Ctx) error {
 	if perr != nil || in.CronExpr == "" {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "plan_id 与 cron_expr 必填"))
 	}
+	if !ensureEntity(s.db, ctx, "plan", planID) {
+		return nil
+	}
 	envID, _ := strconv.ParseInt(in.EnvID, 10, 64)
+	if envID != 0 && !ensureEntity(s.db, ctx, "environment", envID) {
+		return nil
+	}
 	enabled := true
 	if in.Enabled != nil {
 		enabled = *in.Enabled
@@ -76,11 +82,17 @@ func (s *Server) updateSchedule(ctx fiber.Ctx) error {
 	}
 	if in.PlanID != "" {
 		if pid, err := strconv.ParseInt(in.PlanID, 10, 64); err == nil {
+			if !ensureEntity(s.db, ctx, "plan", pid) {
+				return nil
+			}
 			row.PlanID = pid
 		}
 	}
 	if in.EnvID != "" {
 		if eid, err := strconv.ParseInt(in.EnvID, 10, 64); err == nil {
+			if eid != 0 && !ensureEntity(s.db, ctx, "environment", eid) {
+				return nil
+			}
 			row.EnvID = eid
 		}
 	}

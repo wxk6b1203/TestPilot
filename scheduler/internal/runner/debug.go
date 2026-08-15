@@ -11,6 +11,7 @@ import (
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/model"
 	"github.com/testpilot/testpilot/internal/quota"
+	"gorm.io/gorm"
 	"github.com/testpilot/testpilot/internal/tracing"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -89,10 +90,16 @@ type DebugStepResult struct {
 // Debug 执行一次接口调试：构造单步声明式 case 派发并同步等待结果。
 // api_id 与 uri 二选一（api_id 时其余字段为覆盖）；env 回退：env_id → 项目首个 env。
 func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*DebugResult, error) {
-	if err := quota.Check(r.db, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
-		return nil, err
-	}
-	if err := quota.Check(r.db, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
+	// 配额检查与 run/cr 创建同事务（CheckTx 串行化，防并发穿透）
+	if err := r.db.Transaction(func(tx *gorm.DB) error {
+		if err := quota.CheckTx(tx, tenantID, quota.MetricConcurrentRuns, 1); err != nil {
+			return err
+		}
+		if err := quota.CheckTx(tx, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
+			return err
+		}
+		return nil
+	}); err != nil {
 		return nil, err
 	}
 

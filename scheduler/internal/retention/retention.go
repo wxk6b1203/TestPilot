@@ -8,6 +8,7 @@ package retention
 import (
 	"time"
 
+	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
 	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
@@ -36,9 +37,17 @@ func cleanup(db *gorm.DB, store artifactstore.Backend, days int) {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	var artCount int
 
-	// 功能测试：按 run 级联
+	// 功能测试：按 run 级联（只清理终态——运行中的 run 会被并发删除导致
+	// worker 回报 UPDATE 落空、孤儿结果残留 + concurrent_runs 配额永久占用）
 	var runIDs []int64
-	db.Model(&model.TestRun{}).Where("started_at < ?", cutoff).Limit(500).Pluck("id", &runIDs)
+	db.Model(&model.TestRun{}).
+		Where("started_at < ? AND status IN ?", cutoff, []int16{
+			int16(commonv1.RunStatus_RUN_STATUS_PASSED),
+			int16(commonv1.RunStatus_RUN_STATUS_FAILED),
+			int16(commonv1.RunStatus_RUN_STATUS_ABORTED),
+			int16(commonv1.RunStatus_RUN_STATUS_TIMEOUT),
+		}).
+		Order("started_at asc").Limit(500).Pluck("id", &runIDs)
 	if len(runIDs) > 0 {
 		// 产物文件先删（路径穿越防护由后端负责）
 		var arts []model.Artifact
@@ -59,9 +68,16 @@ func cleanup(db *gorm.DB, store artifactstore.Backend, days int) {
 		db.Where("id IN ?", runIDs).Delete(&model.TestRun{})
 	}
 
-	// 压测：时序点 + run
+	// 压测：时序点 + run（同样只清终态）
 	var srunIDs []int64
-	db.Model(&model.StressRun{}).Where("started_at < ?", cutoff).Limit(500).Pluck("id", &srunIDs)
+	db.Model(&model.StressRun{}).
+		Where("started_at < ? AND status IN ?", cutoff, []int16{
+			int16(commonv1.RunStatus_RUN_STATUS_PASSED),
+			int16(commonv1.RunStatus_RUN_STATUS_FAILED),
+			int16(commonv1.RunStatus_RUN_STATUS_ABORTED),
+			int16(commonv1.RunStatus_RUN_STATUS_TIMEOUT),
+		}).
+		Order("started_at asc").Limit(500).Pluck("id", &srunIDs)
 	if len(srunIDs) > 0 {
 		db.Where("stress_run_id IN ?", srunIDs).Delete(&model.StressMetricPoint{})
 		db.Where("id IN ?", srunIDs).Delete(&model.StressRun{})

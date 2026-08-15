@@ -176,7 +176,28 @@ func waitUntil(t *testing.T, timeout time.Duration, cond func() bool) {
 	t.Fatal("condition not met before timeout")
 }
 
+func TestWebhookTargetAllowed(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "") // 默认拒绝私网
+	if webhookTargetAllowed("http://127.0.0.1:8080/hook") {
+		t.Fatal("loopback should be denied by default")
+	}
+	if webhookTargetAllowed("http://10.0.0.5/hook") {
+		t.Fatal("private should be denied by default")
+	}
+	if webhookTargetAllowed("file:///etc/passwd") {
+		t.Fatal("file scheme should be denied")
+	}
+	if !webhookTargetAllowed("https://hooks.example.com/x") {
+		t.Fatal("public https should be allowed")
+	}
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
+	if !webhookTargetAllowed("http://127.0.0.1:8080/hook") {
+		t.Fatal("private should be allowed when TP_NOTIFY_ALLOW_PRIVATE=1")
+	}
+}
+
 func TestDeliverWebhook(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1") // httptest 走 127.0.0.1
 	srv, cap := newCaptureServer(t, http.StatusOK)
 	payload := map[string]any{"event": EventRunFinished, "run_id": "123", "status": 2}
 	ch := &model.NotificationChannel{Type: 1, URL: srv.URL}
@@ -198,6 +219,7 @@ func TestDeliverWebhook(t *testing.T) {
 }
 
 func TestDeliverDingtalk(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
 	t.Run("无 secret 不加签", func(t *testing.T) {
 		srv, cap := newCaptureServer(t, http.StatusOK)
 		ch := &model.NotificationChannel{Type: 2, URL: srv.URL}
@@ -251,6 +273,7 @@ func TestDeliverDingtalk(t *testing.T) {
 }
 
 func TestDeliverFeishu(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
 	t.Run("无 secret body 无 timestamp/sign", func(t *testing.T) {
 		srv, cap := newCaptureServer(t, http.StatusOK)
 		ch := &model.NotificationChannel{Type: 3, URL: srv.URL}
@@ -306,6 +329,7 @@ func TestDeliverFeishu(t *testing.T) {
 }
 
 func TestDeliverNon2xx(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
 	srv, cap := newCaptureServer(t, http.StatusInternalServerError)
 	ch := &model.NotificationChannel{Type: 1, URL: srv.URL}
 	err := deliver(ch, map[string]any{"a": 1}, "t", "x")
@@ -321,6 +345,7 @@ func TestDeliverNon2xx(t *testing.T) {
 }
 
 func TestDeliverUnknownType(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
 	srv, cap := newCaptureServer(t, http.StatusOK)
 	ch := &model.NotificationChannel{Type: 9, URL: srv.URL}
 	err := deliver(ch, map[string]any{}, "t", "x")
@@ -347,6 +372,7 @@ func addChannel(t *testing.T, d *gorm.DB, tenantID int64, name, url, events stri
 }
 
 func TestRunFinishedDeliveries(t *testing.T) {
+	t.Setenv("TP_NOTIFY_ALLOW_PRIVATE", "1")
 	d := openTestDB(t)
 	srvA, capA := newCaptureServer(t, http.StatusOK) // 订阅 run_finished
 	srvB, capB := newCaptureServer(t, http.StatusOK) // 只订阅 stress_finished

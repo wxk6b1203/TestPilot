@@ -32,6 +32,8 @@ type Config struct {
 	JWTSecret      string `yaml:"jwt_secret"`       // HS256 密钥（生产必改）
 	JWTExpireHours int    `yaml:"jwt_expire_hours"` // token 有效期
 
+	WorkerToken string `yaml:"worker_token"` // Worker 连接 gRPC 共享令牌（TP_WORKER_TOKEN；空=拒绝无令牌 Worker）
+
 	RegistrationEnabled bool `yaml:"registration_enabled"` // 公开注册（POST /auth/register）；默认关闭
 
 	LogLevel  string `yaml:"log_level"`  // debug/info/warn/error
@@ -59,6 +61,10 @@ type Config struct {
 	OTelEndpoint string `yaml:"otel_endpoint"` // otlp gRPC 地址
 
 	CopilotURL string `yaml:"copilot_url"` // /copilot-api/* 反代目标（前端 SSE 走此；空=关闭反代）
+
+	// MetricsAllowedCIDRs /metrics 抓取来源白名单（逗号分隔 CIDR；空=不限制，本地默认）。
+	// 生产建议配置 Prometheus 出口网段（如 "10.0.0.0/8,192.168.0.0/16"）。
+	MetricsAllowedCIDRs string `yaml:"metrics_allowed_cidrs"`
 
 	DefaultTenantID int64 `yaml:"-"` // 存根租户（不开放配置）
 }

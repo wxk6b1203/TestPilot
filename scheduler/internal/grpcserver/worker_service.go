@@ -54,36 +54,60 @@ func (s *WorkerService) Connect(stream workerv1.WorkerService_ConnectServer) err
 	logging.L.Infow("worker registered", "id", w.ID, "caps", w.Capabilities, "sdk", w.SDKVersion)
 	defer func() {
 		s.Disp.Unregister(w.ID)
-		close(w.Send)
+		w.Shutdown() // 关闭信号：派发方/泵协程感知退出（Send 永不 close，防 send-on-closed panic）
 		logging.L.Infow("worker disconnected", "id", w.ID)
 	}()
 
-	// 下行：命令泵到流
+	// 下行：命令泵到流（closed 感知；Send 不再被 close）
 	sendErr := make(chan error, 1)
 	go func() {
-		for cmd := range w.Send {
-			if err := stream.Send(cmd); err != nil {
-				sendErr <- err
+		for {
+			select {
+			case cmd := <-w.Send:
+				if err := stream.Send(cmd); err != nil {
+					sendErr <- err
+					return
+				}
+			case <-w.Closed():
 				return
 			}
 		}
 	}()
 
-	// 上行：事件处理
-	for {
-		ev, err := stream.Recv()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			select {
-			case se := <-sendErr:
-				return se
-			default:
+	// 上行：事件处理（select 模式——被 reaper 剔除时经 w.Closed 退出，避免
+	// Recv 在健康连接上无限阻塞导致 goroutine/流泄漏）
+	type recvResult struct {
+		ev  *workerv1.WorkerEvent
+		err error
+	}
+	recvCh := make(chan recvResult, 1)
+	go func() {
+		for {
+			ev, err := stream.Recv()
+			recvCh <- recvResult{ev, err}
+			if err != nil {
+				return
 			}
-			return err
 		}
-		s.handleEvent(w, ev)
+	}()
+	for {
+		select {
+		case rr := <-recvCh:
+			if rr.err == io.EOF {
+				return nil
+			}
+			if rr.err != nil {
+				select {
+				case se := <-sendErr:
+					return se
+				default:
+				}
+				return rr.err
+			}
+			s.handleEvent(w, rr.ev)
+		case <-w.Closed():
+			return status.Error(codes.Aborted, "worker evicted by scheduler")
+		}
 	}
 }
 

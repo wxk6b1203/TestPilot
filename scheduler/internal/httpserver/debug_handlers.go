@@ -25,8 +25,14 @@ type debugReq struct {
 		Value string `json:"value"`
 	} `json:"headers"`
 	Body *struct {
-		ContentType int32  `json:"contentType"`
+		ContentType int32 `json:"contentType"`
 		Raw         string `json:"raw"`
+		Form        *struct {
+			Fields []struct {
+				Key   string `json:"key"`
+				Value string `json:"value"`
+			} `json:"fields"`
+		} `json:"form"`
 	} `json:"body"`
 	EnvID     int64 `json:"env_id"`
 	TimeoutMs int   `json:"timeout_ms"`
@@ -53,10 +59,15 @@ func (s *Server) debugAPI(ctx fiber.Ctx) error {
 		req.Headers = append(req.Headers, &commonv1.KeyValue{Key: h.Key, Value: h.Value})
 	}
 	if in.Body != nil {
-		req.Body = &commonv1.BodySpec{
-			Content: &commonv1.BodySpec_Raw{
-				Raw: in.Body.Raw,
-			},
+		if in.Body.Form != nil && len(in.Body.Form.Fields) > 0 {
+			// form-data / x-www-form-urlencoded：oneof 走 FormData 分支
+			fd := &commonv1.FormData{}
+			for _, f := range in.Body.Form.Fields {
+				fd.Fields = append(fd.Fields, &commonv1.FormField{Key: f.Key, Value: f.Value})
+			}
+			req.Body = &commonv1.BodySpec{Content: &commonv1.BodySpec_Form{Form: fd}}
+		} else {
+			req.Body = &commonv1.BodySpec{Content: &commonv1.BodySpec_Raw{Raw: in.Body.Raw}}
 		}
 		if in.Body.ContentType != 0 {
 			req.Body.ContentType = commonv1.BodyContentType(in.Body.ContentType)

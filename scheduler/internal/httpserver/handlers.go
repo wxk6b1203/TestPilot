@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -27,9 +28,16 @@ func (s *Server) login(ctx fiber.Ctx) error {
 	if !decode(ctx, &in) {
 		return nil
 	}
+	// 登录限流：按来源 IP 固定窗口（内存态；多副本部署时各实例独立，够用）
+	if !loginLimit.Allow(ctx.IP()) {
+		return writeAppErr(ctx, apperr.TooMany(apperr.CodeQuotaExceeded, "too many login attempts, retry later"))
+	}
 	var u model.User
 	if err := s.db.Where("username = ?", in.Username).First(&u).Error; err != nil {
 		return writeAppErr(ctx, apperr.Unauthorized(apperr.CodeInvalidCredentials, "invalid username or password"))
+	}
+	if u.Status != 1 {
+		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeForbidden, "account disabled"))
 	}
 	if !auth.CheckPassword(u.PasswordHash, in.Password) {
 		return writeAppErr(ctx, apperr.Unauthorized(apperr.CodeInvalidCredentials, "invalid username or password"))
@@ -40,7 +48,7 @@ func (s *Server) login(ctx fiber.Ctx) error {
 	}
 	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{
 		"token":     token,
@@ -112,13 +120,15 @@ func (s *Server) register(ctx fiber.Ctx) error {
 		if err := tx.Create(&m).Error; err != nil {
 			return err
 		}
-		// 注册不经 auth 中间件，审计手动落库（actor=1 human）
+		// 注册不经 auth 中间件，审计手动落库（actor=1 human）；
+		// Detail 必须 json.Marshal（字符串拼接会因引号/换行产生非法 JSON 或字段注入）
+		detailJSON, _ := json.Marshal(map[string]string{"tenant_name": tenantName})
 		return tx.Create(&model.AuditLog{
 			ID: model.NextID(), TenantID: t.ID,
 			Actor: 1, ActorID: strconv.FormatInt(u.ID, 10),
 			Action: "register", ResourceType: "user",
 			ResourceID: strconv.FormatInt(u.ID, 10),
-			Detail:     model.JSON(`{"tenant_name":"` + tenantName + `"}`),
+			Detail:     model.JSON(detailJSON),
 		}).Error
 	})
 	if err != nil {
@@ -126,7 +136,7 @@ func (s *Server) register(ctx fiber.Ctx) error {
 	}
 	token, err := auth.IssueToken(s.cfg.JWTSecret, u.ID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{
 		"token":     token,
@@ -383,6 +393,22 @@ func (s *Server) createPlan(ctx fiber.Ctx) error {
 	if !decode(ctx, &in) {
 		return nil
 	}
+	if !validateRefs(s.db, ctx, &in.TestPlan) {
+		return nil
+	}
+	// items 的 case/suite 引用必须属于本租户
+	for i := range in.Items {
+		switch in.Items[i].RefType {
+		case 1:
+			if !ensureEntity(s.db, ctx, "case", in.Items[i].RefID) {
+				return nil
+			}
+		case 2:
+			if !ensureEntity(s.db, ctx, "suite", in.Items[i].RefID) {
+				return nil
+			}
+		}
+	}
 	assignIDs(&in.TestPlan, c.TenantID)
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&in.TestPlan).Error; err != nil {
@@ -399,7 +425,7 @@ func (s *Server) createPlan(ctx fiber.Ctx) error {
 		return nil
 	})
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }
@@ -454,7 +480,7 @@ func (s *Server) updatePlan(ctx fiber.Ctx) error {
 		return nil
 	})
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, &in)
 }
@@ -498,6 +524,12 @@ func (s *Server) listRuns(ctx fiber.Ctx) error {
 			q = q.Where("plan_id = ?", planID)
 		} else {
 			q = q.Where("plan_id <> 0") // 调试 run（plan_id=0）不进列表，仍可按 id 查看
+		}
+		// 运行表无 project_id 列，经所属 plan 反查（前端切项目时过滤）
+		if pid := queryInt(ctx, "project_id"); pid != 0 {
+			sub := s.db.Model(&model.TestPlan{}).Select("id").
+				Where("tenant_id = ? AND project_id = ?", c.TenantID, pid)
+			q = q.Where("plan_id IN (?)", sub)
 		}
 		return q
 	})
@@ -554,11 +586,23 @@ func (s *Server) getRun(ctx fiber.Ctx) error {
 	}
 
 	view := runView{TestRun: run, Cases: make([]caseView, 0, len(results))}
+	// 批量取全部 case 的 steps（消除 N+1：原来每个 case 一次查询）
+	crIDs := make([]int64, 0, len(results))
 	for _, cr := range results {
-		steps := make([]model.TestStepResult, 0)
-		s.db.Where("case_result_id = ? AND tenant_id = ?", cr.ID, c.TenantID).Order("id asc").Find(&steps)
-		sv := make([]stepView, 0, len(steps))
-		for _, st := range steps {
+		crIDs = append(crIDs, cr.ID)
+	}
+	stepsByCase := map[int64][]model.TestStepResult{}
+	if len(crIDs) > 0 {
+		allSteps := make([]model.TestStepResult, 0)
+		s.db.Where("case_result_id IN ? AND tenant_id = ?", crIDs, c.TenantID).
+			Order("id asc").Find(&allSteps)
+		for _, st := range allSteps {
+			stepsByCase[st.CaseResultID] = append(stepsByCase[st.CaseResultID], st)
+		}
+	}
+	for _, cr := range results {
+		sv := make([]stepView, 0, len(stepsByCase[cr.ID]))
+		for _, st := range stepsByCase[cr.ID] {
 			sv = append(sv, stepView{TestStepResult: st, Artifacts: artsByStep[st.ID]})
 		}
 		view.Cases = append(view.Cases, caseView{
@@ -584,9 +628,14 @@ type workerView struct {
 }
 
 func (s *Server) listWorkers(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
 	ws := s.disp.Workers()
 	out := make([]workerView, 0, len(ws))
 	for _, x := range ws {
+		// 租户隔离：只看本租户专属 + 共享（0）Worker；admin 可见全量
+		if c.Role > auth.RoleAdmin && x.TenantID != 0 && x.TenantID != c.TenantID {
+			continue
+		}
 		out = append(out, workerView{
 			ID:             x.ID,
 			Name:           x.Name,

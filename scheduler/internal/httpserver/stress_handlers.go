@@ -34,6 +34,17 @@ func (s *Server) createStressPlan(ctx fiber.Ctx) error {
 		if v.WorkerCount <= 0 {
 			v.WorkerCount = 1
 		}
+		// C6: 压测目标必须属于本租户（1=单接口 2=行为用例）；失败置 TargetID=-1
+		// 使后续 validateRefs/create 无法落库（ensureEntity 已写错误响应）
+		if v.TargetType == 1 {
+			if !ensureEntity(s.db, ctx, "api", v.TargetID) {
+				v.TargetID = -1
+			}
+		} else if v.TargetType == 2 {
+			if !ensureEntity(s.db, ctx, "case", v.TargetID) {
+				v.TargetID = -1
+			}
+		}
 	})
 }
 
@@ -80,9 +91,18 @@ func (s *Server) listStressRuns(ctx fiber.Ctx) error {
 		if planID != 0 {
 			q = q.Where("stress_plan_id = ?", planID)
 		}
+		// 运行表无 project_id 列，经所属压测计划反查（前端切项目时过滤）
+		if pid := queryInt(ctx, "project_id"); pid != 0 {
+			sub := s.db.Model(&model.StressTestPlan{}).Select("id").
+				Where("tenant_id = ? AND project_id = ?", c.TenantID, pid)
+			q = q.Where("stress_plan_id IN (?)", sub)
+		}
 		return q.Order("id desc")
 	})
 }
+
+// maxStressMetrics 压测详情返回的指标点数上限。
+const maxStressMetrics = 3000
 
 type stressRunView struct {
 	model.StressRun
@@ -99,7 +119,13 @@ func (s *Server) getStressRun(ctx fiber.Ctx) error {
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, c.TenantID).First(&run).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "stress run not found"))
 	}
-	points := make([]model.StressMetricPoint, 0)
-	s.db.Where("stress_run_id = ? AND tenant_id = ?", id, c.TenantID).Order("ts asc").Find(&points)
+	// 指标点上限（长压测每秒一点可无限增长；保留最近 N 点，兼顾趋势展示）
+	points := make([]model.StressMetricPoint, 0, maxStressMetrics)
+	s.db.Where("stress_run_id = ? AND tenant_id = ?", id, c.TenantID).
+		Order("ts desc").Limit(maxStressMetrics).Find(&points)
+	// 倒序取回后转正序（时间线展示）
+	for i, j := 0, len(points)-1; i < j; i, j = i+1, j-1 {
+		points[i], points[j] = points[j], points[i]
+	}
 	return writeJSON(ctx, fiber.StatusOK, &stressRunView{StressRun: run, Metrics: points})
 }

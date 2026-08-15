@@ -102,7 +102,7 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	}
 	// 组装：根节点 parent_id=0
 	for _, v := range byParent[0] {
-		attachChildren(v, byParent)
+		attachChildren(v, byParent, 0)
 	}
 	roots := byParent[0]
 	if roots == nil {
@@ -111,9 +111,15 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"tree": roots})
 }
 
-func attachChildren(n *treeNodeView, byParent map[int64][]*treeNodeView) {
+// attachChildren 递归组装子树；depth 上限防止历史坏数据（环）导致栈溢出。
+const maxTreeDepth = 64
+
+func attachChildren(n *treeNodeView, byParent map[int64][]*treeNodeView, depth int) {
+	if depth > maxTreeDepth {
+		return
+	}
 	for _, c := range byParent[n.ID] {
-		attachChildren(c, byParent)
+		attachChildren(c, byParent, depth+1)
 		n.Children = append(n.Children, c)
 	}
 }
@@ -313,6 +319,11 @@ func (s *Server) moveNode(ctx fiber.Ctx) error {
 	}
 	if in.ParentID == n.ParentID {
 		return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
+	}
+	// 环检测：目标父节点不能是自身或其子孙（自身 path 是子孙 path 前缀）
+	if newPath != "" && (newPath == n.Path || strings.HasPrefix(newPath, n.Path)) {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"cannot move node into its own subtree"))
 	}
 	oldPrefix := n.Path
 	err = s.db.Transaction(func(tx *gorm.DB) error {

@@ -2,7 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
@@ -20,6 +26,7 @@ import (
 	"github.com/testpilot/testpilot/internal/tracing"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -27,6 +34,11 @@ func main() {
 	cfg := config.Load()
 	logging.Init(cfg.LogLevel, cfg.LogFormat)
 	defer logging.Sync()
+
+	// C1：JWT 默认/弱密钥直接拒绝启动，防止生产裸奔可被伪造任意身份 token
+	if cfg.JWTSecret == "" || cfg.JWTSecret == "dev-secret-change-me" || len(cfg.JWTSecret) < 16 {
+		logging.L.Fatalw("jwt_secret 未配置或为默认/弱值：请设置强随机密钥（>=16 字符，TP_JWT_SECRET）")
+	}
 
 	shutdownTrace := tracing.Init("testpilot-scheduler", cfg.OTelExporter, cfg.OTelEndpoint)
 	defer shutdownTrace(context.Background())
@@ -41,11 +53,18 @@ func main() {
 	}
 	logging.L.Infow("db ready", "path", cfg.DBPath, "dsn_set", cfg.DBDSN != "")
 
+	// A3：启动恢复——终结进程重启遗留的 RUNNING run（防止永久卡死 + cron overlap 卡住）
+	runner.RecoverInterruptedRuns(gormDB)
+
 	disp := dispatch.New(gormDB)
 	run := runner.New(gormDB, disp)
 	cron := cronsched.New(gormDB, run)
 	cron.Start()
 	defer cron.Stop()
+
+	// A3：后台回收——失联 Worker 剔除（心跳超时）+ 超时 run 终结
+	stopReapers := runner.StartReapers(gormDB, disp)
+	defer stopReapers()
 
 	// 产物后端（local 默认 / s3 对象存储）
 	artifacts, err := artifactstore.New(cfg)
@@ -56,7 +75,21 @@ func main() {
 	retention.Start(gormDB, artifacts, cfg.RetentionDays, cfg.RetentionIntervalMin)
 
 	// gRPC（Worker 双向流 + Copilot 工具面同端口）
-	gs := grpc.NewServer(grpc.StatsHandler(otelgrpc.NewServerHandler()))
+	// A3：keepalive 让网络分区/静默断连的流在 ~40s 内被服务端发现（Recv 报错 → 连接清理）
+	gs := grpc.NewServer(
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    30 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             10 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		// A1：gRPC 认证——Worker 流校验 x-worker-token；Copilot 工具面校验 JWT
+		grpc.ChainUnaryInterceptor(grpcserver.CopilotAuthUnary(cfg.JWTSecret)),
+		grpc.ChainStreamInterceptor(grpcserver.WorkerAuthStream(cfg.WorkerToken)),
+	)
 	workerv1.RegisterWorkerServiceServer(gs, grpcserver.NewWorkerService(disp))
 	copilotv1.RegisterCopilotToolServiceServer(gs, grpcserver.NewCopilotService(gormDB, run))
 	reflection.Register(gs)
@@ -74,8 +107,22 @@ func main() {
 
 	// REST + 前端托管（fiber v3 / fasthttp）
 	app := httpserver.New(gormDB, cfg, disp, run, cron, artifacts).App()
-	logging.L.Infow("http listening", "addr", cfg.HTTPAddr)
-	if err := app.Listen(cfg.HTTPAddr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil {
-		logging.L.Fatalw("http serve failed", "err", err)
+	go func() {
+		logging.L.Infow("http listening", "addr", cfg.HTTPAddr)
+		if err := app.Listen(cfg.HTTPAddr, fiber.ListenConfig{DisableStartupMessage: true}); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			logging.L.Fatalw("http serve failed", "err", err)
+		}
+	}()
+
+	// 优雅停机：SIGINT/SIGTERM → 停收新请求 → gRPC GracefulStop（等在途任务落库）→ 退出
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	<-ctx.Done()
+	logging.L.Infow("shutting down", "addr", cfg.HTTPAddr)
+	if err := app.Shutdown(); err != nil {
+		logging.L.Warnw("http shutdown failed", "err", err)
 	}
+	gs.GracefulStop()
+	logging.L.Infow("shutdown complete")
 }

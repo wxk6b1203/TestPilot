@@ -30,10 +30,15 @@ type Worker struct {
 	Tags           []string
 	SDKVersion     string
 	load           atomic.Int32
-	stress         atomic.Bool // 压测独占中（不接功能任务）
+	stress         atomic.Bool  // 压测独占中（不接功能任务）
+	stressUntil    atomic.Int64 // 压测独占截止（UnixNano）；陈旧独占视为可复用
+	lastSeen       atomic.Int64 // 最近一次心跳（UnixNano）；0=未心跳过
 	ConnectedAt    time.Time
 
 	Send chan *workerv1.SchedulerCommand
+
+	closedOnce sync.Once
+	closed     chan struct{} // 关闭信号：worker 断连/剔除时 close（Send 永不 close）
 }
 
 // Load 返回当前负载。
@@ -41,6 +46,44 @@ func (w *Worker) Load() int32 { return w.load.Load() }
 
 // InStress 返回是否处于压测独占。
 func (w *Worker) InStress() bool { return w.stress.Load() }
+
+// MarkSeen 更新心跳时间。
+func (w *Worker) MarkSeen() { w.lastSeen.Store(time.Now().UnixNano()) }
+
+// Closed 返回关闭信号（惰性初始化，便于测试直接构造 Worker）。
+func (w *Worker) Closed() <-chan struct{} {
+	w.closedOnce.Do(func() {
+		if w.closed == nil {
+			w.closed = make(chan struct{})
+		}
+	})
+	return w.closed
+}
+
+// Shutdown 关闭发送信号（幂等）；关闭后派发方经 select 感知并放弃该 Worker。
+func (w *Worker) Shutdown() {
+	w.closedOnce.Do(func() {
+		if w.closed == nil {
+			w.closed = make(chan struct{})
+		}
+		close(w.closed)
+	})
+}
+
+// StressActive 判断压测独占是否仍有效（未过期）。
+func (w *Worker) StressActive() bool {
+	if !w.stress.Load() {
+		return false
+	}
+	until := w.stressUntil.Load()
+	return until == 0 || time.Now().UnixNano() < until
+}
+
+// EndStress 解除压测独占。
+func (w *Worker) EndStress() {
+	w.stress.Store(false)
+	w.stressUntil.Store(0)
+}
 
 // stressState 跟踪一次压测的多 Worker 完成进度。
 type stressState struct {
@@ -108,6 +151,7 @@ func (d *Dispatcher) Register(w *Worker) error {
 		}
 	}
 	w.ConnectedAt = time.Now()
+	w.MarkSeen()
 	d.workers[w.ID] = w
 	d.workerMetricsLocked()
 	return nil
@@ -150,6 +194,7 @@ func (d *Dispatcher) SetLoad(id string, n int32) {
 	defer d.mu.RUnlock()
 	if w, ok := d.workers[id]; ok {
 		w.load.Store(n)
+		w.MarkSeen()
 		d.workerMetricsLocked()
 	}
 }
@@ -203,7 +248,7 @@ func (d *Dispatcher) Dispatch(task *workerv1.TaskAssignment) error {
 		if !hasCapability(w, need) {
 			continue
 		}
-		if w.stress.Load() { // 压测独占，不接功能任务
+		if w.StressActive() { // 压测独占（未过期），不接功能任务
 			continue
 		}
 		if w.MaxConcurrency > 0 && w.Load() >= w.MaxConcurrency {
@@ -220,12 +265,23 @@ func (d *Dispatcher) Dispatch(task *workerv1.TaskAssignment) error {
 	}
 	best.load.Add(1)
 	defer best.load.Add(-1)
+	// 发送前先检查关闭信号；select 同时监听 closed——worker 断连时放弃派发，
+	// Send 永不 close，杜绝 send-on-closed-channel panic。
+	select {
+	case <-best.Closed():
+		metrics.DispatchTotal.WithLabelValues("worker_gone").Inc()
+		return errors.New("worker disconnected")
+	default:
+	}
 	select {
 	case best.Send <- &workerv1.SchedulerCommand{
 		Command: &workerv1.SchedulerCommand_Task{Task: task},
 	}:
 		metrics.DispatchTotal.WithLabelValues("ok").Inc()
 		return nil
+	case <-best.Closed():
+		metrics.DispatchTotal.WithLabelValues("worker_gone").Inc()
+		return errors.New("worker disconnected")
 	case <-time.After(5 * time.Second):
 		metrics.DispatchTotal.WithLabelValues("send_timeout").Inc()
 		return errors.New("worker send timeout")
@@ -259,7 +315,7 @@ func (d *Dispatcher) StressWorkers(tenantID int64) []*Worker {
 		if w.TenantID != 0 && w.TenantID != tenantID {
 			continue
 		}
-		if !hasCapability(w, commonv1.Capability_CAPABILITY_STRESS) || w.stress.Load() {
+		if !hasCapability(w, commonv1.Capability_CAPABILITY_STRESS) || w.StressActive() {
 			continue
 		}
 		out = append(out, w)
@@ -274,9 +330,48 @@ func (d *Dispatcher) RegisterStressRun(runID int64, tasks int) {
 	d.stressRuns.Store(runID, st)
 }
 
+// AdjustStressRun 调整压测收尾计数（派发失败时递减，保证 remaining 与实发数一致）。
+func (d *Dispatcher) AdjustStressRun(runID int64, delta int32) {
+	if v, ok := d.stressRuns.Load(runID); ok {
+		st := v.(*stressState)
+		st.remaining.Add(delta)
+	}
+}
+
+// DropStressRun 放弃压测收尾跟踪（全部派发失败等场景）。
+func (d *Dispatcher) DropStressRun(runID int64) {
+	d.stressRuns.Delete(runID)
+}
+
+// ReapStaleWorkers 剔除心跳超时的 Worker（staleAfter 内无任何心跳/负载上报）。
+// 返回被剔除的 worker id；调用方负责日志。剔除同时触发其流的关闭信号。
+func (d *Dispatcher) ReapStaleWorkers(staleAfter time.Duration) []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	var stale []string
+	cutoff := time.Now().Add(-staleAfter).UnixNano()
+	for id, w := range d.workers {
+		if w.lastSeen.Load() != 0 && w.lastSeen.Load() < cutoff {
+			stale = append(stale, id)
+			delete(d.workers, id)
+			w.Shutdown()
+		}
+	}
+	if len(stale) > 0 {
+		d.workerMetricsLocked()
+	}
+	return stale
+}
+
 // DispatchStress 向指定 Worker 下发压测子任务并标记独占。
 func (d *Dispatcher) DispatchStress(w *Worker, task *workerv1.TaskAssignment) error {
+	select {
+	case <-w.Closed():
+		return errors.New("worker disconnected")
+	default:
+	}
 	w.stress.Store(true)
+	w.stressUntil.Store(time.Now().Add(task.GetTimeout().AsDuration() + 5*time.Minute).UnixNano())
 	w.load.Add(1)
 	defer w.load.Add(-1)
 	select {
@@ -284,8 +379,11 @@ func (d *Dispatcher) DispatchStress(w *Worker, task *workerv1.TaskAssignment) er
 		Command: &workerv1.SchedulerCommand_Task{Task: task},
 	}:
 		return nil
+	case <-w.Closed():
+		w.EndStress()
+		return errors.New("worker disconnected")
 	case <-time.After(5 * time.Second):
-		w.stress.Store(false)
+		w.EndStress()
 		return errors.New("worker send timeout")
 	}
 }
@@ -332,7 +430,6 @@ func (d *Dispatcher) handleStressResult(res *workerv1.TaskResult) error {
 	if st.remaining.Add(-1) > 0 {
 		return nil // 还有其他 Worker 未回报
 	}
-	d.stressRuns.Delete(runID)
 
 	// 聚合时序点为摘要
 	var agg struct {
@@ -356,17 +453,23 @@ func (d *Dispatcher) handleStressResult(res *workerv1.TaskResult) error {
 	now := time.Now()
 	summary := fmt.Sprintf(`{"samples":%d,"avg_rps":%.1f,"peak_rps":%.1f,"max_p95_ms":%.1f,"avg_error_rate":%.4f,"max_concurrency":%d}`,
 		agg.Samples, agg.AvgRps, agg.PeakRps, agg.MaxP95, agg.AvgErr, agg.MaxUsers)
-	err := d.db.Model(&model.StressRun{}).Where("id = ?", runID).
+	upd := d.db.Model(&model.StressRun{}).
+		Where("id = ? AND status = ?", runID, int16(commonv1.RunStatus_RUN_STATUS_RUNNING)).
 		Updates(map[string]any{
 			"status":      int16(status),
 			"finished_at": &now,
 			"summary":     summary,
-		}).Error
-	if err == nil {
-		metrics.StressRunsTotal.WithLabelValues(metrics.RunStatusName(int16(status))).Inc()
-		go notify.StressFinished(d.db, runID)
+		})
+	if upd.Error != nil {
+		return upd.Error // 落库失败：保留 stressRuns 条目，后续回报可重试收尾
 	}
-	return err
+	d.stressRuns.Delete(runID) // 落库成功后再移除状态
+	if upd.RowsAffected == 0 {
+		return nil // 已被其他路径终结（reaper 等），不再重复通知
+	}
+	metrics.StressRunsTotal.WithLabelValues(metrics.RunStatusName(int16(status))).Inc()
+	go notify.StressFinished(d.db, runID)
+	return nil
 }
 
 // HandleTaskResult 落库任务结果并推进 run 状态。w 为上报的 Worker（压测任务用于解除独占）。
@@ -383,7 +486,7 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 	// 压测任务结果走独立收尾路径
 	var srun model.StressRun
 	if err := d.db.Select("id", "tenant_id").Where("id = ?", mustInt64(res.GetRunId())).First(&srun).Error; err == nil {
-		w.stress.Store(false)
+		w.EndStress()
 		return d.handleStressResult(res)
 	}
 	return d.db.Transaction(func(tx *gorm.DB) error {
@@ -402,9 +505,12 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 			tid, ok := stepTenant[crID]
 			if !ok {
 				var cr model.TestCaseResult
-				if err := tx.Select("tenant_id").Where("id = ?", crID).First(&cr).Error; err == nil {
-					tid = cr.TenantID
+				if err := tx.Select("tenant_id").Where("id = ?", crID).First(&cr).Error; err != nil {
+					// 查不到 case result 是契约破坏（Worker 伪造/数据缺失）：
+					// 不静默落 tenant_id=0（会污染租户隔离视图），让事务失败并留日志
+					return fmt.Errorf("step result references missing case result %d: %w", crID, err)
 				}
+				tid = cr.TenantID
 				stepTenant[crID] = tid
 			}
 			row := &model.TestStepResult{
@@ -457,7 +563,7 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 
 // maybeFinishRun 当 run 下所有 case 均结束时汇总并收尾。
 func (d *Dispatcher) maybeFinishRun(tx *gorm.DB, runID int64) error {
-	var total, done, failed int64
+	var total, done, failed, skipped int64
 	tx.Model(&model.TestCaseResult{}).Where("run_id = ?", runID).Count(&total)
 	tx.Model(&model.TestCaseResult{}).
 		Where("run_id = ? AND status IN ?", runID, []int16{
@@ -468,6 +574,9 @@ func (d *Dispatcher) maybeFinishRun(tx *gorm.DB, runID int64) error {
 	tx.Model(&model.TestCaseResult{}).
 		Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_FAILED)).
 		Count(&failed)
+	tx.Model(&model.TestCaseResult{}).
+		Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_SKIPPED)).
+		Count(&skipped)
 	if total == 0 || done < total {
 		return nil
 	}
@@ -476,22 +585,32 @@ func (d *Dispatcher) maybeFinishRun(tx *gorm.DB, runID int64) error {
 		status = commonv1.RunStatus_RUN_STATUS_FAILED
 	}
 	var runRow model.TestRun
-	tx.Select("trigger", "started_at").Where("id = ?", runID).First(&runRow)
+	if err := tx.Select("trigger", "started_at").Where("id = ?", runID).First(&runRow).Error; err != nil {
+		return err
+	}
 	now := time.Now()
-	summary := fmt.Sprintf(`{"total":%d,"passed":%d,"failed":%d,"skipped":0}`, total, total-failed, failed)
-	err := tx.Model(&model.TestRun{}).Where("id = ?", runID).
+	summary := fmt.Sprintf(`{"total":%d,"passed":%d,"failed":%d,"skipped":%d}`,
+		total, total-failed-skipped, failed, skipped)
+	// 状态守卫：仅 RUNNING 的 run 可被终结——并发回报不会重复收尾，
+	// 迟到结果不会覆盖已 ABORTED/FAILED 的运行。
+	res := tx.Model(&model.TestRun{}).
+		Where("id = ? AND status = ?", runID, int16(commonv1.RunStatus_RUN_STATUS_RUNNING)).
 		Updates(map[string]any{
 			"status":      int16(status),
 			"finished_at": &now,
 			"summary":     summary,
-		}).Error
-	if err == nil {
-		st := metrics.RunStatusName(int16(status))
-		metrics.RunsTotal.WithLabelValues(st, metrics.TriggerName(runRow.Trigger)).Inc()
-		metrics.RunDuration.WithLabelValues(st).Observe(time.Since(runRow.StartedAt).Seconds())
-		go notify.RunFinished(d.db, runID)
+		})
+	if res.Error != nil {
+		return res.Error
 	}
-	return err
+	if res.RowsAffected == 0 {
+		return nil
+	}
+	st := metrics.RunStatusName(int16(status))
+	metrics.RunsTotal.WithLabelValues(st, metrics.TriggerName(runRow.Trigger)).Inc()
+	metrics.RunDuration.WithLabelValues(st).Observe(time.Since(runRow.StartedAt).Seconds())
+	go notify.RunFinished(d.db, runID)
+	return nil
 }
 
 func mustInt64(v any) int64 {

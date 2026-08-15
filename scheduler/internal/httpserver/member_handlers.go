@@ -1,13 +1,15 @@
 package httpserver
 
 import (
-	"github.com/gofiber/fiber/v3"
+	"errors"
 	"strconv"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/audit"
 	"github.com/testpilot/testpilot/internal/auth"
 	"github.com/testpilot/testpilot/internal/model"
+	"gorm.io/gorm"
 )
 
 // ---- 租户成员管理（admin+）与租户切换 ----
@@ -55,28 +57,38 @@ func (s *Server) addMember(ctx fiber.Ctx) error {
 	}
 	var u model.User
 	err := s.db.Where("username = ?", in.Username).First(&u).Error
-	if err != nil {
-		// 用户不存在 → 创建（默认密码 changeme123，要求首登修改——v1 简化）
-		pw := in.Password
-		if pw == "" {
-			pw = "changeme123"
-		}
-		hash, herr := auth.HashPassword(pw)
-		if herr != nil {
-			return writeAppErr(ctx, apperr.Internal(herr.Error()))
-		}
-		u = model.User{ID: model.NextID(), Username: in.Username, Email: in.Email,
-			PasswordHash: string(hash), DisplayName: in.Username, Status: 1}
-		if cerr := s.db.Create(&u).Error; cerr != nil {
-			return writeAppErr(ctx, apperr.Internal(cerr.Error()))
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		// 仅"不存在"才走创建分支；连接抖动/锁错误不得误判为新建用户（防重复账号）
+		return writeAppErr(ctx, apperr.Internal("user lookup failed"))
+	}
+	if err == nil {
+		var cnt int64
+		s.db.Model(&model.TenantMember{}).Where("tenant_id = ? AND user_id = ?", c.TenantID, u.ID).Count(&cnt)
+		if cnt > 0 {
+			return writeAppErr(ctx, apperr.Conflict(apperr.CodeAlreadyExists, "user already a member"))
 		}
 	}
-	var cnt int64
-	s.db.Model(&model.TenantMember{}).Where("tenant_id = ? AND user_id = ?", c.TenantID, u.ID).Count(&cnt)
-	if cnt > 0 {
-		return writeAppErr(ctx, apperr.Conflict(apperr.CodeAlreadyExists, "user already a member"))
+	// 用户不存在 → 创建（默认密码 changeme123，要求首登修改——v1 简化）；
+	// 用户 + 成员同一事务（防并发重复创建撞唯一索引）
+	pw := in.Password
+	if pw == "" {
+		pw = "changeme123"
 	}
+	hash, herr := auth.HashPassword(pw)
+	if herr != nil {
+		return writeAppErr(ctx, apperr.Internal(herr.Error()))
+	}
+	u = model.User{ID: model.NextID(), Username: in.Username, Email: in.Email,
+		PasswordHash: string(hash), DisplayName: in.Username, Status: 1}
 	m := &model.TenantMember{ID: model.NextID(), TenantID: c.TenantID, UserID: u.ID, Role: in.Role}
+	if err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&u).Error; err != nil {
+			return err
+		}
+		return tx.Create(m).Error
+	}); err != nil {
+		return writeAppErr(ctx, apperr.Internal(err.Error()))
+	}
 	if err := s.db.Create(m).Error; err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
@@ -102,6 +114,10 @@ func (s *Server) updateMemberRole(ctx fiber.Ctx) error {
 	var m model.TenantMember
 	if err := s.db.Where("tenant_id = ? AND user_id = ?", c.TenantID, uid).First(&m).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "member not found"))
+	}
+	// 不能修改自己的角色（admin 可自我提权为 owner；owner 降自己同样危险）
+	if uid == c.UserID {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "cannot change your own role"))
 	}
 	// 保护最后一名 owner
 	if m.Role == auth.RoleOwner && in.Role != auth.RoleOwner && s.ownerCount(c.TenantID) <= 1 {
@@ -193,7 +209,7 @@ func (s *Server) switchTenant(ctx fiber.Ctx) error {
 	}
 	token, err := auth.IssueToken(s.cfg.JWTSecret, c.UserID, m.TenantID, m.Role, s.cfg.JWTExpireHours)
 	if err != nil {
-		return writeErr(ctx, fiber.StatusInternalServerError, err.Error())
+		return writeInternalErr(ctx, err)
 	}
 	// 租户切换审计：落在目标租户下（“谁切入了本租户”）
 	audit.Log(s.db, m.TenantID, c.UserID, "switch_tenant", "tenant", strconv.FormatInt(m.TenantID, 10),

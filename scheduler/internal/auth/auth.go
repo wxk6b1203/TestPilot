@@ -60,7 +60,7 @@ func ParseToken(secret, token string) (*Claims, error) {
 			return nil, errors.New("unexpected signing method")
 		}
 		return []byte(secret), nil
-	})
+	}, jwt.WithIssuer("testpilot"), jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}))
 	if err != nil || !t.Valid {
 		return nil, errors.New("invalid token")
 	}

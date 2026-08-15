@@ -5,6 +5,7 @@ import (
 
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/model"
+	"github.com/testpilot/testpilot/internal/quota"
 	"gorm.io/gorm"
 )
 
@@ -74,6 +75,12 @@ func (s *Server) appendCopilotMessage(ctx fiber.Ctx) error {
 	var in messageReq
 	if !decode(ctx, &in) {
 		return nil
+	}
+	// 用户消息计 ai_calls 配额（与 Copilot 工具面一致；超限 429）
+	if in.Role == 1 {
+		if err := quota.Check(s.db, c.TenantID, quota.MetricAICalls, 1); err != nil {
+			return writeAppErr(ctx, err)
+		}
 	}
 	row := &model.CopilotMessage{
 		ID:        model.NextID(),

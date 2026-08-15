@@ -6,6 +6,7 @@ package quota
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -13,6 +14,7 @@ import (
 	"github.com/testpilot/testpilot/internal/metrics"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 配额 metric 名。
@@ -68,6 +70,39 @@ func Check(db *gorm.DB, tenantID int64, metric string, delta int64) error {
 		return nil
 	}
 	used := Usage(db, tenantID, metric)
+	if used+delta > limit {
+		metrics.QuotaRejections.WithLabelValues(metric).Inc()
+		return apperr.TooMany(apperr.CodeQuotaExceeded,
+			fmt.Sprintf("quota %s exceeded: %d+%d > %d", metric, used, delta, limit))
+	}
+	return nil
+}
+
+// CheckTx 事务内配额校验（并发安全）：调用方须在同一事务内完成资源创建。
+//
+//   - PostgreSQL：SELECT ... FOR UPDATE 锁该租户 quota 行，同一租户的配额
+//     检查串行化（check-then-act 不再可被并发穿透）；
+//   - SQLite：依赖 db.Open 配置的 IMMEDIATE 写事务（_txlock=immediate），
+//     写事务天然串行，直接读取即可。
+func CheckTx(tx *gorm.DB, tenantID int64, metric string, delta int64) error {
+	q := tx.Where("tenant_id = ?", tenantID)
+	if !strings.HasPrefix(tx.Dialector.Name(), "sqlite") {
+		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var rows []model.TenantQuota
+	if err := q.Find(&rows).Error; err != nil {
+		return err
+	}
+	var limit int64
+	for _, row := range rows {
+		if row.Metric == metric {
+			limit = row.Limit
+		}
+	}
+	if limit <= 0 {
+		return nil
+	}
+	used := Usage(tx, tenantID, metric)
 	if used+delta > limit {
 		metrics.QuotaRejections.WithLabelValues(metric).Inc()
 		return apperr.TooMany(apperr.CodeQuotaExceeded,

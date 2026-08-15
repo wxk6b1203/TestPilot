@@ -672,10 +672,11 @@ func TestApplyOverrides(t *testing.T) {
 	if len(env.GetVariables()) != 4 {
 		t.Fatalf("vars=%v", env.GetVariables())
 	}
-	if env.GetVariables()[0].GetValue() != "1" || env.GetVariables()[1].GetValue() != "7" {
+	// override 按 key 排序输出（确定性）：env[n=1] + overrides[flag=true, n=7, obj={a:1}]
+	if env.GetVariables()[0].GetValue() != "1" || env.GetVariables()[1].GetValue() != "true" {
 		t.Fatalf("override should append after env vars: %+v", env.GetVariables())
 	}
-	if env.GetVariables()[2].GetValue() != "true" || env.GetVariables()[3].GetValue() != `{"a":1}` {
+	if env.GetVariables()[2].GetValue() != "7" || env.GetVariables()[3].GetValue() != `{"a":1}` {
 		t.Fatalf("non-string overrides: %+v", env.GetVariables()[2:])
 	}
 	if env.GetBaseUrl() != "http://b" {

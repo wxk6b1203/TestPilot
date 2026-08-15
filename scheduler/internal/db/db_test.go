@@ -110,6 +110,53 @@ func TestOpenPostgresBadDSN(t *testing.T) {
 	}
 }
 
+
+func TestOpenSQLiteWALAndNoJunkFile(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "wal.db")
+	d, err := Open(p, "", Pool{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// WAL 生效（写入库文件头的持久设置）
+	var mode string
+	if err := d.Raw("PRAGMA journal_mode").Scan(&mode).Error; err != nil {
+		t.Fatal(err)
+	}
+	if mode != "wal" {
+		t.Fatalf("journal_mode=%q, want wal", mode)
+	}
+	// 并发写不再直接 BUSY：两个连接同时写
+	sqlDB, _ := d.DB()
+	if _, err := sqlDB.Exec("CREATE TABLE IF NOT EXISTS t (id INTEGER PRIMARY KEY, v TEXT)"); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 8)
+	for i := 0; i < 8; i++ {
+		go func(n int) {
+			_, err := sqlDB.Exec("INSERT INTO t (v) VALUES (?)", n)
+			done <- err
+		}(i)
+	}
+	for i := 0; i < 8; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("concurrent write failed: %v", err)
+		}
+	}
+	// 未在 cwd 产生垃圾文件
+	if _, err := filepath.Glob("?_pragma=*"); err != nil || len(mustGlob(t)) > 0 {
+		t.Fatalf("junk dsn file created")
+	}
+}
+
+func mustGlob(t *testing.T) []string {
+	t.Helper()
+	paths, err := filepath.Glob("?_pragma=*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return paths
+}
+
 func TestOpenEmptyPathAndDSN(t *testing.T) {
 	// path 与 dsn 同时为空：走 SQLite 分支，空文件名 = SQLite 私有临时库，
 	// 按实现应正常打开并完成迁移 + 种子。

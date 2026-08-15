@@ -35,6 +35,7 @@ type DiscoveryDoc struct {
 type OIDCClaims struct {
 	Sub               string
 	Email             string
+	EmailVerified     bool // 邮件已验证（未验证邮箱不得联结既有账号）
 	PreferredUsername string
 }
 
@@ -143,6 +144,7 @@ func FetchUserInfo(userinfoEndpoint, accessToken string) (*OIDCClaims, error) {
 	out := &OIDCClaims{}
 	out.Sub, _ = body["sub"].(string)
 	out.Email, _ = body["email"].(string)
+	out.EmailVerified, _ = body["email_verified"].(bool)
 	out.PreferredUsername, _ = body["preferred_username"].(string)
 	if out.PreferredUsername == "" {
 		out.PreferredUsername, _ = body["name"].(string)
@@ -228,6 +230,9 @@ func VerifyIDToken(raw, issuer, clientID, clientSecret string) (*OIDCClaims, err
 	out := &OIDCClaims{}
 	out.Sub, _ = claims["sub"].(string)
 	out.Email, _ = claims["email"].(string)
+	if v, ok := claims["email_verified"].(bool); ok {
+		out.EmailVerified = v
+	}
 	out.PreferredUsername, _ = claims["preferred_username"].(string)
 	if out.Sub == "" && out.Email == "" {
 		return nil, errors.New("id_token lacks sub and email")

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/auth"
+	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
 )
@@ -50,16 +52,18 @@ func takeOIDCState(s string) (string, bool) {
 	return e.redirect, true
 }
 
-// redirectAllowed 302 回跳白名单：同 host，或 localhost/回环（dev 前端 :5173 跨端口）。
+// redirectAllowed 302 回跳白名单：同 host:port 精确匹配，或 localhost/回环（dev 前端 :5173 跨端口）。
+// 加固：拒绝带 userinfo 的 URL（user@host）；Host 头参与判定时按 host:port 整体比较，
+// 防止反代场景下 Host 头污染导致 token 回跳到攻击者域名。
 func redirectAllowed(redirect string, ctx fiber.Ctx) bool {
 	u, err := url.Parse(redirect)
-	if err != nil || u.Hostname() == "" {
+	if err != nil || u.Hostname() == "" || u.User != nil {
 		return false
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
 	}
-	if u.Hostname() == ctx.Hostname() {
+	if strings.EqualFold(u.Host, ctx.Host()) {
 		return true
 	}
 	h := strings.ToLower(u.Hostname())
@@ -175,12 +179,7 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 		return writeAppErr(ctx, apperr.New(502, apperr.CodeOIDCExchange, err.Error()))
 	}
 
-	// 账号联结：email 优先，退化 sub@issuer
-	key := claims.Email
-	if key == "" {
-		key = claims.Sub + "@" + p.Issuer
-	}
-	u, m, linkErr := s.linkOrCreateUser(&p, key, claims.PreferredUsername)
+	u, m, linkErr := s.linkOrCreateUser(&p, claims, claims.PreferredUsername)
 	if linkErr != nil {
 		return writeAppErr(ctx, linkErr)
 	}
@@ -191,6 +190,7 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	// 浏览器 SSO 流：带 redirect 时 302 回跳前端 hash 路由（token 走 URL）；
 	// 否则保持 JSON（API 客户端兼容）
 	if redirect != "" && redirectAllowed(redirect, ctx) {
+		ctx.Set(fiber.HeaderCacheControl, "no-store")
 		return ctx.Redirect().Status(fiber.StatusFound).
 			To(redirect + "/#/auth/callback?token=" + url.QueryEscape(token))
 	}
@@ -199,10 +199,46 @@ func (s *Server) oidcCallback(ctx fiber.Ctx) error {
 	})
 }
 
-// linkOrCreateUser 按 email 找用户；不存在则创建（随机不可登录密码）+ provider 租户 viewer 成员。
-func (s *Server) linkOrCreateUser(p *model.IdentityProvider, email, username string) (*model.User, *model.TenantMember, *apperr.Error) {
+// linkOrCreateUser 账号联结：
+//  1. 已有 IdP 绑定 → 按 (identity_provider_id, sub) 精确命中（身份锚点，不受邮箱变更影响）；
+//  2. 未绑定 → 仅当 email_verified=true 时允许按 email 联结既有账号（联结后写回绑定）；
+//  3. 其余（未验证邮箱/新用户）→ 创建新账号（随机不可登录密码）+ provider 租户 viewer 成员。
+// 防止：攻击者在 IdP 注册未验证邮箱 victim@corp 后直接接管既有账号。
+func (s *Server) linkOrCreateUser(p *model.IdentityProvider, claims *auth.OIDCClaims, username string) (*model.User, *model.TenantMember, *apperr.Error) {
 	var u model.User
-	if err := s.db.Where("email = ?", email).First(&u).Error; err != nil {
+	found := false
+	// 1) 身份锚点：按 (provider, sub) 查绑定
+	if claims.Sub != "" && p.ID != 0 {
+		err := s.db.Where("oidc_provider_id = ? AND oidc_sub = ?", p.ID, claims.Sub).First(&u).Error
+		if err == nil {
+			found = true
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, apperr.Internal("oidc binding lookup failed")
+		}
+	}
+	// 2) email 联结（仅已验证邮箱）
+	if !found && claims.Email != "" && claims.EmailVerified {
+		err := s.db.Where("email = ?", claims.Email).First(&u).Error
+		if err == nil {
+			found = true
+			// 联结成功 → 写回绑定锚点
+			if claims.Sub != "" && p.ID != 0 {
+				if uerr := s.db.Model(&u).Updates(map[string]any{
+					"oidc_provider_id": p.ID, "oidc_sub": claims.Sub,
+				}).Error; uerr != nil {
+					logging.L.Warnw("oidc binding writeback failed", "user", u.ID, "err", uerr)
+				}
+			}
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, apperr.Internal("user lookup failed")
+		}
+	}
+	// 3) 创建新账号
+	if !found {
+		email := claims.Email
+		if email == "" {
+			email = claims.Sub + "@" + p.Issuer
+		}
 		if username == "" {
 			username = strings.Split(email, "@")[0]
 		}
@@ -223,13 +259,17 @@ func (s *Server) linkOrCreateUser(p *model.IdentityProvider, email, username str
 			return nil, nil, apperr.Internal(err.Error())
 		}
 		u = model.User{ID: model.NextID(), Username: name, Email: email,
-			PasswordHash: string(hash), DisplayName: username, Status: 1}
+			PasswordHash: string(hash), DisplayName: username, Status: 1,
+			OIDCProviderID: p.ID, OIDCSub: claims.Sub}
 		if err := s.db.Create(&u).Error; err != nil {
 			return nil, nil, apperr.Internal(err.Error())
 		}
 	}
 	var m model.TenantMember
 	if err := s.db.Where("user_id = ? AND tenant_id = ?", u.ID, p.TenantID).First(&m).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, nil, apperr.Internal("member lookup failed")
+		}
 		m = model.TenantMember{ID: model.NextID(), TenantID: p.TenantID, UserID: u.ID, Role: auth.RoleViewer}
 		if err := s.db.Create(&m).Error; err != nil {
 			return nil, nil, apperr.Internal(err.Error())
