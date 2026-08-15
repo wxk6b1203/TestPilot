@@ -1,4 +1,4 @@
-import { HashRouter, Navigate, Route, Routes, useSearchParams } from 'react-router-dom'
+import { Navigate, RouterProvider, createHashRouter, useSearchParams } from 'react-router-dom'
 import { getToken, setToken } from './api'
 import Layout from './pages/Layout'
 import Login from './pages/Login'
@@ -35,35 +35,39 @@ function AuthCallback() {
   )
 }
 
+// data router（createHashRouter）：useBlocker（编辑器未保存离开守卫）要求 data router，
+// 组件式 <HashRouter> 不满足。
+const router = createHashRouter([
+  { path: '/login', element: <Login /> },
+  { path: '/auth/callback', element: <AuthCallback /> },
+  {
+    path: '/',
+    element: <Guard><Layout /></Guard>,
+    children: [
+      { index: true, element: <Navigate to="/apis" replace /> },
+      { path: 'apis', element: <Apis /> },
+      { path: 'apis/:id', element: <Apis /> },
+      { path: 'grpc', element: <GrpcApis /> },
+      { path: 'cases', element: <Cases /> },
+      { path: 'cases/new', element: <Cases /> },
+      { path: 'cases/:id/edit', element: <Cases /> },
+      { path: 'suites', element: <Suites /> },
+      { path: 'suites/:id/edit', element: <Suites /> },
+      { path: 'scripts', element: <Scripts /> },
+      { path: 'scripts/:id/edit', element: <Scripts /> },
+      { path: 'plans', element: <Plans /> },
+      { path: 'plans/:id/edit', element: <Plans /> },
+      { path: 'runs', element: <Runs /> },
+      { path: 'stress', element: <Stress /> },
+      { path: 'envs', element: <Environments /> },
+      { path: 'projects', element: <Projects /> },
+      { path: 'admin', element: <AdminConsole /> },
+      { path: 'workers', element: <Workers /> },
+      { path: 'copilot', element: <Copilot /> },
+    ],
+  },
+])
+
 export default function App() {
-  return (
-    <HashRouter>
-      <Routes>
-        <Route path="/login" element={<Login />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/" element={<Guard><Layout /></Guard>}>
-          <Route index element={<Navigate to="/apis" replace />} />
-          <Route path="apis" element={<Apis />} />
-          <Route path="apis/:id" element={<Apis />} />
-          <Route path="grpc" element={<GrpcApis />} />
-          <Route path="cases" element={<Cases />} />
-          <Route path="cases/new" element={<Cases />} />
-          <Route path="cases/:id/edit" element={<Cases />} />
-          <Route path="suites" element={<Suites />} />
-          <Route path="suites/:id/edit" element={<Suites />} />
-          <Route path="scripts" element={<Scripts />} />
-          <Route path="scripts/:id/edit" element={<Scripts />} />
-          <Route path="plans" element={<Plans />} />
-          <Route path="plans/:id/edit" element={<Plans />} />
-          <Route path="runs" element={<Runs />} />
-          <Route path="stress" element={<Stress />} />
-          <Route path="envs" element={<Environments />} />
-          <Route path="projects" element={<Projects />} />
-          <Route path="admin" element={<AdminConsole />} />
-          <Route path="workers" element={<Workers />} />
-          <Route path="copilot" element={<Copilot />} />
-        </Route>
-      </Routes>
-    </HashRouter>
-  )
+  return <RouterProvider router={router} />
 }

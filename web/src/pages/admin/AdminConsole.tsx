@@ -1,7 +1,18 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
-  Button, Form, Input, InputNumber, message, Modal, Popconfirm, Select, Space, Switch,
-  Table, Tabs, Tag, Typography,
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Select,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
 } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { del, get, post, put } from '../../api'
@@ -10,6 +21,8 @@ import type {
   TenantSetting, TestPlan, Environment,
 } from '../../api'
 import { PALETTE } from '../../theme'
+import { useLayout } from '../../hooks/useLayout'
+import { message } from '../../messageBridge'
 
 // 租户管理台（admin+）：成员 / 配额 / 设置 / 身份源 / 通知 / 定时任务 / 审计日志
 
@@ -335,6 +348,7 @@ function NotificationsTab() {
 }
 
 function SchedulesTab() {
+  const { projectId } = useLayout()
   const [items, setItems] = useState<Schedule[]>([])
   const [plans, setPlans] = useState<TestPlan[]>([])
   const [envs, setEnvs] = useState<Environment[]>([])
@@ -344,9 +358,12 @@ function SchedulesTab() {
     get<{ items: Schedule[] }>('/api/v1/schedules').then((r) => setItems(r.items))
   useEffect(() => {
     load().catch(() => {})
-    get<ListResp<TestPlan>>('/api/v1/plans?page_size=100').then((r) => setPlans(r.items)).catch(() => {})
-    get<ListResp<Environment>>('/api/v1/environments?page_size=100').then((r) => setEnvs(r.items)).catch(() => {})
-  }, [])
+    // 计划下拉限定当前项目，避免定时任务指向其它项目的计划
+    get<ListResp<TestPlan>>(projectId ? `/api/v1/plans?project_id=${projectId}&page_size=100` : '/api/v1/plans?page_size=100')
+      .then((r) => setPlans(r.items)).catch(() => {})
+    get<ListResp<Environment>>(projectId ? `/api/v1/environments?project_id=${projectId}&page_size=100` : '/api/v1/environments?page_size=100')
+      .then((r) => setEnvs(r.items)).catch(() => {})
+  }, [projectId])
   return (
     <div>
       <Space style={{ marginBottom: 12 }}>

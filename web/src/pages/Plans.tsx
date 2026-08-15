@@ -1,14 +1,15 @@
-import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, message } from 'antd'
+import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space } from 'antd'
 import { DeleteOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { del, get, post } from '../api'
+import { del, get, post, warnTruncated } from '../api'
 import type { ListResp, TestPlan } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
 import PlanEditor from './PlanEditor'
+import { message } from '../messageBridge'
 
 // 测试计划列表：左侧面板为计划列表（运行/删除/新建），右侧为编辑器（/plans/:id/edit）。
 export default function Plans() {
@@ -24,9 +25,10 @@ export default function Plans() {
 
   const load = () =>
     projectId
-      ? get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=200`).then((r) =>
-          setRows(r.items),
-        )
+      ? get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=200`).then((r) => {
+          setRows(r.items)
+          warnTruncated(r, '测试计划')
+        })
       : Promise.resolve()
 
   useEffect(() => {

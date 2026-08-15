@@ -1,8 +1,9 @@
-import { Badge, Card, Collapse, Descriptions, Drawer, Space, Table, Tag, Typography, message } from 'antd'
+import { Badge, Card, Collapse, Descriptions, Drawer, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
-import { get, getToken, STATUS } from '../api'
+import { get, getToken, STATUS, warnTruncated } from '../api'
 import type { Artifact, ListResp, TestRun } from '../api'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 function StatusTag({ v }: { v: number }) {
   const s = STATUS[v] || { text: String(v), color: 'default' }
@@ -60,8 +61,9 @@ export default function Runs() {
 
   const load = async () => {
     if (!projectId) return
-    const r = await get<ListResp<TestRun>>(`/api/v1/runs?page_size=100`)
+    const r = await get<ListResp<TestRun>>(`/api/v1/runs?page_size=100&project_id=` + projectId)
     setRows(r.items)
+    warnTruncated(r, '运行记录')
   }
 
   // 列表轮询 + 项目切换重置（不依赖 detail——此前依赖 detail 导致打开详情后

@@ -1,15 +1,17 @@
-import { Button, Card, Empty, Input, Modal, Space, Tag, message } from 'antd'
+import { Button, Card, Empty, Input, Modal, Space, Tag } from 'antd'
 import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { get, post, put } from '../api'
+import { get, post, put, warnTruncated } from '../api'
 import type { ListResp, Script } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
-import { useLayout } from './Layout'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 const SCRIPT_TEMPLATE = `async def run(ctx):
     # 沙箱内无网络出口：HTTP 经能力桥由 Worker 代执行
@@ -38,11 +40,14 @@ export default function Scripts() {
   const [content, setContent] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [saving, setSaving] = useState(false)
+  // 已保存快照（dirty 判定 + 离开守卫）
+  const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', l: 'python', c: '' }))
   const editing = !!id
 
   const loadScripts = () =>
     projectId
-      ? get<ListResp<Script>>(`/api/v1/scripts?project_id=${projectId}&page_size=200`).then((r) => setScripts(r.items))
+      ? get<ListResp<Script>>(`/api/v1/scripts?project_id=${projectId}&page_size=200`).then((r) => { setScripts(r.items); warnTruncated(r, '脚本') })
       : Promise.resolve()
 
   useEffect(() => {
@@ -58,6 +63,7 @@ export default function Scripts() {
       setDescription('')
       setLanguage('python')
       setContent('')
+      setSavedSnap(JSON.stringify({ n: '', d: '', l: 'python', c: '' })) // 离开守卫放行后复位
       return
     }
     loadScripts().catch(() => {})
@@ -67,6 +73,7 @@ export default function Scripts() {
         setDescription(s.description || '')
         setLanguage(s.language || 'python')
         setContent(s.content || '')
+        setSavedSnap(JSON.stringify({ n: s.name || '', d: s.description || '', l: s.language || 'python', c: s.content || '' }))
       })
       .catch((e) => message.error(e.message))
   }, [id])
@@ -75,6 +82,9 @@ export default function Scripts() {
     () => scripts.filter((s) => (s.name || '').toLowerCase().includes(search.toLowerCase())),
     [scripts, search],
   )
+
+  const dirty = JSON.stringify({ n: name, d: description, l: language, c: content }) !== savedSnap
+  const { guard, allowOnce } = useLeaveGuard(dirty)
 
   const save = async () => {
     if (!name.trim()) {
@@ -85,6 +95,8 @@ export default function Scripts() {
       message.error('内容必填')
       return
     }
+    if (saving) return
+    setSaving(true)
     const payload = {
       project_id: projectId,
       name: name.trim(),
@@ -96,14 +108,18 @@ export default function Scripts() {
       if (id) {
         await put(`/api/v1/scripts/${id}`, payload)
         message.success('已保存')
+        setSavedSnap(JSON.stringify({ n: name.trim(), d: description, l: language.trim() || 'python', c: content }))
         loadScripts()
       } else {
         const r = await post<Script>('/api/v1/scripts', payload)
         message.success('已创建')
+        allowOnce()
         nav(`/scripts/${r.id}/edit`)
       }
     } catch (e: any) {
       message.error(e.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -125,6 +141,7 @@ export default function Scripts() {
       setCreateOpen(false)
       setCreateName('')
       message.success('已创建')
+      allowOnce()
       nav(`/scripts/${r.id}/edit`)
     } catch (e: any) {
       message.error(e.message)
@@ -162,7 +179,7 @@ export default function Scripts() {
   const toolbar = (
     <Space>
       <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/scripts')}>返回</Button>
-      <Button type="primary" onClick={save}>保存</Button>
+      <Button type="primary" loading={saving} onClick={save}>保存</Button>
     </Space>
   )
 
@@ -225,6 +242,7 @@ export default function Scripts() {
           placeholder="脚本名称"
         />
       </Modal>
+      {guard}
     </>
   )
 }

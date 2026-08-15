@@ -1,8 +1,9 @@
-import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Switch, Table, message } from 'antd'
+import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Switch, Table } from 'antd'
 import { useEffect, useState } from 'react'
-import { del, get, post } from '../api'
+import { del, get, post, warnTruncated } from '../api'
 import type { Environment, ListResp, Variable } from '../api'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 export default function Environments() {
   const { projectId } = useLayout()
@@ -19,7 +20,7 @@ export default function Environments() {
       : Promise.resolve()
   const loadVars = () =>
     projectId
-      ? get<ListResp<Variable>>(`/api/v1/variables?project_id=${projectId}&page_size=500`).then((r) => setVars(r.items))
+      ? get<ListResp<Variable>>(`/api/v1/variables?project_id=${projectId}&page_size=500`).then((r) => { setVars(r.items); warnTruncated(r, '变量') })
       : Promise.resolve()
 
   useEffect(() => {
@@ -93,11 +94,15 @@ export default function Environments() {
 
       <Modal title="新建环境" open={envOpen} onCancel={() => setEnvOpen(false)} onOk={() => envForm.submit()} destroyOnHidden>
         <Form form={envForm} layout="vertical" onFinish={async (v) => {
-          await post('/api/v1/environments', { ...v, project_id: projectId })
-          setEnvOpen(false)
-          envForm.resetFields()
-          loadEnvs()
-          message.success('已创建')
+          try {
+            await post('/api/v1/environments', { ...v, project_id: projectId })
+            setEnvOpen(false)
+            envForm.resetFields()
+            loadEnvs()
+            message.success('已创建')
+          } catch (e: any) {
+            message.error(e.message)
+          }
         }}>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input placeholder="local / staging / prod" />
@@ -111,11 +116,15 @@ export default function Environments() {
       <Modal title="新建变量" open={varOpen} onCancel={() => setVarOpen(false)} onOk={() => varForm.submit()} destroyOnHidden>
         <Form form={varForm} layout="vertical" initialValues={{ scope: 1, category: 1 }}
           onFinish={async (v) => {
-            await post('/api/v1/variables', { ...v, project_id: projectId })
-            setVarOpen(false)
-            varForm.resetFields()
-            loadVars()
-            message.success('已创建')
+            try {
+              await post('/api/v1/variables', { ...v, project_id: projectId })
+              setVarOpen(false)
+              varForm.resetFields()
+              loadVars()
+              message.success('已创建')
+            } catch (e: any) {
+              message.error(e.message)
+            }
           }}>
           <Form.Item name="key" label="Key" rules={[{ required: true }]}>
             <Input placeholder="token" />

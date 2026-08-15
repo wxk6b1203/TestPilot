@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import IdeLayout from '../components/IdeLayout'
 import ApiTreePanel from '../components/ApiTreePanel'
 import ApiDebug from './ApiDebug'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
 
 // 接口工作区：左侧目录树面板（ApiTreePanel）+ 右侧调试区（无选中时为新建/空状态）。

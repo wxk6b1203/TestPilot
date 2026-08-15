@@ -1,17 +1,19 @@
-import { Button, Card, Empty, Input, Modal, Space, Tag, message } from 'antd'
+import { Button, Card, Empty, Input, Modal, Space, Tag } from 'antd'
 import {
   ArrowDownOutlined, ArrowLeftOutlined, ArrowUpOutlined, LeftOutlined, PlusOutlined, RightOutlined,
 } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { get, post, put } from '../api'
+import { get, post, put, warnTruncated } from '../api'
 import type { ListResp, Suite, TestCase } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
-import { useLayout } from './Layout'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 const CASE_TYPE: Record<number, { text: string; color: string }> = {
   1: { text: '声明式', color: 'blue' },
@@ -92,11 +94,14 @@ export default function Suites() {
   const [rightSel, setRightSel] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [saving, setSaving] = useState(false)
+  // 已保存快照（dirty 判定 + 离开守卫）
+  const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', ids: [] as string[] }))
   const editing = !!id
 
   const loadSuites = () =>
     projectId
-      ? get<ListResp<Suite>>(`/api/v1/suites?project_id=${projectId}&page_size=200`).then((r) => setSuites(r.items))
+      ? get<ListResp<Suite>>(`/api/v1/suites?project_id=${projectId}&page_size=200`).then((r) => { setSuites(r.items); warnTruncated(r, '套件') })
       : Promise.resolve()
 
   useEffect(() => {
@@ -115,6 +120,7 @@ export default function Suites() {
       setName('')
       setDescription('')
       setSelectedIds([])
+      setSavedSnap(JSON.stringify({ n: '', d: '', ids: [] as string[] })) // 离开守卫放行后复位
       return
     }
     loadSuites().catch(() => {})
@@ -123,6 +129,7 @@ export default function Suites() {
         setName(s.name || '')
         setDescription(s.description || '')
         setSelectedIds(s.case_ids || [])
+        setSavedSnap(JSON.stringify({ n: s.name || '', d: s.description || '', ids: s.case_ids || [] }))
       })
       .catch((e) => message.error(e.message))
   }, [id])
@@ -156,24 +163,33 @@ export default function Suites() {
     setSelectedIds(arr)
   }
 
+  const dirty = JSON.stringify({ n: name, d: description, ids: selectedIds }) !== savedSnap
+  const { guard, allowOnce } = useLeaveGuard(dirty)
+
   const save = async () => {
     if (!name.trim()) {
       message.error('名称必填')
       return
     }
+    if (saving) return
+    setSaving(true)
     const payload = { project_id: projectId, name: name.trim(), description, case_ids: selectedIds }
     try {
       if (id) {
         await put(`/api/v1/suites/${id}`, payload)
         message.success('已保存')
+        setSavedSnap(JSON.stringify({ n: name.trim(), d: description, ids: selectedIds }))
         loadSuites()
       } else {
         const r = await post<Suite>('/api/v1/suites', payload)
         message.success('已创建')
+        allowOnce()
         nav(`/suites/${r.id}/edit`)
       }
     } catch (e: any) {
       message.error(e.message)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -191,6 +207,7 @@ export default function Suites() {
       setCreateOpen(false)
       setCreateName('')
       message.success('已创建')
+      allowOnce()
       nav(`/suites/${r.id}/edit`)
     } catch (e: any) {
       message.error(e.message)
@@ -224,7 +241,7 @@ export default function Suites() {
   const toolbar = (
     <Space>
       <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/suites')}>返回</Button>
-      <Button type="primary" onClick={save}>保存</Button>
+      <Button type="primary" loading={saving} onClick={save}>保存</Button>
     </Space>
   )
 
@@ -305,6 +322,7 @@ export default function Suites() {
           placeholder="套件名称"
         />
       </Modal>
+      {guard}
     </>
   )
 }

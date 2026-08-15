@@ -1,15 +1,17 @@
-import { Button, Card, Collapse, Input, InputNumber, Popconfirm, Select, Space, Tabs, Typography, message } from 'antd'
+import { Button, Card, Collapse, Input, InputNumber, Popconfirm, Select, Space, Tabs, Typography } from 'antd'
 import { DeleteOutlined, PlusOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { del, get, post, put } from '../api'
+import { del, get, post, put, warnTruncated } from '../api'
 import useSaveShortcut from '../hooks/useSaveShortcut'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import type { GrpcApi, ListResp, ProtoFile } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import { PALETTE } from '../theme'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 type TabKey = 'grpc' | 'proto'
 
@@ -75,14 +77,19 @@ export default function GrpcApis() {
   const [selectedProtoId, setSelectedProtoId] = useState<string | undefined>()
   const [draft, setDraft] = useState<GrpcDraft>({ ...EMPTY_GRPC })
   const [draftProto, setDraftProto] = useState<ProtoDraft>({ ...EMPTY_PROTO })
+  // 已保存快照（dirty 判定 + 离开守卫）：gRPC 与 Proto 两张表单合一
+  const [savedGrpc, setSavedGrpc] = useState(() => JSON.stringify(EMPTY_GRPC))
+  const [savedProto, setSavedProto] = useState(() => JSON.stringify(EMPTY_PROTO))
+  const dirty = JSON.stringify(draft) !== savedGrpc || JSON.stringify(draftProto) !== savedProto
+  const { guard } = useLeaveGuard(dirty)
 
   const loadGrpc = () =>
     projectId
-      ? get<ListResp<GrpcApi>>(`/api/v1/grpc-apis?project_id=${projectId}&page_size=200`).then((r) => setGrpcApis(r.items))
+      ? get<ListResp<GrpcApi>>(`/api/v1/grpc-apis?project_id=${projectId}&page_size=200`).then((r) => { setGrpcApis(r.items); warnTruncated(r, 'gRPC 接口') })
       : Promise.resolve()
   const loadProto = () =>
     projectId
-      ? get<ListResp<ProtoFile>>(`/api/v1/proto-files?project_id=${projectId}&page_size=200`).then((r) => setProtoFiles(r.items))
+      ? get<ListResp<ProtoFile>>(`/api/v1/proto-files?project_id=${projectId}&page_size=200`).then((r) => { setProtoFiles(r.items); warnTruncated(r, 'Proto 文件') })
       : Promise.resolve()
 
   useEffect(() => {
@@ -105,7 +112,7 @@ export default function GrpcApis() {
 
   const pickGrpc = (g: GrpcApi) => {
     setSelectedGrpcId(g.id)
-    setDraft({
+    const d: GrpcDraft = {
       protoRef: g.proto_ref || undefined,
       address: g.address || '',
       fullService: g.full_service || '',
@@ -114,8 +121,10 @@ export default function GrpcApis() {
       metadata: (g.metadata || []).map((m) => ({ key: m.key, value: m.value })),
       deadlineMs: g.deadline_ms ?? null,
       tlsText: g.tls_settings ? JSON.stringify(g.tls_settings, null, 2) : '',
-    })
+    }
+    setDraft(d)
     setActiveTab('grpc')
+    setSavedGrpc(JSON.stringify(d))
   }
   const newGrpc = () => {
     setSelectedGrpcId(undefined)
@@ -144,10 +153,12 @@ export default function GrpcApis() {
       if (selectedGrpcId) {
         await put(`/api/v1/grpc-apis/${selectedGrpcId}`, payload)
         message.success('已保存')
+        setSavedGrpc(JSON.stringify(draft))
       } else {
         const r = await post<GrpcApi>('/api/v1/grpc-apis', payload)
         setSelectedGrpcId(r.id)
         message.success('已创建')
+        setSavedGrpc(JSON.stringify(draft))
       }
       loadGrpc()
     } catch (e: any) {
@@ -161,16 +172,19 @@ export default function GrpcApis() {
       message.success('已删除')
       setSelectedGrpcId(undefined)
       setDraft({ ...EMPTY_GRPC })
+      setSavedGrpc(JSON.stringify(EMPTY_GRPC))
       loadGrpc()
     } catch (e: any) {
       message.error(e.message)
     }
   }
 
-  const pickProto = (p: ProtoFile) => {
-    setSelectedProtoId(p.id)
-    setDraftProto({ filename: p.filename || '', content: p.content || '' })
+  const pickProto = (pf: ProtoFile) => {
+    setSelectedProtoId(pf.id)
+    const d: ProtoDraft = { filename: pf.filename || '', content: pf.content || '' }
+    setDraftProto(d)
     setActiveTab('proto')
+    setSavedProto(JSON.stringify(d))
   }
   const newProto = () => {
     setSelectedProtoId(undefined)
@@ -191,10 +205,12 @@ export default function GrpcApis() {
       if (selectedProtoId) {
         await put(`/api/v1/proto-files/${selectedProtoId}`, payload)
         message.success('已保存')
+        setSavedProto(JSON.stringify(draftProto))
       } else {
         const r = await post<ProtoFile>('/api/v1/proto-files', payload)
         setSelectedProtoId(r.id)
         message.success('已创建')
+        setSavedProto(JSON.stringify(draftProto))
       }
       loadProto()
     } catch (e: any) {
@@ -209,6 +225,7 @@ export default function GrpcApis() {
       message.success('已删除')
       setSelectedProtoId(undefined)
       setDraftProto({ ...EMPTY_PROTO })
+      setSavedProto(JSON.stringify(EMPTY_PROTO))
       loadProto()
     } catch (e: any) {
       message.error(e.message)
@@ -419,6 +436,7 @@ export default function GrpcApis() {
           { key: 'proto', label: 'Proto 编辑', children: protoTab },
         ]}
       />
+      {guard}
     </IdeLayout>
   )
 }

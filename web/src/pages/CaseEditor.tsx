@@ -2,7 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import {
-  Button, Card, Dropdown, Empty, Input, InputNumber, Popconfirm, Segmented, Select, Space, Switch, Tooltip, message,
+  Button,
+  Card,
+  Dropdown,
+  Empty,
+  Input,
+  InputNumber,
+  Popconfirm,
+  Segmented,
+  Select,
+  Space,
+  Switch,
+  Tooltip,
 } from 'antd'
 import {
   AimOutlined, ApiOutlined, ArrowLeftOutlined, BranchesOutlined, CheckSquareOutlined,
@@ -18,7 +29,10 @@ import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import { PALETTE, SPACING } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
-import { useLayout } from './Layout'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
+import { useStableRows } from '../hooks/useStableRows'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
@@ -639,16 +653,21 @@ function GrpcCallForm({ node, grpcApis, onChange }: { node: StepNode; grpcApis: 
 
 function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange }) {
   const rows = node.assertion?.assertions ?? [{ target: 1, path: '', op: 1, expected: '' }]
+  const rowEq = (a: any, b: any) =>
+    a.target === b.target && a.op === b.op && (a.path ?? '') === (b.path ?? '') && (a.expected ?? '') === (b.expected ?? '')
+  const { rows: stable, update } = useStableRows(rows, rowEq)
   const setRows = (rs: { target: number; path?: string; op: number; expected?: string }[]) =>
-    onChange({ assertion: { assertions: rs } })
+    onChange({ assertion: { assertions: update(rs) } })
   const setRow = (i: number, patch: Partial<{ target: number; path: string; op: number; expected: string }>) =>
     setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
   const needPath = (t: number) => t === 2 || t === 4
 
   return (
     <Field label="断言行" tip="target：STATUS/HEADER/BODY/JSONPATH/ELAPSED；path 仅 HEADER / JSONPATH 需要">
-      {rows.map((r, i) => (
-        <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+      {stable.map((s, i) => {
+        const r = s.item
+        return (
+        <div key={s.id} style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 }}>
           <Select
             style={{ width: 110 }}
             value={r.target}
@@ -681,7 +700,8 @@ function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange 
             onClick={() => setRows(rows.filter((_, idx) => idx !== i))}
           />
         </div>
-      ))}
+        )
+      })}
       <Button
         type="dashed" size="small" icon={<PlusOutlined />} block
         onClick={() => setRows([...rows, { target: 1, path: '', op: 1, expected: '' }])}
@@ -963,7 +983,7 @@ function StepForm({
 // 用例编辑器页面
 // ---------------------------------------------------------------------------
 
-export default function CaseEditor() {
+export default function CaseEditor({ onSaved }: { onSaved?: () => void }) {
   const { id } = useParams()
   const isNew = !id
   const nav = useNavigate()
@@ -980,6 +1000,8 @@ export default function CaseEditor() {
   const [apis, setApis] = useState<HttpApi[]>([])
   const [grpcApis, setGrpcApis] = useState<GrpcApi[]>([])
   const [saving, setSaving] = useState(false)
+  // 已保存快照（dirty 判定 + 离开守卫）
+  const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', t: 1, s: [], src: '', e: 'run', p: '' }))
 
   // 声明式表单所需的接口引用
   useEffect(() => {
@@ -997,9 +1019,6 @@ export default function CaseEditor() {
     if (!id) return
     get<TestCase>(`/api/v1/cases/${id}`)
       .then((c) => {
-        setName(c.name)
-        setDescription(c.description)
-        setCaseType(c.type === 2 ? 2 : 1)
         let def: any = c.definition
         if (typeof def === 'string') {
           try {
@@ -1008,24 +1027,39 @@ export default function CaseEditor() {
             def = {}
           }
         }
+        const t = c.type === 2 ? 2 : 1
+        setName(c.name)
+        setDescription(c.description)
+        setCaseType(t)
+        let snap = { n: c.name, d: c.description, t, s: [] as StepNode[], src: '', e: 'run', p: '' }
         if (def && typeof def === 'object') {
-          if (c.type === 2) {
-            setLowSource(typeof def.source === 'string' ? def.source : '')
-            setLowEntry(typeof def.entry === 'string' ? def.entry : 'run')
-            setLowParamsText(
-              def.parameters && typeof def.parameters === 'object'
-                ? JSON.stringify(def.parameters, null, 2)
-                : '',
-            )
+          if (t === 2) {
+            const src = typeof def.source === 'string' ? def.source : ''
+            const entry = typeof def.entry === 'string' ? def.entry : 'run'
+            const params = def.parameters && typeof def.parameters === 'object'
+              ? JSON.stringify(def.parameters, null, 2)
+              : ''
+            setLowSource(src)
+            setLowEntry(entry)
+            setLowParamsText(params)
+            snap = { ...snap, src, e: entry, p: params }
           } else {
-            setSteps(Array.isArray(def.steps) ? def.steps : [])
+            const steps = Array.isArray(def.steps) ? def.steps : []
+            setSteps(steps)
+            snap = { ...snap, s: steps }
           }
         } else {
           setSteps([])
         }
+        setSavedSnap(JSON.stringify(snap))
       })
       .catch((e) => message.error(e.message))
   }, [id])
+
+  const snapshot = () =>
+    JSON.stringify({ n: name, d: description, t: caseType, s: steps, src: lowSource, e: lowEntry, p: lowParamsText })
+  const dirty = snapshot() !== savedSnap
+  const { guard, allowOnce } = useLeaveGuard(dirty)
 
   const save = async () => {
     if (!projectId) {
@@ -1064,6 +1098,9 @@ export default function CaseEditor() {
         ? await post<TestCase>('/api/v1/cases', payload)
         : await put<TestCase>(`/api/v1/cases/${id}`, payload)
       message.success('已保存')
+      setSavedSnap(snapshot())
+      onSaved?.()
+      allowOnce() // setSavedSnap 提交晚于同步 nav，显式放行一次
       nav(`/cases/${resp.id}/edit`)
     } catch (e: any) {
       message.error(e.message)
@@ -1086,11 +1123,12 @@ export default function CaseEditor() {
     setSelectedId(node.id)
   }
   const duplicate = (targetId: string) => {
-    let newIdRes: string | null = null
-    mutate((ns) => {
-      newIdRes = doDuplicate(ns, targetId)
-    })
-    if (newIdRes) setSelectedId(newIdRes)
+    const copy = structuredClone(steps)
+    const nid = doDuplicate(copy, targetId)
+    if (nid) {
+      setSteps(copy)
+      setSelectedId(nid)
+    }
   }
   const deleteNode = (targetId: string) => {
     mutate((ns) => doDelete(ns, targetId))
@@ -1123,6 +1161,7 @@ export default function CaseEditor() {
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 
   return (
+    <>
     <IdeLayout
       panelWidth={360}
       toolbar={
@@ -1228,5 +1267,7 @@ export default function CaseEditor() {
         </div>
       )}
     </IdeLayout>
+    {guard}
+    </>
   )
 }

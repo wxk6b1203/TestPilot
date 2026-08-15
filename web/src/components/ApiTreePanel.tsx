@@ -1,5 +1,13 @@
 import {
-  Button, Dropdown, Input, Menu, Modal, Select, Space, Switch, Tree, message,
+  Button,
+  Dropdown,
+  Input,
+  Menu,
+  Modal,
+  Select,
+  Space,
+  Switch,
+  Tree,
 } from 'antd'
 import type { MenuProps } from 'antd'
 import {
@@ -7,11 +15,12 @@ import {
   MoreOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { del, download, get, post, put } from '../api'
+import { del, download, get, post, put, warnTruncated } from '../api'
 import type { HttpApi, ListResp, Project, TreeNode } from '../api'
 import { PALETTE } from '../theme'
 import MethodTag from './MethodTag'
 import PanelList from './PanelList'
+import { message } from '../messageBridge'
 
 // 接口目录树面板（Apis 页左侧栏）：
 // - 树 = 根目录 + 目录嵌套 + 已挂载接口 + 遗留未挂载接口（堆在根末尾）
@@ -57,10 +66,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const [intoKey, setIntoKey] = useState('')
   // "插到最前"高亮：展开容器的第一个子节点的顶部半区（内置逻辑会解析成拖入上个容器 → 末尾）
   const [frontKey, setFrontKey] = useState('')
+  // frontKey 的持有行（'__root__' 或子节点 key）：enter/leave 乱序到达时，
+  // 只有持有行自己的 dragleave 才能清除，避免别行的 leave 误擦指示线
+  const frontOwnerRef = useRef('')
 
   const load = () =>
     Promise.all([
-      get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => setRows(r.items)),
+      get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => { setRows(r.items); warnTruncated(r, '接口') }),
       get<{ tree: TreeNode[] }>(`/api/v1/tree?project_id=${projectId}`).then((r) => setTree(r.tree)),
     ])
   useEffect(() => {
@@ -287,6 +299,34 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     else setFolderModal({ mode: 'create' })
   }
 
+  // 根的第一个子节点 key（根行"插到最前"的目标；空树返回 ''）
+  const firstChildKey = (): string => {
+    const first = tree[0]
+    if (!first) return ''
+    return first.node_type === 1 ? `folder-${first.id}` : `api-${first.ref_id}`
+  }
+
+  // 根行 = "插到最前"：与首个子节点顶部窄条同语义（统一树顶区域行为），
+  // "放入根末尾"由树底部空白区承担
+  const rootRowDragOver = (e: any) => {
+    const fk = firstChildKey()
+    if (!fk) return
+    e.preventDefault()
+    e.stopPropagation()
+    setFrontKey(fk)
+    frontOwnerRef.current = '__root__'
+  }
+  const rootRowDrop = (e: any) => {
+    const fk = firstChildKey()
+    if (!fk) return
+    e.preventDefault()
+    e.stopPropagation()
+    setFrontKey('')
+    frontOwnerRef.current = ''
+    const k = dragNodeRef.current
+    if (k && k !== fk) void handleDrop(k, fk, -1)
+  }
+
   // ancestorId 的子树是否包含 targetId（防止把目录拖进自己的子孙空目录）
   const isAncestorOf = (ancestorId: string, targetId: string): boolean => {
     const walk = (nodes: TreeNode[]): boolean => {
@@ -335,20 +375,45 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     return siblings.length > 0 && siblings[0].id === id
   }
 
+  // dragenter 与 dragover 共用：真实拖拽进入新元素时只触发 dragenter，
+  // 只有继续移动才有 dragover —— 只挂 dragover 会导致"停在缝隙上"时不显示指示线
   const rowDragOver = (e: any, key: string) => {
     const el = e.currentTarget as HTMLElement
     if (isFirstVisibleChild(key) && e.clientY < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) {
       e.preventDefault()
       e.stopPropagation()
       setFrontKey(key)
+      frontOwnerRef.current = key
       return
     }
     setFrontKey('')
+    frontOwnerRef.current = ''
     // 其余区域交给内置逻辑
   }
 
-  const rowDragLeave = (e: any) => {
-    if (!e.currentTarget.contains(e.relatedTarget as Node)) setFrontKey('')
+  // 目录行 enter/over 共用：先判"插到最前"（首个子节点顶部半区），再判空目录"整行拖入"
+  const folderRowDrag = (e: any, n: TreeNode, isEmpty: boolean) => {
+    const key = `folder-${n.id}`
+    const el = e.currentTarget as HTMLElement
+    if (isFirstVisibleChild(key) && e.clientY < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) {
+      e.preventDefault()
+      e.stopPropagation()
+      setFrontKey(key)
+      frontOwnerRef.current = key
+      return
+    }
+    setFrontKey('')
+    frontOwnerRef.current = ''
+    if (isEmpty) dropIntoEmptyFolder(e, n)
+  }
+
+  // 只有持有 frontKey 的行自己的 dragleave 才清除（enter/leave 到达顺序不保证）
+  const rowDragLeave = (e: any, key: string) => {
+    if (frontOwnerRef.current !== key) return
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      setFrontKey('')
+      frontOwnerRef.current = ''
+    }
   }
 
   const rowDrop = (e: any, key: string) => {
@@ -356,6 +421,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     e.preventDefault()
     e.stopPropagation()
     setFrontKey('')
+    frontOwnerRef.current = ''
     const k = dragNodeRef.current
     if (k && k !== key) void handleDrop(k, key, -1)
   }
@@ -456,9 +522,10 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     return out
   }, [tree])
 
-  const apiTitle = (a: HttpApi, subtitle: boolean, dnd?: { key?: string; onDragOver?: (e: any) => void; onDragLeave?: (e: any) => void; onDrop?: (e: any) => void }) => (
+  const apiTitle = (a: HttpApi, subtitle: boolean, dnd?: { key?: string; onDragEnter?: (e: any) => void; onDragOver?: (e: any) => void; onDragLeave?: (e: any) => void; onDrop?: (e: any) => void }) => (
     <div
       className={frontKey === dnd?.key ? 'tp-front-line' : undefined}
+      onDragEnter={dnd?.onDragEnter}
       onDragOver={dnd?.onDragOver}
       onDragLeave={dnd?.onDragLeave}
       onDrop={dnd?.onDrop}
@@ -515,22 +582,10 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
                     e.stopPropagation()
                     toggleFolder(`folder-${n.id}`)
                   }}
-                  onDragOver={(e: any) => {
-                    const key = `folder-${n.id}`
-                    const el = e.currentTarget as HTMLElement
-                    // 展开容器的第一个子节点顶部半区 = 插到最前（内置会解析成拖入上个容器）
-                    if (isFirstVisibleChild(key) && e.clientY < el.getBoundingClientRect().top + el.getBoundingClientRect().height / 2) {
-                      e.preventDefault()
-                      e.stopPropagation()
-                      setFrontKey(key)
-                      return
-                    }
-                    setFrontKey('')
-                    // 空目录：内置 DnD 不给"拖入"落点，整行自定义为拖入目标
-                    if (isEmpty) dropIntoEmptyFolder(e, n)
-                  }}
+                  onDragEnter={(e: any) => folderRowDrag(e, n, isEmpty)}
+                  onDragOver={(e: any) => folderRowDrag(e, n, isEmpty)}
                   onDragLeave={(e: any) => {
-                    rowDragLeave(e)
+                    rowDragLeave(e, `folder-${n.id}`)
                     if (isEmpty) dropLeaveEmptyFolder(e)
                   }}
                   onDrop={(e: any) => {
@@ -584,8 +639,9 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
             <Dropdown trigger={['contextMenu']} menu={apiMenu(a, n)}>
               {apiTitle(a, showDetail, {
                 key: `api-${a.id}`,
+                onDragEnter: (e: any) => rowDragOver(e, `api-${a.id}`),
                 onDragOver: (e: any) => rowDragOver(e, `api-${a.id}`),
-                onDragLeave: rowDragLeave,
+                onDragLeave: (e: any) => rowDragLeave(e, `api-${a.id}`),
                 onDrop: (e: any) => rowDrop(e, `api-${a.id}`),
               })}
             </Dropdown>
@@ -613,6 +669,10 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
               e.stopPropagation()
               toggleFolder('__root__')
             }}
+            onDragEnter={rootRowDragOver}
+            onDragOver={rootRowDragOver}
+            onDragLeave={(e: any) => rowDragLeave(e, '__root__')}
+            onDrop={rootRowDrop}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               boxShadow: rootHover ? '0 2px 8px rgba(0,0,0,.15)' : undefined,
@@ -709,7 +769,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
             allowDrop={allowDrop}
             onDrop={onTreeDrop}
             onDragStart={(info: any) => { dragNodeRef.current = String(info.node.key) }}
-            onDragEnd={() => { dragNodeRef.current = ''; setRootHover(false); setIntoKey(''); setFrontKey('') }}
+            onDragEnd={() => { dragNodeRef.current = ''; setRootHover(false); setIntoKey(''); setFrontKey(''); frontOwnerRef.current = '' }}
             onSelect={(keys) => {
               const k = String(keys[0] ?? '')
               if (k.startsWith('api-')) onPick(k.slice(4))

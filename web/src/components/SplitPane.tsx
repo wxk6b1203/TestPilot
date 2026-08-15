@@ -20,6 +20,7 @@ export default function SplitPane({
   const [size, setSize] = useState<number | null>(null)
   const [active, setActive] = useState(false)
   const dragging = useRef(false)
+  const customized = useRef(false) // 拖拽/双击复位后为 true：容器 resize 只 clamp，不再重排 initial
 
   const parse = useCallback((v: number | string, total: number): number => {
     if (typeof v === 'number') return v
@@ -40,6 +41,18 @@ export default function SplitPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [direction, initial])
 
+  // 容器尺寸变化（窗口缩放、面板重排）：未定制则跟随 initial，已定制则夹回 min/max
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      setSize(customized.current ? (v: number | null) => (v == null ? v : clamp(v)) : initialPx())
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [direction, initial, min, max])
+
   const clamp = (v: number) => {
     const el = containerRef.current
     const total = el ? (direction === 'horizontal' ? el.clientWidth : el.clientHeight) : 0
@@ -51,6 +64,7 @@ export default function SplitPane({
 
   const onPointerDown = (e: React.PointerEvent) => {
     dragging.current = true
+    customized.current = true
     setActive(true)
     e.currentTarget.setPointerCapture(e.pointerId)
   }

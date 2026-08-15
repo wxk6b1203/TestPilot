@@ -1,8 +1,9 @@
-import { Button, Card, Form, Input, Modal, Popconfirm, Table, message } from 'antd'
+import { Button, Card, Form, Input, Modal, Popconfirm, Table } from 'antd'
 import { useEffect, useState } from 'react'
-import { del, get, post } from '../api'
+import { del, get, post, warnTruncated } from '../api'
 import type { ListResp, Project } from '../api'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 export default function Projects() {
   const { refreshProjects } = useLayout()
@@ -11,7 +12,7 @@ export default function Projects() {
   const [form] = Form.useForm()
 
   const load = () =>
-    get<ListResp<Project>>('/api/v1/projects?page_size=100').then((r) => setRows(r.items))
+    get<ListResp<Project>>('/api/v1/projects?page_size=100').then((r) => { setRows(r.items); warnTruncated(r, '项目') })
   useEffect(() => {
     load().catch((e) => message.error(e.message))
   }, [])
@@ -37,10 +38,14 @@ export default function Projects() {
               <Popconfirm
                 title="删除项目？"
                 onConfirm={async () => {
-                  await del(`/api/v1/projects/${r.id}`)
-                  await load()
-                  await refreshProjects()
-                  message.success('已删除')
+                  try {
+                    await del(`/api/v1/projects/${r.id}`)
+                    await load()
+                    await refreshProjects()
+                    message.success('已删除')
+                  } catch (e: any) {
+                    message.error(e.message)
+                  }
                 }}
               >
                 <Button danger size="small">删除</Button>
@@ -60,12 +65,16 @@ export default function Projects() {
           form={form}
           layout="vertical"
           onFinish={async (v) => {
-            await post('/api/v1/projects', v)
-            setOpen(false)
-            form.resetFields()
-            await load()
-            await refreshProjects()
-            message.success('已创建')
+            try {
+              await post('/api/v1/projects', v)
+              setOpen(false)
+              form.resetFields()
+              await load()
+              await refreshProjects()
+              message.success('已创建')
+            } catch (e: any) {
+              message.error(e.message)
+            }
           }}
         >
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>

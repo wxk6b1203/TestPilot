@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
-import { Input, List, Space } from 'antd'
+import { Input, Space } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { PALETTE } from '../theme'
 
 // 二级面板通用列表：搜索 + 工具区 + 高亮选中行。
+// （antd List 已废弃，这里直接 div 渲染——仅用到布局，无需 List 能力）
 export default function PanelList<T extends { id: string }>({
   title, search, onSearch, extra, data, renderItem, activeId, onPick, empty,
 }: {
@@ -30,21 +31,18 @@ export default function PanelList<T extends { id: string }>({
         />
       </div>
       <div style={{ flex: 1, overflow: 'auto' }}>
-        <List
-          size="small"
-          dataSource={data}
-          renderItem={(item) => (
-            <div
-              onClick={() => onPick?.(item)}
-              style={{
-                padding: '7px 12px', cursor: 'pointer', borderRadius: 6, margin: '2px 6px',
-                background: item.id === activeId ? PALETTE.selectedRow : 'transparent',
-              }}
-            >
-              {renderItem(item)}
-            </div>
-          )}
-        />
+        {data.map((item) => (
+          <div
+            key={item.id}
+            onClick={() => onPick?.(item)}
+            style={{
+              padding: '7px 12px', cursor: 'pointer', borderRadius: 6, margin: '2px 6px',
+              background: item.id === activeId ? PALETTE.selectedRow : 'transparent',
+            }}
+          >
+            {renderItem(item)}
+          </div>
+        ))}
         {data.length === 0 && (empty ?? (
           <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 32 }}>暂无数据</div>
         ))}

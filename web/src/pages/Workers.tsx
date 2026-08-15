@@ -1,7 +1,8 @@
-import { Card, Table, Tag, message } from 'antd'
+import { Card, Table, Tag } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { CAPS, get } from '../api'
 import type { ListResp, WorkerInfo } from '../api'
+import { message } from '../messageBridge'
 
 export default function Workers() {
   const [rows, setRows] = useState<WorkerInfo[]>([])

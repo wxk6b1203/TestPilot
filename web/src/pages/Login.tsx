@@ -1,15 +1,16 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Divider, Form, Input, Space, Tabs, message } from 'antd'
+import { Button, Card, Divider, Form, Input, Space, Tabs } from 'antd'
 import { GithubOutlined, LoginOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { get, post, setToken } from '../api'
 import { PALETTE } from '../theme'
+import { App as AntdApp } from 'antd'
 
 interface Provider { id: string; name: string; type: string }
 
 export default function Login() {
   const nav = useNavigate()
-  const [msg, ctx] = message.useMessage()
+  const msg = AntdApp.useApp().message
   const [providers, setProviders] = useState<Provider[]>([])
 
   useEffect(() => {
@@ -53,7 +54,6 @@ export default function Login() {
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: PALETTE.bgLayout,
     }}>
-      {ctx}
       <Card style={{ width: 400, boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}>
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 20, fontWeight: 700, color: PALETTE.text }}>TestPilot</span>
@@ -113,7 +113,7 @@ export default function Login() {
             <Divider style={{ margin: '12px 0' }}>
               <span style={{ color: PALETTE.textTertiary, fontSize: 12 }}>第三方登录</span>
             </Divider>
-            <Space direction="vertical" style={{ width: '100%' }}>
+            <Space orientation="vertical" style={{ width: '100%' }}>
               {providers.map((p) => (
                 <Button
                   key={p.id} block icon={<GithubOutlined />} onClick={() => sso(p)}

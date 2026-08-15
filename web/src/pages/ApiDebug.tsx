@@ -1,8 +1,9 @@
-import { Button, Input, Modal, Select, Tabs, Tag, Typography, message } from 'antd'
+import { Button, Input, Modal, Select, Tabs, Tag, Typography } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useSaveShortcut from '../hooks/useSaveShortcut'
+import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { get, post, put } from '../api'
 import type { DebugResult, HttpApi } from '../api'
 import BodyEditor from '../components/BodyEditor'
@@ -12,7 +13,8 @@ import type { Kv } from '../components/KvEditor'
 import ResponsePane from '../components/ResponsePane'
 import SplitPane from '../components/SplitPane'
 import { METHOD_COLORS, PALETTE } from '../theme'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 // HttpApi 的脚本列（api.ts 类型未含，本地扩展：后端 JSON 列为 [{"lang","source"}]）
 interface ScriptRow { lang: string; source: string }
@@ -87,6 +89,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
 
   const currentSnapshot = formOf(name, method, uri, params, headers, body, preScript, postScript)
   const dirty = currentSnapshot !== savedSnapshot
+  const { guard } = useLeaveGuard(dirty)
 
   const clean = (rows: Kv[]) => rows.filter((r) => r.key.trim() !== '')
 
@@ -118,18 +121,19 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     }
   }
 
-  // Ctrl/Cmd + Enter 发送
+  // Ctrl/Cmd + Enter 发送（latest-ref：固定挂载一次，回调取最新 send）
+  const sendRef = useRef(send)
+  sendRef.current = send
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
         e.preventDefault()
-        send()
+        sendRef.current()
       }
     }
     window.addEventListener('keydown', onKey)
-
-  return () => window.removeEventListener('keydown', onKey)
-  })
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const payload = () => ({
     project_id: projectId,
@@ -325,6 +329,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
           onPressEnter={doCreate}
         />
       </Modal>
+      {guard}
     </div>
   )
 }

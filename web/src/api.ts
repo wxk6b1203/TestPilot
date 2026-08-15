@@ -1,4 +1,6 @@
 // REST 客户端：token 注入、错误规整、401 跳登录。
+import { message } from './messageBridge'
+
 const TOKEN_KEY = 'tp_token'
 const PROJECT_KEY = 'tp_project'
 
@@ -72,6 +74,16 @@ export const del = <T = any>(path: string) => api<T>(path, { method: 'DELETE' })
 export interface ListResp<T> {
   items: T[]
   total: number
+}
+
+// 一次性拉满 page_size 的列表超限时提示一次（各列表页无分页 UI，静默截断容易误导）。
+// 每个 label 只提示一次，轮询页面不会反复弹出。
+const truncatedShown = new Set<string>()
+export function warnTruncated<T>(r: ListResp<T>, label: string) {
+  if (r.total > r.items.length && !truncatedShown.has(label)) {
+    truncatedShown.add(label)
+    message.warning(`${label}共 ${r.total} 条，仅显示前 ${r.items.length} 条`)
+  }
 }
 
 export interface Project {

@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Popconfirm, Tag, message } from 'antd'
+import { Button, Card, Popconfirm, Tag } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { del, get } from '../api'
+import { del, get, warnTruncated } from '../api'
 import type { ListResp, TestCase } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
 import { PALETTE, SPACING } from '../theme'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
 import CaseEditor from './CaseEditor'
+import { message } from '../messageBridge'
 
 // 用例列表：左侧 PanelList（搜索/新建/删除），右侧为编辑器（/cases/:id/edit 或 /cases/new）。
 export default function Cases() {
@@ -21,7 +22,8 @@ export default function Cases() {
 
   const load = () =>
     projectId
-      ? get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`).then((r) => setRows(r.items))
+      ? get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`)
+          .then((r) => { setRows(r.items); warnTruncated(r, '用例') })
       : Promise.resolve()
   useEffect(() => {
     setRows([])
@@ -90,7 +92,7 @@ export default function Cases() {
       }
     >
       {id || loc.pathname === '/cases/new' ? (
-        <CaseEditor key={id ?? 'new'} />
+        <CaseEditor key={id ?? 'new'} onSaved={load} />
       ) : (
         <div
           style={{

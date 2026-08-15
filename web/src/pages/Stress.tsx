@@ -1,8 +1,9 @@
-import { Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Table, Tag, Typography, message } from 'antd'
+import { Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
-import { del, get, HTTP_METHODS, post, STATUS } from '../api'
+import { del, get, HTTP_METHODS, post, STATUS, warnTruncated } from '../api'
 import type { Environment, HttpApi, ListResp, TestCase } from '../api'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 interface StressPlan {
   id: string
@@ -92,8 +93,10 @@ export default function Stress() {
 
   const load = () => {
     if (!projectId) return
-    get<ListResp<StressPlan>>(`/api/v1/stress-plans?project_id=${projectId}&page_size=200`).then((r) => setPlans(r.items))
-    get<ListResp<StressRun>>(`/api/v1/stress-runs?page_size=50`).then((r) => setRuns(r.items))
+    get<ListResp<StressPlan>>(`/api/v1/stress-plans?project_id=${projectId}&page_size=200`)
+      .then((r) => { setPlans(r.items); warnTruncated(r, '压测计划') })
+    get<ListResp<StressRun>>(`/api/v1/stress-runs?page_size=50&project_id=` + projectId)
+      .then((r) => { setRuns(r.items); warnTruncated(r, '压测运行') })
   }
   useEffect(() => {
     if (!projectId) return
@@ -197,15 +200,19 @@ export default function Stress() {
             message.error(`load_profile 不是合法 JSON：${e.message}`)
             return
           }
-          await post('/api/v1/stress-plans', {
-            project_id: projectId, env_id: v.env_id, target_type: v.target_type ?? 1, target_id: v.target_id,
-            load_profile: profile, worker_count: v.worker_count ?? 1,
-            metrics_interval_ms: v.metrics_interval_ms ?? 1000,
-          })
-          setOpen(false)
-          form.resetFields()
-          load()
-          message.success('已创建')
+          try {
+            await post('/api/v1/stress-plans', {
+              project_id: projectId, env_id: v.env_id, target_type: v.target_type ?? 1, target_id: v.target_id,
+              load_profile: profile, worker_count: v.worker_count ?? 1,
+              metrics_interval_ms: v.metrics_interval_ms ?? 1000,
+            })
+            setOpen(false)
+            form.resetFields()
+            load()
+            message.success('已创建')
+          } catch (e: any) {
+            message.error(e.message)
+          }
         }}>
           <Form.Item name="target_type" label="目标类型" initialValue={1}>
             <Segmented
@@ -246,7 +253,7 @@ export default function Stress() {
         width={860}
       >
         {detail && (
-          <Space direction="vertical" style={{ width: '100%' }} size={16}>
+          <Space orientation="vertical" style={{ width: '100%' }} size={16}>
             {detail.summary && (
               <Space size={8} wrap>
                 <Tag>样本 {detail.summary.samples}</Tag>

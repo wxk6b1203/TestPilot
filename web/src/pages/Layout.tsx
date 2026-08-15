@@ -1,16 +1,18 @@
-import { Layout as ALayout, Select, Space, Dropdown, message, Tag, Avatar, Typography } from 'antd'
+import { Layout as ALayout, Select, Space, Dropdown, Tag, Avatar, Typography } from 'antd'
 import {
   ApiOutlined, ExperimentOutlined, ThunderboltOutlined, FileTextOutlined,
   ClusterOutlined, PlayCircleOutlined, EnvironmentOutlined, ProjectOutlined,
   SettingOutlined, DesktopOutlined, RobotOutlined, LogoutOutlined, DownOutlined,
 } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
-import { Outlet, useLocation, useNavigate, useOutletContext } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   get, getEnvId, getProjectId, post, setEnvId, setProjectId, setToken,
 } from '../api'
 import type { Environment, ListResp, Me, Project, TenantView } from '../api'
 import { PALETTE, SPACING } from '../theme'
+import type { LayoutCtx } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 // 图标栏导航（IDE 式一级功能栏：图标在上、文字在下）
 const NAV = [
@@ -62,7 +64,11 @@ export default function Layout() {
     get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
       .then((r) => {
         setEnvs(r.items)
-        if (envId && !r.items.find((e) => e.id === envId)) setEid('')
+        // 环境已不存在时连同 localStorage 一起清，避免刷新后复活
+        if (envId && !r.items.find((e) => e.id === envId)) {
+          setEid('')
+          setEnvId('')
+        }
       })
       .catch(() => {})
   }, [projectId])
@@ -163,10 +169,11 @@ export default function Layout() {
         </Dropdown>
       </ALayout.Header>
       <ALayout style={{ height: 'calc(100vh - 48px)', flexDirection: 'row' }}>
-        {/* 一级图标栏 */}
-        <div style={{
+        {/* 一级图标栏：导航项超出视口高度时纵向滚动 */}
+        <div className="tp-nav-rail" style={{
           width: 72, background: PALETTE.bgLayout, borderRight: `1px solid ${PALETTE.border}`,
           display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: SPACING[2], gap: 2,
+          overflowY: 'auto', overflowX: 'hidden', minHeight: 0,
         }}>
           {visibleNav.map((n) => {
             const active = loc.pathname.startsWith(n.path)
@@ -196,20 +203,3 @@ export default function Layout() {
   )
 }
 
-export interface LayoutCtx {
-  projectId: string
-  projects: Project[]
-  refreshProjects: () => Promise<void>
-  envId: string
-  setEnvId: (id: string) => void
-  envs: Environment[]
-  refreshEnvs: () => Promise<void>
-  me: Me | null
-  tenants: TenantView[]
-  switchTenant: (tenantId: string) => Promise<void>
-  refreshMe: () => Promise<void>
-}
-
-export function useLayout() {
-  return useOutletContext<LayoutCtx>()
-}

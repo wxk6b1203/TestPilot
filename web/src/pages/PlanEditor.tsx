@@ -1,4 +1,4 @@
-import { Button, Card, Input, InputNumber, Modal, Segmented, Select, Space, Spin, Switch, Tag, Typography, message } from 'antd'
+import { Button, Card, Input, InputNumber, Modal, Segmented, Select, Space, Spin, Switch, Tag, Typography } from 'antd'
 import {
   ArrowDownOutlined, ArrowLeftOutlined, ArrowUpOutlined, DeleteOutlined,
   PlayCircleOutlined, PlusOutlined, SaveOutlined, SettingOutlined,
@@ -11,7 +11,8 @@ import type { ListResp, PlanItem, Suite, TestCase, TestPlan } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import { PALETTE, SPACING } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
-import { useLayout } from './Layout'
+import { useLayout } from '../hooks/useLayout'
+import { message } from '../messageBridge'
 
 // api.ts 的 PlanItem 尚无 param_overrides 字段（后端 planPayload 支持），此处本地扩展。
 interface PlanItemX extends PlanItem {
