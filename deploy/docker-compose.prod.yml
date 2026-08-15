@@ -44,8 +44,10 @@ services:
     volumes:
       - artifacts:/data/artifacts
     ports:
-      - "8080:8080"   # REST + 前端
-      - "9090:9090"   # gRPC（仅编排外 Worker/Copilot 需要时才暴露）
+      # 默认仅本机可达；生产对外暴露需前置网关（鉴权/限流/HTTPS 终止）。
+      # 种子 admin 口令务必在 .env 设置 TP_ADMIN_PASSWORD（弱口令=裸奔 owner）。
+      - "$TP_HTTP_BIND:8080:8080"   # REST + 前端（默认 127.0.0.1）
+      - "$TP_GRPC_BIND:9090:9090"   # gRPC（默认 127.0.0.1；仅编排外 Worker/Copilot 需要时暴露）
     depends_on:
       postgres:
         condition: service_healthy

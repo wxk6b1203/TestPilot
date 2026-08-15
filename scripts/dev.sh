@@ -13,16 +13,19 @@ mkdir -p "$LOG_DIR" "$PID_DIR" "$(dirname "$DB")"
 export TP_ARTIFACT_DIR="$ROOT/.data/artifacts"
 mkdir -p "$TP_ARTIFACT_DIR"
 # gRPC Worker 认证令牌：首次生成后复用（Scheduler/Worker 同 token 才能握手）
+# 文件 0600：默认 umask(0644) 会让本机任何用户可读（凭据文件）
 TOKEN_FILE="$ROOT/.data/worker.token"
 if [ ! -s "$TOKEN_FILE" ]; then
   head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$TOKEN_FILE"
 fi
+chmod 600 "$TOKEN_FILE"
 export TP_WORKER_TOKEN="$(cat "$TOKEN_FILE")"
 # JWT 密钥：dev 也生成随机值（C1：Scheduler 拒绝默认/弱密钥启动）
 JWT_FILE="$ROOT/.data/jwt.secret"
 if [ ! -s "$JWT_FILE" ]; then
   head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$JWT_FILE"
 fi
+chmod 600 "$JWT_FILE"
 export TP_JWT_SECRET="$(cat "$JWT_FILE")"
 
 _start() {
@@ -51,12 +54,11 @@ start() {
   _start scheduler env TP_DB_PATH="$DB" TP_HTTP_ADDR=127.0.0.1:8080 TP_GRPC_ADDR=127.0.0.1:9090 \
     TP_STATIC_DIR="$ROOT/web/dist" TP_WORKER_TOKEN="$TP_WORKER_TOKEN" "$ROOT/.data/bin/scheduler"
   sleep 2
-  (cd "$ROOT/worker" && PYTHONPATH=src exec venv/bin/python -m testpilot_worker \
-      --scheduler 127.0.0.1:9090 --worker-token "$TP_WORKER_TOKEN" \
-      --capabilities functional,lowcode,playwright,stress --tags region=local) > "$LOG_DIR/worker.log" 2>&1 &
-  echo $! > "$PID_DIR/worker.pid"
-  echo "▶ worker 启动 (pid $!，日志 .data/logs/worker.log)"
-  _start copilot "$ROOT/copilot/venv/bin/python" -m testpilot_copilot.main
+  # worker/copilot 与 _start 同款 nohup：终端关闭（SIGHUP）不退出
+  _start worker sh -c "cd '$ROOT/worker' && exec env PYTHONPATH=src venv/bin/python -m testpilot_worker \
+      --scheduler 127.0.0.1:9090 --token '$TP_WORKER_TOKEN' \
+      --capabilities functional,lowcode,playwright,stress --tags region=local"
+  _start copilot sh -c "cd '$ROOT' && exec '$ROOT/copilot/venv/bin/python' -m testpilot_copilot.main"
   _start vite pnpm --dir "$ROOT/web" dev
   sleep 2
   echo ""
