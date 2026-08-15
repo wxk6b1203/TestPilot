@@ -12,6 +12,18 @@ mkdir -p "$LOG_DIR" "$PID_DIR" "$(dirname "$DB")"
 # Worker 与 Scheduler 共享的产物目录（截图/trace/har）；生产换对象存储
 export TP_ARTIFACT_DIR="$ROOT/.data/artifacts"
 mkdir -p "$TP_ARTIFACT_DIR"
+# gRPC Worker 认证令牌：首次生成后复用（Scheduler/Worker 同 token 才能握手）
+TOKEN_FILE="$ROOT/.data/worker.token"
+if [ ! -s "$TOKEN_FILE" ]; then
+  head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$TOKEN_FILE"
+fi
+export TP_WORKER_TOKEN="$(cat "$TOKEN_FILE")"
+# JWT 密钥：dev 也生成随机值（C1：Scheduler 拒绝默认/弱密钥启动）
+JWT_FILE="$ROOT/.data/jwt.secret"
+if [ ! -s "$JWT_FILE" ]; then
+  head -c 32 /dev/urandom | base64 | tr -d '/+=' | cut -c1-32 > "$JWT_FILE"
+fi
+export TP_JWT_SECRET="$(cat "$JWT_FILE")"
 
 _start() {
   local name="$1"; shift
@@ -37,10 +49,11 @@ start() {
     echo "✗ scheduler 构建失败"; return 1;
   }
   _start scheduler env TP_DB_PATH="$DB" TP_HTTP_ADDR=127.0.0.1:8080 TP_GRPC_ADDR=127.0.0.1:9090 \
-    TP_STATIC_DIR="$ROOT/web/dist" "$ROOT/.data/bin/scheduler"
+    TP_STATIC_DIR="$ROOT/web/dist" TP_WORKER_TOKEN="$TP_WORKER_TOKEN" "$ROOT/.data/bin/scheduler"
   sleep 2
   (cd "$ROOT/worker" && PYTHONPATH=src exec venv/bin/python -m testpilot_worker \
-      --scheduler 127.0.0.1:9090 --capabilities functional,lowcode,playwright,stress --tags region=local) > "$LOG_DIR/worker.log" 2>&1 &
+      --scheduler 127.0.0.1:9090 --worker-token "$TP_WORKER_TOKEN" \
+      --capabilities functional,lowcode,playwright,stress --tags region=local) > "$LOG_DIR/worker.log" 2>&1 &
   echo $! > "$PID_DIR/worker.pid"
   echo "▶ worker 启动 (pid $!，日志 .data/logs/worker.log)"
   _start copilot "$ROOT/copilot/venv/bin/python" -m testpilot_copilot.main
