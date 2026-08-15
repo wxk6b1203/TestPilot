@@ -252,15 +252,78 @@ func (s *Server) listAPIs(ctx fiber.Ctx) error {
 
 func (s *Server) createAPI(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
-	return createOf(s.db, ctx, func(v *model.HttpApi) { assignIDs(v, c.TenantID) })
+	var in struct {
+		model.HttpApi
+		ParentID int64 `json:"parent_id"` // 可选：目标目录树节点（folder）id，0=挂根
+	}
+	if !decode(ctx, &in) {
+		return nil
+	}
+	v := in.HttpApi
+	assignIDs(&v, c.TenantID)
+	// 指定目录时校验并取父路径；未指定挂根（根即普通目录）
+	parentPath := ""
+	if in.ParentID != 0 {
+		p, err := s.nodePath(c.TenantID, in.ParentID)
+		if err != nil {
+			return writeAppErr(ctx, apperr.From(err))
+		}
+		parentPath = p
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&v).Error; err != nil {
+			return err
+		}
+		cnt, err := childCount(tx, c.TenantID, in.ParentID) // 追加到目标目录末尾
+		if err != nil {
+			return err
+		}
+		name := v.Name
+		if name == "" {
+			name = fmt.Sprintf("%s %s", httpMethodName(v.Method), v.URI)
+		}
+		n := &model.TreeNode{
+			ID: model.NextID(), TenantID: c.TenantID, ProjectID: v.ProjectID,
+			ParentID: in.ParentID, NodeType: model.NodeTypeHTTPAPI, RefID: v.ID, Name: name,
+			Order: cnt,
+		}
+		n.Path = parentPath + fmt.Sprint(n.ID) + "/"
+		return tx.Create(n).Error
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.Internal(err.Error()))
+	}
+	return writeJSON(ctx, fiber.StatusOK, &v)
 }
 
 func (s *Server) getAPI(ctx fiber.Ctx) error { return getOf[model.HttpApi](s.db, ctx) }
 func (s *Server) updateAPI(ctx fiber.Ctx) error {
 	return updateOf[model.HttpApi](s.db, ctx)
 }
+
+// deleteAPI 删除接口并级联删除其目录树挂载节点（接口节点无子节点，直接删挂载即可）。
 func (s *Server) deleteAPI(ctx fiber.Ctx) error {
-	return deleteOf[model.HttpApi](s.db, ctx)
+	c := claimsOf(ctx)
+	id, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var v model.HttpApi
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND tenant_id = ?", id, c.TenantID).Delete(&v)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperr.NotFound(apperr.CodeNotFound, "api not found")
+		}
+		return tx.Where("tenant_id = ? AND node_type = ? AND ref_id = ?",
+			c.TenantID, model.NodeTypeHTTPAPI, id).Delete(&model.TreeNode{}).Error
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.From(err))
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- 测试用例 ----

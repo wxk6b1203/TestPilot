@@ -242,7 +242,9 @@ export default function Copilot() {
               <div
                 style={{
                   display: 'inline-block', maxWidth: '85%', textAlign: 'left',
-                  background: m.role === 'user' ? '#E8EDFE' : PALETTE.bgLayout,
+                  background: m.role === 'user' ? PALETTE.primary : '#FFFFFF',
+                  color: m.role === 'user' ? '#FFFFFF' : PALETTE.text,
+                  border: m.role === 'user' ? 'none' : `1px solid ${PALETTE.border}`,
                   borderRadius: 8, padding: '8px 12px',
                 }}
               >
@@ -269,7 +271,8 @@ export default function Copilot() {
 
 function PartView({ part, onRespond }: { part: UIPart; onRespond: (p: UIPart, ok: boolean) => void }) {
   if (part.type === 'text') {
-    return <Typography.Text style={{ whiteSpace: 'pre-wrap' }}>{part.text}</Typography.Text>
+    // 用 span 继承气泡颜色（用户蓝底白字 / AI 白底深字）；Typography 自带色会覆盖继承
+    return <span style={{ whiteSpace: 'pre-wrap' }}>{part.text}</span>
   }
   if (part.type === 'reasoning') {
     return (
@@ -297,7 +300,7 @@ function PartView({ part, onRespond }: { part: UIPart; onRespond: (p: UIPart, ok
           </Space>
         )}
         {part.state === 'output-available' && part.output != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto', color: PALETTE.success }}>
+          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
             {typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 1)}
           </pre>
         )}

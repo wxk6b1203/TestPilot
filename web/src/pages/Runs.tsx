@@ -62,20 +62,30 @@ export default function Runs() {
     if (!projectId) return
     const r = await get<ListResp<TestRun>>(`/api/v1/runs?page_size=100`)
     setRows(r.items)
-    // 若详情打开中且仍在跑，刷新详情
-    if (detail && (detail.status === 1 || detail.status === 0)) {
-      const d = await get<TestRun>(`/api/v1/runs/${detail.id}`)
-      setDetail(d)
-    }
   }
 
+  // 列表轮询 + 项目切换重置（不依赖 detail——此前依赖 detail 导致打开详情后
+  // effect 重跑并 setDetail(null)，抽屉"弹出来又弹回去"）
   useEffect(() => {
     setRows([])
     setDetail(null)
     load().catch((e) => message.error(e.message))
     timer.current = setInterval(() => load().catch(() => undefined), 3000)
     return () => clearInterval(timer.current)
-  }, [projectId, detail?.id, detail?.status])
+  }, [projectId])
+
+  // 详情打开且运行中 → 独立轮询刷新详情；结束后自动停
+  useEffect(() => {
+    if (!detail || (detail.status !== 1 && detail.status !== 0)) return
+    const t = setInterval(async () => {
+      try {
+        setDetail(await get<TestRun>(`/api/v1/runs/${detail.id}`))
+      } catch {
+        /* 忽略瞬时错误 */
+      }
+    }, 3000)
+    return () => clearInterval(t)
+  }, [detail?.id, detail?.status])
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 

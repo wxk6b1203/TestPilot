@@ -13,6 +13,40 @@ import (
 
 // ---- 目录树（tree_nodes 最小落地：folder CRUD + 接口挂载/移动 + 树查询）----
 // 节点模型遵循 DDL：folder 为纯目录节点（ref_id=0）；接口挂载为 node_type=http_api 的引用节点。
+// 顺序约定：同父节点按 order 升序；新建/挂载缺省追加末尾（order=子节点数）；
+// 移动/挂载可选 index 精确插入（>= index 的兄弟后移一位）。
+
+// childCount 父节点现有子节点数（用于追加到末尾的 order）。
+func childCount(db *gorm.DB, tenantID, parentID int64) (int, error) {
+	var cnt int64
+	if err := db.Model(&model.TreeNode{}).
+		Where("tenant_id = ? AND parent_id = ?", tenantID, parentID).Count(&cnt).Error; err != nil {
+		return 0, err
+	}
+	return int(cnt), nil
+}
+
+// clampIndex 归一化插入位置：nil=末尾；负数→0；越界→末尾。
+func clampIndex(idx *int, cnt int) int {
+	if idx == nil {
+		return cnt
+	}
+	v := *idx
+	if v < 0 {
+		v = 0
+	}
+	if v > cnt {
+		v = cnt
+	}
+	return v
+}
+
+// shiftOrders 把目标父节点下 order >= from 的兄弟后移一位（为 index 插入腾位）。
+func shiftOrders(tx *gorm.DB, tenantID, parentID int64, from int, excludeID int64) error {
+	return tx.Model(&model.TreeNode{}).
+		Where("tenant_id = ? AND parent_id = ? AND id <> ? AND \"order\" >= ?", tenantID, parentID, excludeID, from).
+		UpdateColumn("order", gorm.Expr(`"order" + 1`)).Error
+}
 
 type treeNodeView struct {
 	ID       int64           `json:"id"`
@@ -109,10 +143,15 @@ func (s *Server) createFolder(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeAppErr(ctx, apperr.From(err))
 	}
+	order, err := childCount(s.db, c.TenantID, in.ParentID) // 新建目录追加到末尾
+	if err != nil {
+		return writeAppErr(ctx, apperr.Internal(err.Error()))
+	}
 	n := &model.TreeNode{
 		ID: model.NextID(), TenantID: c.TenantID, ProjectID: in.ProjectID,
 		ParentID: in.ParentID, NodeType: model.NodeTypeFolder,
 		Name: strings.TrimSpace(in.Name), Path: path + fmt.Sprint(model.NextID()) + "/",
+		Order: order,
 	}
 	n.Path = path + fmt.Sprint(n.ID) + "/"
 	if err := s.db.Create(n).Error; err != nil {
@@ -193,6 +232,7 @@ type mountReq struct {
 	ProjectID int64 `json:"project_id"`
 	APIID     int64 `json:"api_id"`
 	ParentID  int64 `json:"parent_id"`
+	Index     *int  `json:"index"` // 可选：插入位置；缺省追加末尾
 }
 
 // mountAPI 把接口挂到目录（已有挂载 → 409；未挂载时自动建节点）。
@@ -224,19 +264,32 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 	if name == "" {
 		name = httpMethodName(api.Method) + " " + api.URI
 	}
-	n := &model.TreeNode{
-		ID: model.NextID(), TenantID: c.TenantID, ProjectID: in.ProjectID,
-		ParentID: in.ParentID, NodeType: model.NodeTypeHTTPAPI, RefID: api.ID,
-		Name: name, Path: path + fmt.Sprint(model.NextID()) + "/",
-	}
-	n.Path = path + fmt.Sprint(n.ID) + "/"
-	if err := s.db.Create(n).Error; err != nil {
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		cnt, err := childCount(tx, c.TenantID, in.ParentID)
+		if err != nil {
+			return err
+		}
+		order := clampIndex(in.Index, cnt)
+		if in.Index != nil && order < cnt {
+			if err := shiftOrders(tx, c.TenantID, in.ParentID, order, 0); err != nil {
+				return err
+			}
+		}
+		n := &model.TreeNode{
+			ID: model.NextID(), TenantID: c.TenantID, ProjectID: in.ProjectID,
+			ParentID: in.ParentID, NodeType: model.NodeTypeHTTPAPI, RefID: api.ID,
+			Name: name, Order: order,
+		}
+		n.Path = path + fmt.Sprint(n.ID) + "/"
+		return tx.Create(n).Error
+	})
+	if err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
-	return writeJSON(ctx, fiber.StatusOK, n)
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
-// moveNode 移动节点到新父目录（自身与子孙 path 前缀重算）。
+// moveNode 移动节点到新父目录（自身与子孙 path 前缀重算；可选 index 精确插入）。
 func (s *Server) moveNode(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	id, ok := pathID(ctx, "id")
@@ -245,6 +298,7 @@ func (s *Server) moveNode(ctx fiber.Ctx) error {
 	}
 	var in struct {
 		ParentID int64 `json:"parent_id"`
+		Index    *int  `json:"index"` // 可选：目标父目录中的插入位置；缺省追加末尾
 	}
 	if !decode(ctx, &in) {
 		return nil
@@ -268,15 +322,29 @@ func (s *Server) moveNode(ctx fiber.Ctx) error {
 			Find(&subs).Error; err != nil {
 			return err
 		}
+		// 目标位置：缺省追加末尾；指定 index 时把 >= index 的兄弟后移一位
+		cnt, err := childCount(tx, c.TenantID, in.ParentID)
+		if err != nil {
+			return err
+		}
+		targetOrder := clampIndex(in.Index, cnt)
+		if in.Index != nil && targetOrder < cnt {
+			if err := shiftOrders(tx, c.TenantID, in.ParentID, targetOrder, n.ID); err != nil {
+				return err
+			}
+		}
 		for _, sub := range subs {
 			suffix := strings.TrimPrefix(sub.Path, oldPrefix)
 			parent := sub.ParentID
+			order := sub.Order
 			if sub.ID == n.ID {
 				parent = in.ParentID
+				order = targetOrder
 			}
 			if err := tx.Model(&sub).Updates(map[string]any{
 				"parent_id": parent,
 				"path":      newPath + fmt.Sprint(n.ID) + "/" + suffix,
+				"order":     order,
 			}).Error; err != nil {
 				return err
 			}
@@ -303,6 +371,35 @@ func (s *Server) unmountAPI(ctx fiber.Ctx) error {
 	}
 	if res.RowsAffected == 0 {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "mount node not found"))
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
+}
+
+// reorderTree 重排同一父节点下的子节点顺序（ids = 完整有序子节点 id 列表）。
+func (s *Server) reorderTree(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	var in struct {
+		ParentID int64  `json:"parent_id"`
+		IDs      idList `json:"ids"`
+	}
+	if !decode(ctx, &in) {
+		return nil
+	}
+	if len(in.IDs) == 0 {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ids 必填"))
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		for i, id := range in.IDs {
+			if err := tx.Model(&model.TreeNode{}).
+				Where("id = ? AND tenant_id = ?", id, c.TenantID).
+				Update("order", i).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }

@@ -48,13 +48,14 @@ export default function ResponsePane({ result, loading }: { result?: DebugResult
   })()
   const headers = (resp.headers ?? {}) as Record<string, string>
   return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <Tag color={okColor ? 'success' : 'error'}>{String(status ?? '-')} {String(status ?? '')}</Tag>
+    <div style={{ height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
+        <Tag color={okColor ? 'success' : 'error'}>{String(status ?? '-')}</Tag>
         <span style={{ color: PALETTE.textSecondary }}>{s.duration_ms}ms</span>
         {!ok && <span style={{ color: '#F54A45' }}>{result.error || '请求失败'}</span>}
       </div>
       <Tabs
+        className="resp-tabs"
         size="small"
         activeKey={tab}
         onChange={setTab}
@@ -88,7 +89,7 @@ export default function ResponsePane({ result, loading }: { result?: DebugResult
                   )}
                 </div>
                 <pre style={{
-                  maxHeight: 420, overflow: 'auto', margin: 0,
+                  margin: 0,
                   fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12,
                   color: okColor ? PALETTE.text : '#F54A45',
                   whiteSpace: view === 'raw' ? (wrap ? 'pre-wrap' : 'pre') : 'pre',
@@ -134,7 +135,7 @@ export default function ResponsePane({ result, loading }: { result?: DebugResult
             key: 'logs',
             label: '日志',
             children: s.logs?.length ? (
-              <pre style={{ maxHeight: 300, overflow: 'auto', margin: 0, fontSize: 12 }}>{s.logs.join('\n')}</pre>
+              <pre style={{ margin: 0, fontSize: 12 }}>{s.logs.join('\n')}</pre>
             ) : <span style={{ color: PALETTE.textTertiary }}>无日志</span>,
           },
         ]}

@@ -32,7 +32,8 @@ const methodOptions = Object.entries(METHOD_COLORS).map(([v, m]) => ({
 }))
 
 // API 调试工作区（旗舰页）：/apis/:id 加载已有接口；newMode（/apis 右侧）为空白新建形态。
-export default function ApiDebug({ newMode, onSaved }: { newMode?: boolean; onSaved?: () => void }) {
+// createParentId：右键目录「新建接口」进入时的目标目录树节点 id，保存时接口直接落到该目录。
+export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode?: boolean; createParentId?: string; onSaved?: () => void }) {
   const nav = useNavigate()
   const { id } = useParams()
   const { projectId, envId, envs } = useLayout()
@@ -169,7 +170,11 @@ export default function ApiDebug({ newMode, onSaved }: { newMode?: boolean; onSa
     }
     setSaving(true)
     try {
-      const r = await post<HttpApi>('/api/v1/apis', payload())
+      const r = await post<HttpApi>('/api/v1/apis', {
+        ...payload(),
+        name: saveName.trim(), // 弹窗确认的名称作为最终名称
+        parent_id: createParentId || undefined, // 右键目录新建：落到目标目录（0 省略 = 挂根）
+      })
       message.success('已保存')
       setName(saveName.trim())
       onSaved?.()
@@ -295,7 +300,7 @@ export default function ApiDebug({ newMode, onSaved }: { newMode?: boolean; onSa
         />
           </div>
           <div style={{
-            height: '100%', overflow: 'auto', padding: '8px 16px',
+            height: '100%', overflow: 'hidden', padding: '8px 16px',
             borderTop: `1px solid ${PALETTE.border}`,
           }}>
             <ResponsePane result={debugResult} loading={loading} />

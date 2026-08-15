@@ -9,6 +9,10 @@ body,
 }
 
 /* 目录树行交互（参考 file-browser ExplorerTree 的 hover/drop 视觉） */
+.ant-tree {
+  user-select: none; /* 双击折叠/拖拽时禁止选中文字 */
+  -webkit-user-select: none;
+}
 .ant-tree .ant-tree-node-content-wrapper {
   border-radius: 6px;
   transition: background-color 0.15s ease;
@@ -18,4 +22,31 @@ body,
 }
 .ant-tree .ant-tree-treenode-drop-container {
   transition: background-color 0.15s ease;
+}
+
+/* 响应面板 Tabs：头部（响应体/响应头/断言/日志）固定，内容区独立滚动。
+   antd v6 DOM：.ant-tabs-nav + .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content */
+.resp-tabs.ant-tabs {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.resp-tabs.ant-tabs > .ant-tabs-nav {
+  flex-shrink: 0;
+  margin-bottom: 4px;
+}
+.resp-tabs.ant-tabs > .ant-tabs-body-holder,
+.resp-tabs.ant-tabs > div > .ant-tabs-body-holder {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* 拖拽指示线/悬停样式由 antd Tree 内置（draggable + DropIndicator）提供；
+   空目录整行"拖入"的自定义高亮： */
+.ant-tree-treenode.tp-into-hover {
+  background: rgba(0, 0, 0, 0.045);
+  box-shadow: inset 0 0 0 1px rgba(100, 106, 115, 0.35);
+  border-radius: 6px;
 }

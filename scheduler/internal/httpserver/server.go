@@ -143,6 +143,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodDelete, "/tree/folders/:id", auth.RoleMember, s.deleteFolder)
 	h(fiber.MethodPost, "/tree/nodes", auth.RoleMember, s.mountAPI)
 	h(fiber.MethodPut, "/tree/nodes/:id/move", auth.RoleMember, s.moveNode)
+	h(fiber.MethodPut, "/tree/reorder", auth.RoleMember, s.reorderTree)
 	h(fiber.MethodDelete, "/tree/nodes/:id", auth.RoleMember, s.unmountAPI)
 
 	h(fiber.MethodGet, "/suites", auth.RoleViewer, s.listSuites)
