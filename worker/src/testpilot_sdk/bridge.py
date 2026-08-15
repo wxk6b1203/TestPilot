@@ -60,7 +60,11 @@ class Bridge:
                 msg = json.loads(line)
             except ValueError:
                 continue
-            fut = self._pending.pop(int(msg.get("id", -1)), None)
+            try:
+                call_id = int(msg.get("id", -1))
+            except (TypeError, ValueError):
+                continue  # 坏帧：id 非法直接丢弃（否则读线程崩溃 → 全部 call 永久挂起）
+            fut = self._pending.pop(call_id, None)
             if fut is None or self._loop is None:
                 continue
             def _set(f=fut, m=msg):
@@ -77,7 +81,9 @@ class Bridge:
             self._w.write(json.dumps(msg, ensure_ascii=False).encode() + b"\n")
             self._w.flush()
 
-    async def call(self, op: str, args: dict[str, Any]) -> Any:
+    async def call(self, op: str, args: dict[str, Any],
+                   timeout: float = 120.0) -> Any:
+        """桥调用：Worker 侧处理超时（HTTP 最长 120s）后沙箱侧不再永久挂起。"""
         if self._loop is None:
             raise BridgeError("bridge not started")
         self._seq += 1
@@ -85,7 +91,11 @@ class Bridge:
         fut: asyncio.Future = self._loop.create_future()
         self._pending[call_id] = fut
         self._send({"type": "op", "id": call_id, "op": op, "args": args})
-        return await fut
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending.pop(call_id, None)  # 清理，防 pending 无界增长
+            raise BridgeError(f"bridge call {op} timed out after {timeout}s") from None
 
     def emit(self, msg: dict) -> None:
         """单向事件（log / result），不需要响应。"""

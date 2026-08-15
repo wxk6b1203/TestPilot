@@ -84,6 +84,14 @@ class UiSession:
 
         if action == pb.UI_ACTION_GOTO:
             url = value or target
+            # SSRF 出口校验：浏览器是第二个出网通道，必须与 http_exec 同策略；
+            # 拒绝 file:// 等非 http(s) scheme（本地文件外带面）
+            from urllib.parse import urlparse
+            if urlparse(url).scheme not in ("", "http", "https"):
+                raise ValueError(f"goto scheme not allowed: {urlparse(url).scheme!r}")
+            full = url if urlparse(url).scheme else self.base_url.rstrip("/") + "/" + url.lstrip("/")
+            from . import egress
+            await egress.acheck_url(full)
             resp = await page.goto(url, wait_until="domcontentloaded")
             logs.append(f"goto {url} -> {resp.status if resp else '?'}")
         elif action == pb.UI_ACTION_CLICK:
@@ -128,7 +136,10 @@ class UiSession:
                 logs.append(f"expect_visible {target}")
         elif action == pb.UI_ACTION_SCREENSHOT:
             self._seq += 1
-            name = self.render(value) if value and not value.lower() in ("full", "true", "1") else f"shot-{self._seq}.png"
+            if value and not value.lower() in ("full", "true", "1"):
+                name = _safe_artifact_name(value, f"shot-{self._seq}.png")
+            else:
+                name = f"shot-{self._seq}.png"
             if not name.endswith(".png"):
                 name += ".png"
             path = self.case_dir / name
@@ -145,13 +156,19 @@ class UiSession:
                 await page.wait_for_timeout(ms)
                 logs.append(f"wait {ms}ms")
         elif action == pb.UI_ACTION_UPLOAD:
+            # 路径穿越/任意文件读取防护：仅允许相对路径且不含 ..（本机文件上传
+            # 是任意文件读取外带面——值必须落在 artifact 根内）
+            if value.startswith("/") or ".." in value.split("/"):
+                raise ValueError(f"upload path not allowed: {value!r}")
             await page.set_input_files(target, value)
             logs.append(f"upload {value} -> {target}")
         elif action == pb.UI_ACTION_DOWNLOAD:
             async with page.expect_download() as dl_info:
                 await page.click(target)
             download = await dl_info.value
-            fname = value or download.suggested_filename or f"download-{self._seq}"
+            # suggested_filename 由被测服务器 Content-Disposition 控制——必须净化防穿越
+            fname = _safe_artifact_name(value or download.suggested_filename or "",
+                                        f"download-{self._seq}")
             path = self.case_dir / fname
             await download.save_as(str(path))
             arts.append(self._artifact("download", path))
@@ -208,7 +225,22 @@ def artifact_root() -> Path:
 
 
 def sanitize(name: str) -> str:
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", name)[:80]
+    """产物文件名净化：先剥路径成分（含 ../ 与绝对路径），再字符白名单。
+
+    原名直接拼 case_dir 可被 value/suggested_filename 携带的 `../` 或绝对路径
+    穿越写出 artifact 根（任意路径写文件）——这是 P0 安全缺陷。
+    """
+    base = str(name).replace("\\", "/").rsplit("/", 1)[-1]
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "_", base)[:80].strip(".")
+    return safe or "artifact"
+
+
+def _safe_artifact_name(raw: str, fallback: str) -> str:
+    """净化后的文件名；空/非法时回退 fallback（确保可写且不逃逸）。"""
+    safe = sanitize(raw)
+    if safe in (".", "..", ""):
+        return fallback
+    return safe
 
 # ---- 能力桥 UI 操作（低代码 Page 模型：沙箱 → Worker 转发 Playwright）----
 

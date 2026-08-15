@@ -20,6 +20,18 @@ log = logging.getLogger("testpilot.worker.stress")
 
 EmitMetric = Callable[[wpb.StressMetricBatch], Awaitable[None]]
 
+
+def _killpg(proc) -> None:
+    """SIGKILL 进程组（start_new_session 后为独立会话；防 Locust 子进程成孤儿）。"""
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
 _METHODS = {
     pb.HTTP_METHOD_GET: "GET", pb.HTTP_METHOD_POST: "POST", pb.HTTP_METHOD_PUT: "PUT",
     pb.HTTP_METHOD_DELETE: "DELETE", pb.HTTP_METHOD_PATCH: "PATCH",
@@ -88,6 +100,7 @@ async def run_stress(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskResu
         sys.executable, "-m", "testpilot_worker.stress_runner", spec_path,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=True,  # 独立进程组：超时/取消时连 Locust 子进程一起杀
     )
 
     done: dict | None = None
@@ -106,14 +119,15 @@ async def run_stress(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskResu
             if msg.get("type") == "metric":
                 batch = wpb.StressMetricBatch(task_id=task.task_id, run_id=task.run_id)
                 pt = batch.points.add()
-                pt.ts.FromSeconds(int(msg["ts"]))
-                pt.ts.nanos = int((msg["ts"] % 1) * 1e9)
-                pt.rps = msg["rps"]
-                pt.latency_p50_ms = msg["p50"]
-                pt.latency_p95_ms = msg["p95"]
-                pt.latency_p99_ms = msg["p99"]
-                pt.error_rate = msg["error_rate"]
-                pt.concurrency = msg["concurrency"]
+                ts = float(msg.get("ts") or 0)
+                pt.ts.FromSeconds(int(ts))
+                pt.ts.nanos = int((ts % 1) * 1e9)
+                pt.rps = float(msg.get("rps") or 0)
+                pt.latency_p50_ms = float(msg.get("p50") or 0)
+                pt.latency_p95_ms = float(msg.get("p95") or 0)
+                pt.latency_p99_ms = float(msg.get("p99") or 0)
+                pt.error_rate = float(msg.get("error_rate") or 0)
+                pt.concurrency = int(msg.get("concurrency") or 0)
                 await emit(batch)
             elif msg.get("type") == "done":
                 done = msg
@@ -141,6 +155,13 @@ async def run_stress(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskResu
             tail = stderr_lines[-1] if stderr_lines else ""
             result.error = (done or {}).get("error") or f"runner exited rc={proc.returncode}: {tail}"
     finally:
+        # 取消路径兜底：子进程不杀则 readers 卡在管道 EOF 上永不返回（任务悬挂、信号量泄漏）
+        if proc.returncode is None:
+            _killpg(proc)
+            try:
+                await asyncio.wait_for(proc.wait(), timeout=3)
+            except (TimeoutError, ProcessLookupError):
+                pass
         await readers
         os.unlink(spec_path)
 
@@ -215,7 +236,13 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
         nonlocal inflight
         async with cond:
             while not stopped and inflight >= limit:
-                await cond.wait()
+                # 等待超时兜底：某沙箱在 gate→event 之间崩溃（进程死）时 on_iteration
+                # 永不回调 → inflight 永不释放 → 其余沙箱永久等 cond（并发坍缩为 0）。
+                # 超时放 go=false 令本沙箱优雅退出，避免死等到 duration 结束。
+                try:
+                    await asyncio.wait_for(cond.wait(), timeout=10)
+                except TimeoutError:
+                    return {"go": False}
             if stopped:
                 return {"go": False}
             inflight += 1
@@ -290,8 +317,12 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
         ]
         for b in backends:
             b.set_loop_callback(on_iteration)
+        # 沙箱超时：任务级 timeout 兜底（调度器下发的总宽限），与 duration+60 取小
+        sandbox_timeout = duration + 60
+        if task.timeout.ToSeconds():
+            sandbox_timeout = min(sandbox_timeout, task.timeout.ToSeconds())
         runs = [b.run(st.behavior_source, st.behavior_entry or "run", payload,
-                      timeout_s=duration + 60, loop=True)
+                      timeout_s=sandbox_timeout, loop=True)
                 for b in backends]
         outcomes = await asyncio.gather(*runs, return_exceptions=True)
 

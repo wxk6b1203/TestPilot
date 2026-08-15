@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import signal
 import sys
 
 from testpilot.common.v1 import types_pb2 as pb
@@ -47,11 +48,29 @@ def entry(argv: list[str] | None = None):
         capabilities=caps,
         tenant_id=s.tenant_id,
         name=s.name,
+        token=s.token,
     )
+    # 沙箱缓解（B1）：token 已入内存，从进程环境移除——Linux 下沙箱可读
+    # /proc/<PPID>/environ 拿到 Worker 全部凭据，env scrub 形同虚设
+    os.environ.pop("TP_WORKER_TOKEN", None)
+    # 优雅停机：SIGTERM/SIGINT → 停止取任务、取消在途任务、关闭连接（防孤儿进程/沙箱泄漏）
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            loop.add_signal_handler(sig, client.request_stop)
+        except (NotImplementedError, RuntimeError):  # 非主线程/平台不支持
+            pass
     try:
-        asyncio.run(client.run())
+        loop.run_until_complete(client.run())
     except KeyboardInterrupt:
-        pass
+        client.request_stop()
+    finally:
+        try:
+            loop.run_until_complete(asyncio.sleep(0.1))  # 给在途收尾一点时间
+        except Exception:
+            pass
+        loop.close()
 
 
 if __name__ == "__main__":

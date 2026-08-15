@@ -171,9 +171,19 @@ def test_unknown_env_key_ignored():
 
 # ---- apply_environ 回写 ----
 
-def test_apply_environ_writes_back(monkeypatch):
-    for key in ("TP_ARTIFACT_DIR", "TP_EGRESS_BLOCK_PRIVATE", "TP_SANDBOX_CPU"):
-        monkeypatch.delenv(key, raising=False)
+@pytest.fixture(autouse=True)
+def _clean_tp_env():
+    """apply_environ 直接写 os.environ（monkeypatch 的 delenv 在 teardown 会恢复
+    删除前的值，等于把污染带回来）；这里在测试后强制清除全部 TP_* 残留，
+    避免影响后续测试（egress/sandbox 按 env 惰性读取，残留会改变行为）。"""
+    yield
+    import os
+    for key in list(os.environ):
+        if key.startswith("TP_"):
+            os.environ.pop(key, None)
+
+
+def test_apply_environ_writes_back():
     apply_environ(Settings(artifact_dir="/x", egress_block_private=True, sandbox_cpu=55))
     import os
     assert os.environ["TP_ARTIFACT_DIR"] == "/x"
@@ -181,8 +191,7 @@ def test_apply_environ_writes_back(monkeypatch):
     assert os.environ["TP_SANDBOX_CPU"] == "55"
 
 
-def test_apply_environ_bool_false_writes_zero(monkeypatch):
-    monkeypatch.delenv("TP_EGRESS_BLOCK_PRIVATE", raising=False)
+def test_apply_environ_bool_false_writes_zero():
     apply_environ(Settings(egress_block_private=False))
     import os
     assert os.environ["TP_EGRESS_BLOCK_PRIVATE"] == "0"

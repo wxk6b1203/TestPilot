@@ -24,9 +24,11 @@ class GrpcCallError(Exception):
     """gRPC 调用失败（引擎层包装为 StepFailure）。"""
 
 
-# 进程级缓存：channel 按 (target, secure) 复用；描述符按 (target, service) 复用。
+# 进程级缓存：channel 按 (target, secure) 复用；描述符按 (target, service, method) 复用
+# ——缓存键必须含 target：不同服务器对同名 service/method 可能提供不同消息定义，
+# 跨目标共享会导致序列化类串用、解析错乱（M2）。
 _channels: dict[tuple[str, bool], grpc.Channel] = {}
-_resolved: dict[tuple[str, str], tuple[Any, Any, Any]] = {}  # (MethodDescriptor, in_cls, out_cls)
+_resolved: dict[tuple[str, str, str], tuple[Any, Any, Any]] = {}  # (target, service, method)
 _lock = threading.Lock()
 
 
@@ -44,9 +46,9 @@ def channel_for(target: str, secure: bool) -> grpc.Channel:
     return ch
 
 
-def _resolve(channel: grpc.Channel, service: str, method: str):
+def _resolve(channel: grpc.Channel, target: str, service: str, method: str):
     """反射解析出 (MethodDescriptor, 请求消息类, 响应消息类)。"""
-    key = (service, method)
+    key = (target, service, method)
     with _lock:
         hit = _resolved.get(key)
     if hit is not None:
@@ -83,7 +85,7 @@ def _resolve(channel: grpc.Channel, service: str, method: str):
     out_cls = message_factory.GetMessageClass(m.output_type)
     entry = (m, in_cls, out_cls)
     with _lock:
-        _resolved[(service, method)] = entry
+        _resolved[key] = entry
     return entry
 
 
@@ -94,7 +96,7 @@ def call(target: str, api: pb.GrpcApi, request_override: Mapping[str, Any] | Non
     secure = api.tls_settings.enabled
     channel = channel_for(target, secure)
     try:
-        _, in_cls, out_cls = _resolve(channel, api.full_service, api.method)
+        _, in_cls, out_cls = _resolve(channel, target, api.full_service, api.method)
 
         merged: dict[str, Any] = dict(api.request_message or {})
         if request_override:
@@ -108,6 +110,10 @@ def call(target: str, api: pb.GrpcApi, request_override: Mapping[str, Any] | Non
         deadline = timeout_s
         if deadline is None and api.HasField("deadline"):
             deadline = api.deadline.ToTimedelta().total_seconds()
+        if deadline is None:
+            # 无 deadline 的阻塞调用会挂死 to_thread 线程池（默认 min(32, cpu+4)）——
+            # 对黑盒服务器无限等待；强制 30s 默认上限
+            deadline = 30.0
 
         call_fn = channel.unary_unary(
             f"/{api.full_service}/{api.method}",

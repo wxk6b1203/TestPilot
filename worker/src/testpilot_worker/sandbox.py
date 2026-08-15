@@ -7,6 +7,13 @@
   可用时强制）、无 Worker 凭据（env scrub）、无明文密钥；用户 print 重定向到
   stderr（日志通道），不污染协议帧
 - ExecutionBackend 抽象：后续可切 container(gVisor)/dedicated 后端
+
+安全修复（P0 审查）：
+- bwrap 参数：必须 --ro-bind / /（空 rootfs 下解释器不存在，Linux 必启动失败）
+- 取消/超时路径 finally 化：CancelledError 也杀进程、收管道、清 scratch
+- 超时/非零退出 → 无条件失败（防沙箱抢先伪造 ok=true 的 result 帧）
+- 沙箱输出/桥操作/日志 设上限（防刷屏 OOM Worker）
+- SandboxLimits 惰性读 env（修复 CLI/YAML 配置时序失效）
 """
 
 from __future__ import annotations
@@ -17,6 +24,7 @@ import json
 import os
 import platform
 import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -37,16 +45,32 @@ OpHandler = HttpHandler  # 扩展桥操作处理器（args dict → result dict�
 # 能力桥通道上限
 _BRIDGE_RESP_LIMIT = 256 * 1024
 _BRIDGE_REQ_BODY_LIMIT = 1 * 1024 * 1024
+# 沙箱输出与桥操作上限（防租户脚本 DoS Worker）
+_MAX_LOG_LINES = 2000          # 日志/输出行数上限（超限丢弃并终止进程）
+_MAX_CONCURRENT_OPS = 64       # 桥 op 并发上限（超限拒绝）
+_MAX_RESP_HEADERS = 200        # 桥响应 header 条目上限
+
+
+def _env_int(key: str, default: int) -> int:
+    try:
+        return int(os.environ.get(key, str(default)))
+    except ValueError:
+        return default
 
 
 @dataclass
 class SandboxLimits:
-    cpu_seconds: int = int(os.environ.get("TP_SANDBOX_CPU", "30"))
-    mem_mb: int = int(os.environ.get("TP_SANDBOX_MEM_MB", "1024"))
-    max_procs: int = int(os.environ.get("TP_SANDBOX_NPROC", "128"))
-    max_fds: int = int(os.environ.get("TP_SANDBOX_NOFILE", "128"))
-    max_fsize_mb: int = int(os.environ.get("TP_SANDBOX_FSIZE_MB", "32"))
-    net_deny: bool = os.environ.get("TP_SANDBOX_NET", "deny") != "allow"
+    # 惰性读取：实例化时才取 env（修复模块 import 时冻结导致的配置失效）
+    cpu_seconds: int = field(default_factory=lambda: _env_int("TP_SANDBOX_CPU", 30))
+    mem_mb: int = field(default_factory=lambda: _env_int("TP_SANDBOX_MEM_MB", 1024))
+    max_procs: int = field(default_factory=lambda: _env_int("TP_SANDBOX_NPROC", 128))
+    max_fds: int = field(default_factory=lambda: _env_int("TP_SANDBOX_NOFILE", 128))
+    max_fsize_mb: int = field(default_factory=lambda: _env_int("TP_SANDBOX_FSIZE_MB", 32))
+    net_deny: bool = field(default_factory=lambda: os.environ.get("TP_SANDBOX_NET", "deny") != "allow")
+    # 隔离强制开关（默认关=尽力而为）：开启后若无 OS 隔离工具（sandbox-exec/bwrap）
+    # 可用，沙箱直接失败（fail-closed）而非静默裸奔。生产配合容器后端使用。
+    require_isolation: bool = field(
+        default_factory=lambda: os.environ.get("TP_SANDBOX_REQUIRE_ISOLATION", "") in ("1", "true", "yes"))
 
 
 @dataclass
@@ -108,17 +132,55 @@ _NET_DENY_PROFILE = """(version 1)
 """
 
 
-def _net_deny_wrapper(cmd: list[str], scratch: str) -> list[str]:
-    """OS 级网络隔离（尽力而为）：macOS sandbox-exec / Linux bubblewrap。"""
+# sandbox-exec 可用性探测缓存（受限环境/CI 沙箱内 sandbox_apply 会被系统拒绝，
+# 若不加探测则每个沙箱必启动失败——与"无工具"一样优雅降级为无网络隔离）
+_sandbox_exec_ok: bool | None = None
+
+
+def _kill_process_group(proc) -> None:
+    """SIGKILL 整个进程组（沙箱 start_new_session 后为独立会话）；
+    仅杀主进程会让其派生的子进程继续运行（rlimit 允许时）成孤儿。"""
+    import signal
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+
+
+def _net_deny_wrapper(cmd: list[str], scratch: str) -> tuple[list[str], bool]:
+    """OS 级网络隔离（尽力而为）：macOS sandbox-exec / Linux bubblewrap。
+    返回 (命令, 是否真正隔离)；无法隔离时返回原命令 + False（由调用方按
+    require_isolation 决定降级或 fail-closed）。"""
+    global _sandbox_exec_ok
     if platform.system() == "Darwin" and shutil.which("sandbox-exec"):
-        profile = os.path.join(scratch, "sandbox.sb")
-        Path(profile).write_text(_NET_DENY_PROFILE)
-        return ["sandbox-exec", "-f", profile, *cmd]
+        if _sandbox_exec_ok is None:
+            try:
+                probe = subprocess.run(
+                    ["sandbox-exec", "-p", "(version 1)(allow default)", "/usr/bin/true"],
+                    capture_output=True, timeout=5)
+                _sandbox_exec_ok = probe.returncode == 0
+            except Exception:
+                _sandbox_exec_ok = False
+            if not _sandbox_exec_ok:
+                log.warning("sandbox-exec unavailable (restricted environment); "
+                            "sandbox runs WITHOUT network denial")
+        if _sandbox_exec_ok:
+            profile = os.path.join(scratch, "sandbox.sb")
+            Path(profile).write_text(_NET_DENY_PROFILE)
+            return ["sandbox-exec", "-f", profile, *cmd], True
+        return cmd, False
     if platform.system() == "Linux" and shutil.which("bwrap"):
-        return ["bwrap", "--unshare-net", "--dev", "/dev", "--", *cmd]
+        # 必须 --ro-bind / /：bwrap 默认空 rootfs，解释器不存在则 exec 必失败。
+        # --die-with-parent：父进程退出时子进程连带终止（防孤儿）。
+        return ["bwrap", "--ro-bind", "/", "/", "--proc", "/proc",
+                "--dev", "/dev", "--tmpfs", "/tmp",
+                "--unshare-net", "--die-with-parent", "--", *cmd], True
     log.warning("no OS sandbox tool found (sandbox-exec/bwrap); "
                 "sandbox runs WITHOUT network denial — 建议容器后端")
-    return cmd
+    return cmd, False
 
 
 class SubprocessBackend(ExecutionBackend):
@@ -149,8 +211,17 @@ class SubprocessBackend(ExecutionBackend):
         Path(payload_path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
         cmd = [sys.executable, "-m", "testpilot_sdk.entry", src_path, entry]
+        isolated = False
         if self.limits.net_deny:
-            cmd = _net_deny_wrapper(cmd, scratch)
+            cmd, isolated = _net_deny_wrapper(cmd, scratch)
+            if not isolated and self.limits.require_isolation:
+                # fail-closed：强制隔离但无工具（如本地无 gVisor/bwrap/sandbox-exec）
+                result.error = (
+                    "sandbox isolation required (TP_SANDBOX_REQUIRE_ISOLATION=1) "
+                    "but no OS sandbox tool available; refusing to run unprotected "
+                    "or set TP_SANDBOX_NET=allow to disable isolation")
+                shutil.rmtree(scratch, ignore_errors=True)
+                return result
 
         def _preexec():
             _apply_rlimits(self.limits)
@@ -164,6 +235,7 @@ class SubprocessBackend(ExecutionBackend):
                 cwd=scratch,
                 env=_scrub_env(scratch, sdk_root, payload_path),
                 preexec_fn=_preexec,
+                start_new_session=True,  # 独立进程组：kill 时可连子孙一起杀（M21）
             )
         except Exception as e:
             result.error = f"sandbox spawn failed: {e}"
@@ -172,6 +244,17 @@ class SubprocessBackend(ExecutionBackend):
 
         done = asyncio.Event()
         merged_vars: dict[str, Any] = {}
+        op_inflight = 0
+        log_overflow = False
+
+        def _append_log(line: str) -> None:
+            nonlocal log_overflow
+            if len(result.logs) >= _MAX_LOG_LINES:
+                if not log_overflow:
+                    log_overflow = True
+                    result.logs.append("[logs truncated: output limit exceeded]")
+                return
+            result.logs.append(line[:2000])
 
         async def _respond(call_id: int, ok: bool, value: Any):
             msg = {"id": call_id, "ok": ok, "result" if ok else "error": value}
@@ -182,6 +265,7 @@ class SubprocessBackend(ExecutionBackend):
                 done.set()
 
         async def _control_loop():
+            nonlocal op_inflight
             while True:
                 line = await proc.stdout.readline()
                 if not line:
@@ -192,7 +276,7 @@ class SubprocessBackend(ExecutionBackend):
                     continue
                 mtype = msg.get("type")
                 if mtype == "log":
-                    result.logs.append(str(msg.get("message", ""))[:2000])
+                    _append_log(str(msg.get("message", "")))
                 elif mtype == "result":
                     result.ok = bool(msg.get("ok"))
                     result.error = str(msg.get("error", ""))[:4000]
@@ -200,49 +284,83 @@ class SubprocessBackend(ExecutionBackend):
                     result.assertions = msg.get("assertions") or []
                     done.set()
                 elif mtype == "op":
-                    asyncio.create_task(self._handle_op(msg, _respond, payload, merged_vars))
+                    # 并发上限：超限拒绝而非无限 create_task（防沙箱 flood DoS Worker）
+                    if op_inflight >= _MAX_CONCURRENT_OPS:
+                        try:
+                            await _respond(int(msg.get("id", 0)), False,
+                                           "too many concurrent bridge ops")
+                        except (ValueError, TypeError):
+                            pass
+                        continue
+                    op_inflight += 1
+                    task = asyncio.create_task(self._handle_op(msg, _respond, payload, merged_vars))
+                    task.add_done_callback(lambda _t: op_decrement())
                 elif mtype == "event" and msg.get("name") == "iteration" and self._loop_cb:
                     res = self._loop_cb(msg)
                     if inspect.isawaitable(res):
                         await res
+
+        def op_decrement():
+            nonlocal op_inflight
+            op_inflight = max(0, op_inflight - 1)
 
         async def _drain(stream):
             while True:
                 line = await stream.readline()
                 if not line:
                     break
-                result.logs.append(line.decode("utf-8", "replace").rstrip()[:2000])
+                _append_log(line.decode("utf-8", "replace").rstrip())
 
         pump_err = asyncio.create_task(_drain(proc.stderr))
         ctrl = asyncio.create_task(_control_loop())
 
+        # 全程 finally：超时、取消、异常路径都保证杀进程组/收管道/清 scratch
         try:
-            await asyncio.wait_for(done.wait(), timeout=max(timeout_s, 1))
-        except TimeoutError:
-            result.timed_out = True
-            result.error = f"sandbox timeout after {timeout_s}s (killed)"
             try:
-                proc.kill()
-            except ProcessLookupError:
-                pass
-        await proc.wait()
-        for t in (pump_err, ctrl):
-            t.cancel()
-        await asyncio.gather(pump_err, ctrl, return_exceptions=True)
+                await asyncio.wait_for(done.wait(), timeout=max(timeout_s, 1))
+            except TimeoutError:
+                result.timed_out = True
+                result.error = f"sandbox timeout after {timeout_s}s (killed)"
+                result.ok = False
+                _kill_process_group(proc)
+            except asyncio.CancelledError:
+                result.timed_out = True
+                result.error = "sandbox cancelled"
+                result.ok = False
+                _kill_process_group(proc)
+                raise  # 取消向上传播（finally 清理后）
+            await proc.wait()
 
-        if not done.is_set() and not result.error:
-            # 进程结束但没发 result（脚本异常崩溃或入口故障）
-            if proc.returncode not in (0, None) and not result.timed_out:
-                tail = "\n".join(result.logs[-5:])
-                result.error = f"sandbox exited rc={proc.returncode}" + (f"\n{tail}" if tail else "")
+            if not done.is_set() and not result.error:
+                # 进程结束但没发 result（脚本异常崩溃或入口故障）
+                if proc.returncode not in (0, None) and not result.timed_out:
+                    tail = "\n".join(result.logs[-5:])
+                    result.error = f"sandbox exited rc={proc.returncode}" + (f"\n{tail}" if tail else "")
+
+            # 防伪造：超时或非零退出 → 无条件失败（即使沙箱抢先发了 ok=true 的 result 帧）
+            if result.timed_out or proc.returncode not in (0, None):
+                result.ok = False
+        finally:
+            if proc.returncode is None:
+                _kill_process_group(proc)
+                try:
+                    await asyncio.wait_for(proc.wait(), timeout=3)
+                except (TimeoutError, ProcessLookupError):
+                    pass
+            for t in (pump_err, ctrl):
+                t.cancel()
+            await asyncio.gather(pump_err, ctrl, return_exceptions=True)
+            shutil.rmtree(scratch, ignore_errors=True)
 
         result.vars = {**merged_vars, **result.vars}
         result.duration_ms = int((time.perf_counter() - started) * 1000)
-        shutil.rmtree(scratch, ignore_errors=True)
         return result
 
     async def _handle_op(self, msg: dict, respond, payload: dict, merged_vars: dict):
-        call_id = int(msg.get("id", 0))
+        try:
+            call_id = int(msg.get("id", 0))
+        except (TypeError, ValueError):
+            return  # 坏帧：不响应（读线程已有防御）
         op = msg.get("op")
         args = msg.get("args") or {}
         try:
@@ -283,7 +401,7 @@ async def bridge_http_handler(client: httpx.AsyncClient, base_url: str,
     uri = str(args.get("uri") or "")
     if not (uri.startswith("http://") or uri.startswith("https://")):
         uri = base_url.rstrip("/") + "/" + uri.lstrip("/")
-    egress.check_url(uri)
+    await egress.acheck_url(uri)
     body = args.get("body")
     headers = {str(k).lower(): v for k, v in (args.get("headers") or {}).items()}
     if auto_headers:
@@ -295,6 +413,7 @@ async def bridge_http_handler(client: httpx.AsyncClient, base_url: str,
         "params": args.get("params") or None,
         "headers": headers or None,
         "timeout": min(float(args.get("timeout") or 30), 120),
+        "follow_redirects": False,  # 桥路径不跟随重定向（与声明式逐跳校验不同，避免 SSRF 绕行）
     }
     if body is not None:
         raw = body if isinstance(body, str) else json.dumps(body, ensure_ascii=False)
@@ -305,16 +424,19 @@ async def bridge_http_handler(client: httpx.AsyncClient, base_url: str,
             kwargs.setdefault("headers", {})
             (kwargs["headers"] or {}).setdefault("Content-Type", "application/json")
     started = time.perf_counter()
-    resp = await client.request(**kwargs)
+    # 流式限读（httpx 先全量下载再截断会 OOM）；header 条目设上限
+    from .http_exec import request_limited
+    resp, raw = await request_limited(client, kwargs, _BRIDGE_RESP_LIMIT)
     elapsed = int((time.perf_counter() - started) * 1000)
-    text = resp.content[:_BRIDGE_RESP_LIMIT].decode(resp.encoding or "utf-8", "replace")
+    text = raw.decode(resp.encoding or "utf-8", "replace")
+    resp_headers = dict(list(resp.headers.items())[:_MAX_RESP_HEADERS])
     try:
         parsed: Any = json.loads(text)
     except ValueError:
         parsed = None
     return {
         "status": resp.status_code,
-        "headers": dict(resp.headers),
+        "headers": resp_headers,
         "body": parsed if parsed is not None else text,
         "text": text,
         "elapsed_ms": elapsed,

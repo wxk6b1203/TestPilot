@@ -1,4 +1,10 @@
-"""HTTP 请求构建与执行（httpx.AsyncClient）。"""
+"""HTTP 请求构建与执行（httpx.AsyncClient）。
+
+安全（P0 修复）：
+- 重定向逐跳校验：每跳 target 都过 egress 出口策略（原实现只校验初始 URL，
+  302 到 127.0.0.1/metadata 可直接穿透白名单/私网阻断）；
+- 响应体流式限读（原实现先全量下载再截断快照，大响应可 OOM Worker）。
+"""
 
 from __future__ import annotations
 
@@ -24,6 +30,8 @@ _METHODS = {
 }
 
 _BODY_SNAPSHOT_LIMIT = 64 * 1024
+_REDIRECT_CODES = {301, 302, 303, 307, 308}
+_MAX_REDIRECTS = 10
 
 
 def _render_body(body: pb.BodySpec, scope: Mapping[str, Any]) -> dict[str, Any]:
@@ -91,16 +99,50 @@ def build_request(api: pb.HttpApi, base_url: str, scope: Mapping[str, Any]) -> t
     return kwargs, snapshot
 
 
+async def request_limited(client: httpx.AsyncClient, kwargs: dict[str, Any],
+                          body_limit: int) -> tuple[httpx.Response, bytes]:
+    """发起请求并按 body_limit 流式限读响应体（防大响应 OOM）。
+
+    follow_redirects 由 kwargs 控制；返回 (response, body_bytes)。
+    """
+    kwargs = dict(kwargs)
+    follow = bool(kwargs.pop("follow_redirects", False))
+    url = str(kwargs["url"])
+    method = str(kwargs.get("method") or "GET")
+    for _hop in range(_MAX_REDIRECTS + 1):
+        await egress.acheck_url(url)  # 每跳出口校验（重定向目标不可绕过）
+        hop_kwargs = {**kwargs, "url": url, "method": method, "follow_redirects": False}
+        async with client.stream(**hop_kwargs) as resp:
+            if not (follow and resp.status_code in _REDIRECT_CODES):
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in resp.aiter_bytes():
+                    if total >= body_limit:
+                        break
+                    take = chunk[: body_limit - total]
+                    chunks.append(take)
+                    total += len(take)
+                return resp, b"".join(chunks)
+            loc = resp.headers.get("location")
+            if not loc:
+                return resp, b""
+        url = str(httpx.URL(url).join(loc))
+        # 301/302/303 对非 GET/HEAD：转为 GET 并丢弃 body（与 httpx 语义一致）
+        if resp.status_code in (301, 302, 303) and method not in ("GET", "HEAD"):
+            method = "GET"
+            for k in ("content", "data", "files"):
+                kwargs.pop(k, None)
+    raise httpx.TooManyRedirects("exceeded redirect limit")
+
+
 async def execute(client: httpx.AsyncClient, api: pb.HttpApi, base_url: str,
                   scope: Mapping[str, Any]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
     """执行请求，返回 (request_snapshot, response_snapshot, response_scope)。"""
     kwargs, req_snap = build_request(api, base_url, scope)
-    egress.check_url(kwargs["url"])
     started = time.perf_counter()
-    resp = await client.request(**kwargs)
+    resp, raw = await request_limited(client, kwargs, _BODY_SNAPSHOT_LIMIT)
     elapsed_ms = int((time.perf_counter() - started) * 1000)
 
-    raw = resp.content[:_BODY_SNAPSHOT_LIMIT]
     try:
         body_text = raw.decode(resp.encoding or "utf-8", errors="replace")
     except LookupError:

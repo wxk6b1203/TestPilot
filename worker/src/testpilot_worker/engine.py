@@ -19,6 +19,9 @@ from .assertions import evaluate
 from .expr import ExprError, eval_expr, render
 from .sandbox import ExecutionBackend, SubprocessBackend, bridge_http_handler
 
+# 并行循环最大并发（P0 资源上限：每个迭代一个 httpx client，UI 步骤各起一个浏览器）
+_MAX_PARALLEL_LOOP = 16
+
 _SDK_OP_MAP = {
     "eq": pb.ASSERTION_OP_EQ, "ne": pb.ASSERTION_OP_NE, "exists": pb.ASSERTION_OP_EXISTS,
     "contains": pb.ASSERTION_OP_CONTAINS, "matches": pb.ASSERTION_OP_MATCHES,
@@ -59,8 +62,12 @@ class StepFailure(Exception):
 
 
 class CaseRunner:
-    def __init__(self, task: wpb.TaskAssignment, on_progress: OnProgress | None = None):
+    def __init__(self, task: wpb.TaskAssignment, on_progress: OnProgress | None = None,
+                 case_rel_suffix: str = ""):
         self.task = task
+        # 并行迭代产物隔离：同 run/case 的 UI 产物目录加迭代后缀（否则截图/
+        # trace/har 互相覆盖——M4）
+        self._case_rel_suffix = case_rel_suffix
         self.env = task.env
         self.on_progress = on_progress
         self.vars: dict[str, Any] = {}
@@ -323,7 +330,7 @@ class CaseRunner:
 
     async def _do_ui_action(self, spec: pb.UiActionStep, logs: list[str]) -> list[ui.UiArtifact]:
         if self._ui is None:
-            case_rel = f"{self.task.run_id}/{self.task.functional.case_result_id}"
+            case_rel = f"{self.task.run_id}/{self.task.functional.case_result_id}{self._case_rel_suffix}"
             self._ui = ui.UiSession(
                 base_url=self.base_url,
                 case_dir=ui.artifact_root() / case_rel,
@@ -354,29 +361,43 @@ class CaseRunner:
         if spec.parallel:
             await self._do_loop_parallel(spec, rng, var, path)
             return
-        for iteration, i in enumerate(rng, start=1):
-            self.vars[var] = i
-            for idx, sub in enumerate(spec.body_steps, start=1):
-                await self._run_step(sub, f"{path}.loop.{iteration}.{idx}")
+        # 迭代变量不泄漏：保存原值，循环结束恢复（防覆盖用户变量/后续步骤读到残留 int）
+        had_var = var in self.vars
+        saved_var = self.vars.get(var)
+        try:
+            for iteration, i in enumerate(rng, start=1):
+                self.vars[var] = i
+                for idx, sub in enumerate(spec.body_steps, start=1):
+                    await self._run_step(sub, f"{path}.loop.{iteration}.{idx}")
+        finally:
+            if had_var:
+                self.vars[var] = saved_var
+            else:
+                self.vars.pop(var, None)
 
     async def _do_loop_parallel(self, spec: pb.LoopStep, rng: range, var: str, path: str):
         """并行迭代：每个迭代在独立 CaseRunner 上执行 —— 变量取进入 loop 时的快照
         （隔离：迭代内 SET_VAR 不互相可见，也不写回父作用域），步骤结果按迭代顺序合并。
         语义：全部迭代跑完（不 fail-fast 取消）；任一迭代失败则该 LOOP 步骤失败，
-        错误信息带迭代号。"""
+        错误信息带迭代号。
+        并发上限 _MAX_PARALLEL_LOOP：无上限时单用例可拉起上千浏览器/连接池（租户可触发 DoS）。"""
         base_vars = dict(self.vars)
         base_response = self.last_response
+        sem = asyncio.Semaphore(_MAX_PARALLEL_LOOP)
 
         async def one(i: int, iteration: int) -> list[pb.TestStepResult]:
-            clone = CaseRunner(self.task, self.on_progress)
-            clone.vars = dict(base_vars)
-            clone.vars[var] = i
-            clone.last_response = base_response
-            try:
-                await clone._run_steps(spec.body_steps, f"{path}.loop.{iteration}.")
-            finally:
-                await clone.close()
-            return clone.step_results
+            async with sem:
+                # 产物目录按迭代隔离（M4）：并行迭代各自浏览器截图/trace 不互相覆盖
+                clone = CaseRunner(self.task, self.on_progress,
+                                   case_rel_suffix=f"-i{iteration}")
+                clone.vars = dict(base_vars)
+                clone.vars[var] = i
+                clone.last_response = base_response
+                try:
+                    await clone._run_steps(spec.body_steps, f"{path}.loop.{iteration}.")
+                finally:
+                    await clone.close()
+                return clone.step_results
 
         results = await asyncio.gather(
             *(one(i, n) for n, i in enumerate(rng, start=1)), return_exceptions=True)
@@ -404,11 +425,15 @@ class CaseRunner:
             raise StepFailure(
                 f"grpc_api_id {spec.grpc_api_id!r} must be resolved by scheduler")
         target = grpc_exec.target_from_base_url(self.base_url)
+        # 调用超时：任务级 timeout 与 30s 默认上限取小（防无 deadline 挂死线程池）
+        task_timeout = self.task.timeout.ToSeconds() or 300
+        grpc_timeout = min(max(task_timeout, 5), 30.0)
         try:
             request, response = await grpc_exec.call_async(
                 target, api,
                 request_override=dict(spec.request_override) if spec.HasField("request_override") else None,
-                metadata_override=[(kv.key, kv.value) for kv in spec.metadata_override] or None)
+                metadata_override=[(kv.key, kv.value) for kv in spec.metadata_override] or None,
+                timeout_s=grpc_timeout)
         except grpc_exec.GrpcCallError as e:
             raise StepFailure(f"grpc_call: {e}") from e
         self.last_response = response

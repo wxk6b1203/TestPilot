@@ -18,6 +18,7 @@ import yaml
 # 环境变量沿用既有文档化键名（TP_ARTIFACT_DIR / TP_EGRESS_* / TP_SANDBOX_* / TP_OTEL_*）。
 _FIELDS: dict[str, tuple[str, str, object, type]] = {
     "scheduler":       ("scheduler", "TP_WORKER_SCHEDULER", "127.0.0.1:9090", str),
+    "token":           ("token", "TP_WORKER_TOKEN", "", str),  # gRPC 认证令牌（须与 Scheduler worker_token 一致）
     "name":            ("name", "TP_WORKER_NAME", "", str),  # 空=主机名
     "capabilities":    ("capabilities", "TP_WORKER_CAPABILITIES", "functional", str),
     "tags":            ("tags", "TP_WORKER_TAGS", "", str),
@@ -33,6 +34,7 @@ _FIELDS: dict[str, tuple[str, str, object, type]] = {
     "sandbox_nofile":  ("sandbox_nofile", "TP_SANDBOX_NOFILE", 128, int),
     "sandbox_fsize_mb": ("sandbox_fsize_mb", "TP_SANDBOX_FSIZE_MB", 32, int),
     "sandbox_net":     ("sandbox_net", "TP_SANDBOX_NET", "deny", str),  # deny|allow
+    "sandbox_require_isolation": ("sandbox_require_isolation", "TP_SANDBOX_REQUIRE_ISOLATION", False, bool),  # 1=无隔离工具时拒绝执行
     "otel_exporter":   ("otel_exporter", "TP_OTEL_EXPORTER", "", str),  # ""|stdout|otlp
     "otel_endpoint":   ("otel_endpoint", "TP_OTEL_ENDPOINT", "127.0.0.1:4317", str),
 }
@@ -41,6 +43,7 @@ _FIELDS: dict[str, tuple[str, str, object, type]] = {
 @dataclass(frozen=True)
 class Settings:
     scheduler: str = "127.0.0.1:9090"
+    token: str = ""  # gRPC 认证令牌（Scheduler 侧 worker_token；空=无令牌，注册会被拒）
     name: str = ""
     capabilities: str = "functional"
     tags: str = ""
@@ -56,6 +59,7 @@ class Settings:
     sandbox_nofile: int = 128
     sandbox_fsize_mb: int = 32
     sandbox_net: str = "deny"
+    sandbox_require_isolation: bool = False  # 1=无隔离工具（sandbox-exec/bwrap）时沙箱直接失败
     otel_exporter: str = ""
     otel_endpoint: str = "127.0.0.1:4317"
 
@@ -127,7 +131,10 @@ def load(argv: list[str] | None = None, env: dict[str, str] | None = None) -> Se
 
 
 def apply_environ(s: Settings) -> None:
-    """把解析结果回写环境，供沙箱子进程/egress/tracing/ui 等按原约定读取。"""
+    """把解析结果回写环境，供沙箱子进程/egress/tracing/ui 等按原约定读取。
+    token 不回写：Worker 凭据不进进程环境（沙箱可读 /proc/<PPID>/environ）。"""
     for dest, (_key, env_key, _default, typ) in _FIELDS.items():
+        if dest == "token":
+            continue
         v = getattr(s, dest)
         os.environ[env_key] = ("1" if v else "0") if typ is bool else str(v)
