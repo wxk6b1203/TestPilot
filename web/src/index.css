@@ -50,3 +50,15 @@ body,
   box-shadow: inset 0 0 0 1px rgba(100, 106, 115, 0.35);
   border-radius: 6px;
 }
+
+/* 自定义"插到最前"指示线（展开容器第一个子节点的顶部半区） */
+.tp-front-line {
+  box-shadow: inset 0 2px 0 0 #4d6eeb;
+}
+
+/* 自定义拦截激活期间隐藏内置指示线：
+   拖拽在行内移动时内置状态不会更新（dragover 被 stopPropagation），
+   残留的旧指示线会与自定义指示线叠加成两条 */
+.tp-custom-drop-active .ant-tree-drop-indicator {
+  display: none;
+}
