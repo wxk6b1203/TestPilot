@@ -8,12 +8,15 @@ import {
   Select,
   Space,
   Switch,
+  Tooltip,
   Tree,
 } from 'antd'
 import type { MenuProps, TreeProps } from 'antd'
 import {
   DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, FolderOutlined,
+  MenuFoldOutlined,
   MoreOutlined, PlusOutlined,
+  QuestionCircleOutlined,
 } from '@ant-design/icons'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { del, download, get, post, put } from '../api'
@@ -666,19 +669,25 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
               checkedChildren="详细"
               unCheckedChildren="简略"
             />
+             <Tooltip title="往右拖一点可以拖入空目录"><QuestionCircleOutlined /></Tooltip>
           </Space>
           <Space size={4}>
-            <Button
-              size="small" type="primary" icon={<FolderAddOutlined />}
-              onClick={() => openFolderCreate()}
+            <Button size="small" icon={<MenuFoldOutlined />}
+              onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
             >
-              目录
+              
             </Button>
             <Button
+              size="small" icon={<FolderAddOutlined />}
+              onClick={() => openFolderCreate()}
+            >
+            </Button>
+            <Button
+              type="primary" 
               size="small" icon={<PlusOutlined />}
               onClick={openNewApiAtRoot /* 顶部新建 = 挂根 */}
             >
-              接口
+              新建
             </Button>
           </Space>
         </div>
