@@ -47,6 +47,8 @@ def test_defaults_equal_settings_dataclass():
     assert s.http_timeout == 15.0
     assert isinstance(s.http_timeout, float)
     assert s.api_key == ""  # 默认无 key
+    assert s.system_prompt_file == ""  # 空 = 包内置 prompt 模板
+    assert s.summarizer_prompt_file == ""
 
 
 def test_yaml_applies(tmp_path):
@@ -79,6 +81,19 @@ def test_cli_overrides_env():
                       "TP_COPILOT_CONTEXT_WINDOW": "8192"})
     assert s.model == "cli-model"
     assert s.context_window == 1024
+
+
+def test_prompt_file_yaml_env_and_cli(tmp_path):
+    cfg = _write_yaml(tmp_path,
+                      "system_prompt_file: yaml-system.md\nsummarizer_prompt_file: yaml-summarizer.md\n")
+    assert _resolve(["--config", cfg]).system_prompt_file == "yaml-system.md"
+    assert _resolve(["--config", cfg]).summarizer_prompt_file == "yaml-summarizer.md"
+    s = _resolve(["--config", cfg], env={"TP_COPILOT_SYSTEM_PROMPT_FILE": "env-system.md"})
+    assert s.system_prompt_file == "env-system.md"
+    assert s.summarizer_prompt_file == "yaml-summarizer.md"
+    s = _resolve(["--system-prompt-file", "cli-system.md"],
+                 env={"TP_COPILOT_SYSTEM_PROMPT_FILE": "env-system.md"})
+    assert s.system_prompt_file == "cli-system.md"
 
 
 def test_empty_env_value_does_not_override(tmp_path):

@@ -276,6 +276,8 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 | `TP_COPILOT_BASE_URL` | 空 | 空 = Provider 默认端点（deepseek → api.deepseek.com） |
 | `TP_COPILOT_MODEL` | `deepseek-v4-flash` | 主模型 |
 | `TP_COPILOT_SUMMARIZER_MODEL` | 同主模型 | 上下文压缩摘要器 |
+| `TP_COPILOT_SYSTEM_PROMPT_FILE` | 空 | 主 Agent 提示词模板路径；空=包内置 `prompts/system.md`，支持 `{{schema}}` / `{{sdk_doc}}` 占位符 |
+| `TP_COPILOT_SUMMARIZER_PROMPT_FILE` | 空 | 摘要器提示词路径；空=包内置 `prompts/summarizer.md` |
 | `TP_COPILOT_CONTEXT_WINDOW` | `64000` | 压缩阈值基准（fraction 0.7 触发） |
 | `TP_SCHEDULER_GRPC` | `127.0.0.1:9090` | CopilotToolService |
 | `TP_SCHEDULER_REST` | `http://127.0.0.1:8080` | 会话持久化 / /me 解析 |

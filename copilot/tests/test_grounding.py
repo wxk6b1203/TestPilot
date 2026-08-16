@@ -1,8 +1,10 @@
-"""grounding 相关单测。
+"""grounding 与 prompt 模板相关单测。
 
-src/testpilot_copilot/grounding/ 只有数据文件（domain-schema.json / sdk-api.md），
-无 Python 逻辑；唯一消费它们的纯函数是 agent.py 的 _build_instructions()
-（prompt 组装，仅读包内文件，不触网）。这里测组装结果与数据文件 sanity。
+- src/testpilot_copilot/grounding/ 只有数据文件（domain-schema.json / sdk-api.md）
+- src/testpilot_copilot/prompts/ 是 prompt 模板（system.md / summarizer.md）
+- agent.py 的 build_instructions() 读模板并注入 schema/sdk 文档（不触网）
+
+这里覆盖默认组装、数据文件 sanity、自定义模板与缺失路径报错。
 """
 
 from __future__ import annotations
@@ -10,12 +12,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from testpilot_copilot.agent import _GROUNDING, _build_instructions
+import pytest
+
+from testpilot_copilot.agent import _PROMPTS, _build_instructions, build_instructions
 
 
 def test_instructions_embed_schema_and_sdk_verbatim():
-    schema = (_GROUNDING / "domain-schema.json").read_text(encoding="utf-8")
-    sdk_doc = (_GROUNDING / "sdk-api.md").read_text(encoding="utf-8")
+    schema = (_PROMPTS.parent / "grounding" / "domain-schema.json").read_text(encoding="utf-8")
+    sdk_doc = (_PROMPTS.parent / "grounding" / "sdk-api.md").read_text(encoding="utf-8")
     text = _build_instructions()
     assert schema in text
     assert sdk_doc in text
@@ -31,16 +35,45 @@ def test_instructions_structure():
 
 
 def test_grounding_files_exist_and_nonempty():
-    schema_path = _GROUNDING / "domain-schema.json"
-    sdk_path = _GROUNDING / "sdk-api.md"
+    grounding = _PROMPTS.parent / "grounding"
+    schema_path = grounding / "domain-schema.json"
+    sdk_path = grounding / "sdk-api.md"
     assert schema_path.is_file() and schema_path.stat().st_size > 0
     assert sdk_path.is_file() and sdk_path.stat().st_size > 0
 
 
 def test_domain_schema_is_valid_json_with_expected_shape():
-    schema = json.loads((_GROUNDING / "domain-schema.json").read_text(encoding="utf-8"))
+    grounding = _PROMPTS.parent / "grounding"
+    schema = json.loads((grounding / "domain-schema.json").read_text(encoding="utf-8"))
     assert isinstance(schema, dict)
     assert schema["messages"]  # proto 消息字典非空
     assert schema["enums"]     # 枚举字典非空
     # prompt 组装依赖该路径指向包内 grounding 目录
-    assert Path(_GROUNDING).name == "grounding"
+    assert Path(grounding).name == "grounding"
+
+
+# ---------------------------------------------------------------------------
+# Prompt 模板可配置
+# ---------------------------------------------------------------------------
+
+def test_default_prompt_templates_exist_and_have_placeholders():
+    system = (_PROMPTS / "system.md").read_text(encoding="utf-8")
+    summarizer = (_PROMPTS / "summarizer.md").read_text(encoding="utf-8")
+    assert "{{schema}}" in system
+    assert "{{sdk_doc}}" in system
+    assert "上下文压缩器" in summarizer
+
+
+def test_custom_system_prompt_file_replaces_default(tmp_path):
+    custom = tmp_path / "custom-system.md"
+    custom.write_text("你是自定义测试助手。\n\n数据：\n{{schema}}\n", encoding="utf-8")
+    text = build_instructions(str(custom))
+    assert "你是自定义测试助手" in text
+    assert "## 工作准则" not in text
+    assert "数据字典" not in text
+    assert "domain-schema" not in text  # 确认注入的是 schema 内容而非默认模板
+
+
+def test_missing_system_prompt_file_raises():
+    with pytest.raises(RuntimeError, match="system prompt 文件不可读"):
+        build_instructions("/no/such/copilot-prompt.md")

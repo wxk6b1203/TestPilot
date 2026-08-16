@@ -8,6 +8,10 @@ api_key: ""                     # 建议用 TP_COPILOT_API_KEY 或 copilot/.env
 base_url: ""                    # 空 = provider 默认端点
 model: deepseek-v4-flash
 summarizer_model: ""            # 上下文压缩摘要器；空=同主模型
+# Prompt 模板：空 = 包内置 prompts/system.md 与 prompts/summarizer.md。
+# 自定义文件支持 {{schema}} / {{sdk_doc}} 占位符（相对路径按进程 CWD 解析）。
+system_prompt_file: ""
+summarizer_prompt_file: ""
 context_window: 64000           # 压缩阈值基准（fraction 0.7 触发）
 
 scheduler_grpc: 127.0.0.1:9090  # CopilotToolService

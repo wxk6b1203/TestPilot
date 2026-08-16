@@ -47,6 +47,9 @@ _FIELDS: dict[str, tuple[str, str, object, type, bool]] = {
     "model":            ("model", "TP_COPILOT_MODEL", "deepseek-v4-flash", str, True),
     # 摘要器（上下文压缩用）默认同主模型；可配更便宜的小模型
     "summarizer_model": ("summarizer_model", "TP_COPILOT_SUMMARIZER_MODEL", "", str, True),
+    # Prompt 模板路径：空 = 使用包内置 prompts/system.md / prompts/summarizer.md
+    "system_prompt_file":     ("system_prompt_file", "TP_COPILOT_SYSTEM_PROMPT_FILE", "", str, True),
+    "summarizer_prompt_file": ("summarizer_prompt_file", "TP_COPILOT_SUMMARIZER_PROMPT_FILE", "", str, True),
     "context_window":   ("context_window", "TP_COPILOT_CONTEXT_WINDOW", 64000, int, True),
     "scheduler_grpc":   ("scheduler_grpc", "TP_SCHEDULER_GRPC", "127.0.0.1:9090", str, True),
     "scheduler_rest":   ("scheduler_rest", "TP_SCHEDULER_REST", "http://127.0.0.1:8080", str, True),
@@ -64,6 +67,8 @@ class Settings:
     base_url: str = ""
     model: str = "deepseek-v4-flash"
     summarizer_model: str = ""
+    system_prompt_file: str = ""
+    summarizer_prompt_file: str = ""
     context_window: int = 64000
     scheduler_grpc: str = "127.0.0.1:9090"
     scheduler_rest: str = "http://127.0.0.1:8080"
