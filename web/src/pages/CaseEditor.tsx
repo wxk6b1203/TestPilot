@@ -985,7 +985,7 @@ function StepForm({
 // 用例编辑器页面
 // ---------------------------------------------------------------------------
 
-export default function CaseEditor({ onSaved }: { onSaved?: () => void }) {
+export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => void }) {
   const { id } = useParams()
   const isNew = !id
   const nav = useNavigate()
@@ -1101,7 +1101,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: () => void }) {
         : await put<TestCase>(`/api/v1/cases/${id}`, payload)
       message.success('已保存')
       setSavedSnap(snapshot())
-      onSaved?.()
+      onSaved?.(resp.id)
       allowOnce() // setSavedSnap 提交晚于同步 nav，显式放行一次
       nav(`/cases/${resp.id}/edit`)
     } catch (e: any) {

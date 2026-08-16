@@ -113,7 +113,11 @@ func (s *Server) deleteSuite(ctx fiber.Ctx) error {
 		if res.RowsAffected == 0 {
 			return gorm.ErrRecordNotFound
 		}
-		return tx.Where("suite_id = ?", id).Delete(&model.TestSuiteItem{}).Error
+		if err := tx.Where("suite_id = ?", id).Delete(&model.TestSuiteItem{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("tenant_id = ? AND node_type = ? AND ref_id = ?",
+			c.TenantID, model.NodeTypeSuite, id).Delete(&model.TreeNode{}).Error
 	})
 	if err == gorm.ErrRecordNotFound {
 		return writeErr(ctx, fiber.StatusNotFound, "not found")

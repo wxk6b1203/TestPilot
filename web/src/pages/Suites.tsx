@@ -5,10 +5,10 @@ import {
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { get, post, put, warnTruncated } from '../api'
+import { get, post, put } from '../api'
 import type { ListResp, Suite, TestCase } from '../api'
 import IdeLayout from '../components/IdeLayout'
-import PanelList from '../components/PanelList'
+import EntityTreePanel from '../components/EntityTreePanel'
 import { PALETTE } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
@@ -84,9 +84,7 @@ export default function Suites() {
   const nav = useNavigate()
   const { id } = useParams()
   const { projectId } = useLayout()
-  const [suites, setSuites] = useState<Suite[]>([])
   const [cases, setCases] = useState<TestCase[]>([])
-  const [search, setSearch] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
@@ -94,21 +92,16 @@ export default function Suites() {
   const [rightSel, setRightSel] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [createName, setCreateName] = useState('')
+  const [createParentId, setCreateParentId] = useState<string>()
+  const [refresh, setRefresh] = useState(0)
   const [saving, setSaving] = useState(false)
   // 已保存快照（dirty 判定 + 离开守卫）
   const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', ids: [] as string[] }))
   const editing = !!id
 
-  const loadSuites = () =>
-    projectId
-      ? get<ListResp<Suite>>(`/api/v1/suites?project_id=${projectId}&page_size=200`).then((r) => { setSuites(r.items); warnTruncated(r, '套件') })
-      : Promise.resolve()
-
   useEffect(() => {
-    setSuites([])
     setCases([])
     if (!projectId) return
-    loadSuites().catch((e) => message.error(e.message))
     get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`)
       .then((r) => setCases(r.items))
       .catch((e) => message.error(e.message))
@@ -123,7 +116,6 @@ export default function Suites() {
       setSavedSnap(JSON.stringify({ n: '', d: '', ids: [] as string[] })) // 离开守卫放行后复位
       return
     }
-    loadSuites().catch(() => {})
     get<Suite>(`/api/v1/suites/${id}`)
       .then((s) => {
         setName(s.name || '')
@@ -134,10 +126,6 @@ export default function Suites() {
       .catch((e) => message.error(e.message))
   }, [id])
 
-  const filtered = useMemo(
-    () => suites.filter((s) => (s.name || '').toLowerCase().includes(search.toLowerCase())),
-    [suites, search],
-  )
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const available = cases.filter((c) => !selectedSet.has(c.id))
 
@@ -179,7 +167,7 @@ export default function Suites() {
         await put(`/api/v1/suites/${id}`, payload)
         message.success('已保存')
         setSavedSnap(JSON.stringify({ n: name.trim(), d: description, ids: selectedIds }))
-        loadSuites()
+        setRefresh((x) => x + 1)
       } else {
         const r = await post<Suite>('/api/v1/suites', payload)
         message.success('已创建')
@@ -204,8 +192,15 @@ export default function Suites() {
       const r = await post<Suite>('/api/v1/suites', {
         project_id: projectId, name: createName.trim(), description: '', case_ids: [],
       })
+      if (createParentId) {
+        await post('/api/v1/tree/nodes', {
+          project_id: projectId, ref_type: 5, ref_id: r.id, parent_id: createParentId,
+        })
+      }
       setCreateOpen(false)
       setCreateName('')
+      setCreateParentId(undefined)
+      setRefresh((x) => x + 1)
       message.success('已创建')
       allowOnce()
       nav(`/suites/${r.id}/edit`)
@@ -214,27 +209,26 @@ export default function Suites() {
     }
   }
 
+  const openCreate = (parentId?: string) => {
+    setCreateName('')
+    setCreateParentId(parentId)
+    setCreateOpen(true)
+  }
+
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 
   const panel = (
-    <PanelList
+    <EntityTreePanel
       title="套件"
-      search={search}
-      onSearch={setSearch}
-      extra={(
-        <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-          新建
-        </Button>
-      )}
-      data={filtered}
+      kind="suite"
+      projectId={projectId}
       activeId={id}
-      onPick={(s) => nav(`/suites/${s.id}/edit`)}
-      renderItem={(s) => (
-        <div>
-          <div style={{ color: PALETTE.text, fontWeight: 500, fontSize: 13 }}>{s.name}</div>
-          {s.description && <div style={{ color: PALETTE.textTertiary, fontSize: 12 }}>{s.description}</div>}
-        </div>
-      )}
+      refresh={refresh}
+      onPick={(sid) => nav(`/suites/${sid}/edit`)}
+      onNewInFolder={openCreate}
+      onDeleted={(deletedId) => {
+        if (deletedId === id) nav('/suites', { replace: true })
+      }}
     />
   )
 
@@ -298,7 +292,7 @@ export default function Suites() {
   const placeholder = (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 }}>
       <Empty description="从左侧选择套件，或新建一个套件" />
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建套件</Button>
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新建套件</Button>
     </div>
   )
 
@@ -311,7 +305,7 @@ export default function Suites() {
         title="新建套件"
         open={createOpen}
         okText="创建"
-        onCancel={() => setCreateOpen(false)}
+        onCancel={() => { setCreateOpen(false); setCreateParentId(undefined) }}
         onOk={create}
         destroyOnHidden
       >

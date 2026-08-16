@@ -57,45 +57,97 @@ type treeNodeView struct {
 	Children []*treeNodeView `json:"children,omitempty"`
 }
 
-// getProjectTree 返回项目目录树（folder 嵌套；api 节点带 method/uri/name 摘要）。
+// getProjectTree 返回项目目录树。kind=api（默认）/ case / suite 时只返回对应叶子与有效目录分支。
 func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	pid := queryInt(ctx, "project_id")
 	if pid == 0 {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id required"))
 	}
+	kind := strings.ToLower(ctx.Query("kind", "api"))
+	var leafTypes []int16
+	switch kind {
+	case "case", "cases":
+		leafTypes = []int16{model.NodeTypeTestCase}
+	case "suite", "suites":
+		leafTypes = []int16{model.NodeTypeSuite}
+	default:
+		leafTypes = []int16{model.NodeTypeHTTPAPI}
+	}
+	leafSet := map[int16]bool{}
+	for _, t := range leafTypes {
+		leafSet[t] = true
+	}
+
 	var nodes []model.TreeNode
 	if err := s.db.Where("tenant_id = ? AND project_id = ?", c.TenantID, pid).
 		Order("\"order\" asc, id asc").Find(&nodes).Error; err != nil {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
-	// api 摘要批量加载
-	apiIDs := make([]int64, 0)
-	for _, n := range nodes {
-		if n.NodeType == model.NodeTypeHTTPAPI && n.RefID != 0 {
-			apiIDs = append(apiIDs, n.RefID)
-		}
-	}
+
+	// 按 kind 批量加载叶子摘要
+	caseByName := map[int64]model.TestCase{}
+	suiteByName := map[int64]model.TestSuite{}
 	apiByName := map[int64]model.HttpApi{}
-	if len(apiIDs) > 0 {
-		var apis []model.HttpApi
-		s.db.Where("tenant_id = ? AND id IN ?", c.TenantID, apiIDs).Find(&apis)
-		for _, a := range apis {
-			apiByName[a.ID] = a
+	for _, n := range nodes {
+		if n.RefID == 0 {
+			continue
+		}
+		switch n.NodeType {
+		case model.NodeTypeHTTPAPI:
+			apiIDs := []int64{n.RefID}
+			var apis []model.HttpApi
+			if err := s.db.Where("tenant_id = ? AND id IN ?", c.TenantID, apiIDs).Find(&apis).Error; err != nil {
+				return writeAppErr(ctx, apperr.Internal(err.Error()))
+			}
+			for _, a := range apis {
+				apiByName[a.ID] = a
+			}
+		case model.NodeTypeTestCase:
+			var cs []model.TestCase
+			if err := s.db.Where("tenant_id = ? AND id = ?", c.TenantID, n.RefID).Find(&cs).Error; err != nil {
+				return writeAppErr(ctx, apperr.Internal(err.Error()))
+			}
+			for _, x := range cs {
+				caseByName[x.ID] = x
+			}
+		case model.NodeTypeSuite:
+			var ss []model.TestSuite
+			if err := s.db.Where("tenant_id = ? AND id = ?", c.TenantID, n.RefID).Find(&ss).Error; err != nil {
+				return writeAppErr(ctx, apperr.Internal(err.Error()))
+			}
+			for _, x := range ss {
+				suiteByName[x.ID] = x
+			}
 		}
 	}
+
 	byParent := map[int64][]*treeNodeView{}
 	for _, n := range nodes {
+		if n.NodeType != model.NodeTypeFolder && !leafSet[n.NodeType] {
+			continue
+		}
 		v := &treeNodeView{ID: n.ID, NodeType: n.NodeType, Name: n.Name, RefID: n.RefID}
-		if a, ok := apiByName[n.RefID]; ok && n.NodeType == model.NodeTypeHTTPAPI {
-			name := a.Name
-			if name == "" {
-				name = strings.ToUpper(strings.TrimPrefix(
-					httpMethodName(a.Method), "HTTP_METHOD_"))
-				name = name + " " + a.URI
+		switch n.NodeType {
+		case model.NodeTypeHTTPAPI:
+			if a, ok := apiByName[n.RefID]; ok {
+				name := a.Name
+				if name == "" {
+					name = strings.ToUpper(strings.TrimPrefix(
+						httpMethodName(a.Method), "HTTP_METHOD_"))
+					name = name + " " + a.URI
+				}
+				v.Ref = map[string]any{
+					"id": a.ID, "method": a.Method, "uri": a.URI, "name": name,
+				}
 			}
-			v.Ref = map[string]any{
-				"id": a.ID, "method": a.Method, "uri": a.URI, "name": name,
+		case model.NodeTypeTestCase:
+			if c, ok := caseByName[n.RefID]; ok {
+				v.Ref = map[string]any{"id": c.ID, "type": c.Type, "name": c.Name, "description": c.Description}
+			}
+		case model.NodeTypeSuite:
+			if s, ok := suiteByName[n.RefID]; ok {
+				v.Ref = map[string]any{"id": s.ID, "name": s.Name, "description": s.Description}
 			}
 		}
 		byParent[n.ParentID] = append(byParent[n.ParentID], v)
@@ -104,11 +156,28 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	for _, v := range byParent[0] {
 		attachChildren(v, byParent, 0)
 	}
-	roots := byParent[0]
-	if roots == nil {
-		roots = []*treeNodeView{}
+	roots := make([]*treeNodeView, 0, len(byParent[0]))
+	for _, r := range byParent[0] {
+		if filterTreeNode(r, leafSet) {
+			roots = append(roots, r)
+		}
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"tree": roots})
+}
+
+// filterTreeNode 剪掉不包含当前 kind 叶子节点的空目录分支；返回该节点是否应保留。
+func filterTreeNode(n *treeNodeView, leafSet map[int16]bool) bool {
+	if n.NodeType != model.NodeTypeFolder {
+		return leafSet[n.NodeType]
+	}
+	kept := n.Children[:0]
+	for _, c := range n.Children {
+		if filterTreeNode(c, leafSet) {
+			kept = append(kept, c)
+		}
+	}
+	n.Children = kept
+	return len(kept) > 0
 }
 
 // attachChildren 递归组装子树；depth 上限防止历史坏数据（环）导致栈溢出。
@@ -236,39 +305,71 @@ func (s *Server) deleteFolder(ctx fiber.Ctx) error {
 
 type mountReq struct {
 	ProjectID int64 `json:"project_id"`
-	APIID     int64 `json:"api_id"`
-	ParentID  int64 `json:"parent_id"`
-	Index     *int  `json:"index"` // 可选：插入位置；缺省追加末尾
+	// 兼容旧接口：仅传 api_id 时按 HTTP 接口处理
+	APIID    int64 `json:"api_id"`
+	RefType  int16 `json:"ref_type"` // 4=test_case 5=test_suite；缺省 0 时按 api_id 推导
+	RefID    int64 `json:"ref_id"`
+	ParentID int64 `json:"parent_id"`
+	Index    *int  `json:"index"` // 可选：插入位置；缺省追加末尾
 }
 
-// mountAPI 把接口挂到目录（已有挂载 → 409；未挂载时自动建节点）。
+// mountNode 把接口/用例/套件挂到目录（已有挂载 → 409；未挂载时自动建节点）。
 func (s *Server) mountAPI(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	var in mountReq
 	if !decode(ctx, &in) {
 		return nil
 	}
-	if in.ProjectID == 0 || in.APIID == 0 {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 与 api_id 必填"))
+	if in.ProjectID == 0 {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 必填"))
 	}
-	var api model.HttpApi
-	if err := s.db.Where("id = ? AND tenant_id = ?", in.APIID, c.TenantID).First(&api).Error; err != nil {
-		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "api not found"))
+	refType := in.RefType
+	refID := in.RefID
+	if refID == 0 {
+		refID = in.APIID
 	}
+	if refType == 0 {
+		refType = model.NodeTypeHTTPAPI
+	}
+	if refID == 0 || (refType != model.NodeTypeHTTPAPI && refType != model.NodeTypeTestCase && refType != model.NodeTypeSuite) {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ref_type/ref_id 不合法"))
+	}
+
+	name := ""
+	switch refType {
+	case model.NodeTypeHTTPAPI:
+		var api model.HttpApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, c.TenantID).First(&api).Error; err != nil {
+			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "api not found"))
+		}
+		name = api.Name
+		if name == "" {
+			name = httpMethodName(api.Method) + " " + api.URI
+		}
+	case model.NodeTypeTestCase:
+		var tc model.TestCase
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, c.TenantID).First(&tc).Error; err != nil {
+			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "case not found"))
+		}
+		name = tc.Name
+	case model.NodeTypeSuite:
+		var su model.TestSuite
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, c.TenantID).First(&su).Error; err != nil {
+			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "suite not found"))
+		}
+		name = su.Name
+	}
+
 	path, err := s.nodePath(c.TenantID, in.ParentID)
 	if err != nil {
 		return writeAppErr(ctx, apperr.From(err))
 	}
 	var exist int64
 	s.db.Model(&model.TreeNode{}).
-		Where("tenant_id = ? AND node_type = ? AND ref_id = ?", c.TenantID, model.NodeTypeHTTPAPI, in.APIID).
+		Where("tenant_id = ? AND node_type = ? AND ref_id = ?", c.TenantID, refType, refID).
 		Count(&exist)
 	if exist > 0 {
-		return writeAppErr(ctx, apperr.Conflict(apperr.CodeConflict, "api already mounted"))
-	}
-	name := api.Name
-	if name == "" {
-		name = httpMethodName(api.Method) + " " + api.URI
+		return writeAppErr(ctx, apperr.Conflict(apperr.CodeConflict, "entity already mounted"))
 	}
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		cnt, err := childCount(tx, c.TenantID, in.ParentID)
@@ -283,7 +384,7 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 		}
 		n := &model.TreeNode{
 			ID: model.NextID(), TenantID: c.TenantID, ProjectID: in.ProjectID,
-			ParentID: in.ParentID, NodeType: model.NodeTypeHTTPAPI, RefID: api.ID,
+			ParentID: in.ParentID, NodeType: refType, RefID: refID,
 			Name: name, Order: order,
 		}
 		n.Path = path + fmt.Sprint(n.ID) + "/"
@@ -368,15 +469,15 @@ func (s *Server) moveNode(ctx fiber.Ctx) error {
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
-// unmountAPI 摘挂接口（只删树节点，不删接口）。
+// unmountAPI 摘挂接口/用例/套件（只删树节点，不删实体）。
 func (s *Server) unmountAPI(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	id, ok := pathID(ctx, "id")
 	if !ok {
 		return nil
 	}
-	res := s.db.Where("id = ? AND tenant_id = ? AND node_type = ?", id, c.TenantID,
-		model.NodeTypeHTTPAPI).Delete(&model.TreeNode{})
+	res := s.db.Where("id = ? AND tenant_id = ? AND node_type IN ?", id, c.TenantID,
+		[]int16{model.NodeTypeHTTPAPI, model.NodeTypeTestCase, model.NodeTypeSuite}).Delete(&model.TreeNode{})
 	if res.Error != nil {
 		return writeAppErr(ctx, apperr.Internal(res.Error.Error()))
 	}

@@ -365,7 +365,26 @@ func (s *Server) updateCase(ctx fiber.Ctx) error {
 	return updateOf[model.TestCase](s.db, ctx)
 }
 func (s *Server) deleteCase(ctx fiber.Ctx) error {
-	return deleteOf[model.TestCase](s.db, ctx)
+	c := claimsOf(ctx)
+	id, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND tenant_id = ?", id, c.TenantID).Delete(&model.TestCase{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return apperr.NotFound(apperr.CodeNotFound, "case not found")
+		}
+		return tx.Where("tenant_id = ? AND node_type = ? AND ref_id = ?",
+			c.TenantID, model.NodeTypeTestCase, id).Delete(&model.TreeNode{}).Error
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.From(err))
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- 测试计划（含 items） ----

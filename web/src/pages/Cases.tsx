@@ -1,109 +1,72 @@
-import { useEffect, useState } from 'react'
-import { Button, Card, Popconfirm, Tag } from 'antd'
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
+import { useState } from 'react'
+import { Card } from 'antd'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { del, get, warnTruncated } from '../api'
-import type { ListResp, TestCase } from '../api'
+import { post } from '../api'
 import IdeLayout from '../components/IdeLayout'
-import PanelList from '../components/PanelList'
-import { PALETTE, SPACING } from '../theme'
+import EntityTreePanel from '../components/EntityTreePanel'
 import { useLayout } from '../hooks/useLayout'
 import CaseEditor from './CaseEditor'
-import { message } from '../messageBridge'
 
-// 用例列表：左侧 PanelList（搜索/新建/删除），右侧为编辑器（/cases/:id/edit 或 /cases/new）。
+// 用例列表：左侧目录树（EntityTreePanel），右侧为编辑器（/cases/:id/edit 或 /cases/new）。
 export default function Cases() {
   const { projectId } = useLayout()
   const { id } = useParams()
   const loc = useLocation()
   const nav = useNavigate()
-  const [rows, setRows] = useState<TestCase[]>([])
-  const [search, setSearch] = useState('')
-
-  const load = () =>
-    projectId
-      ? get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`)
-          .then((r) => { setRows(r.items); warnTruncated(r, '用例') })
-      : Promise.resolve()
-  useEffect(() => {
-    setRows([])
-    load().catch((e) => message.error(e.message))
-  }, [projectId])
+  const [refresh, setRefresh] = useState(0)
+  const locationState = loc.state as { parentId?: string } | null
+  const createParentId = locationState?.parentId
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 
-  const kw = search.trim().toLowerCase()
-  const data = kw
-    ? rows.filter((c) => c.name.toLowerCase().includes(kw) || c.description.toLowerCase().includes(kw))
-    : rows
+  const openNewCase = (parentId?: string) => {
+    nav('/cases/new', { state: parentId ? { parentId } : undefined })
+  }
+
+  const handleSaved = (newId?: string) => {
+    // 从目录右键「新建用例」创建成功后，把新用例挂到目标目录
+    if (newId && createParentId) {
+      post('/api/v1/tree/nodes', {
+        project_id: projectId,
+        ref_type: 4,
+        ref_id: newId,
+        parent_id: createParentId,
+      }).catch(() => {})
+    }
+    setRefresh((x) => x + 1)
+  }
 
   return (
     <IdeLayout
       panelWidth={360}
       panel={
-        <PanelList
+        <EntityTreePanel
           title="用例"
-          search={search}
-          onSearch={setSearch}
-          data={data}
+          kind="case"
+          projectId={projectId}
           activeId={id}
-          extra={
-            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => nav('/cases/new')}>
-              新建
-            </Button>
-          }
-          onPick={(c) => {
-            nav(`/cases/${c.id}/edit`)
+          refresh={refresh}
+          onPick={(cid) => nav(`/cases/${cid}/edit`)}
+          onNewInFolder={openNewCase}
+          onDeleted={(deletedId) => {
+            if (deletedId === id) nav('/cases', { replace: true, state: null })
           }}
-          renderItem={(c) => (
-            <div style={{ display: 'flex', alignItems: 'center', gap: SPACING[2] }}>
-              <span
-                style={{
-                  flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap', fontWeight: 500, fontSize: 13, color: PALETTE.text,
-                }}
-              >
-                {c.name}
-              </span>
-              <Tag style={{ margin: 0, flexShrink: 0 }} color={c.type === 1 ? 'purple' : 'geekblue'}>
-                {c.type === 1 ? '声明式' : '低代码'}
-              </Tag>
-              <Popconfirm
-                title="删除该用例？"
-                onConfirm={async () => {
-                  try {
-                    await del(`/api/v1/cases/${c.id}`)
-                    message.success('已删除')
-                    load()
-                  } catch (e: any) {
-                    message.error(e.message)
-                  }
-                }}
-              >
-                <Button
-                  type="text" size="small" danger icon={<DeleteOutlined />}
-                  style={{ flexShrink: 0 }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              </Popconfirm>
-            </div>
-          )}
         />
       }
     >
       {id || loc.pathname === '/cases/new' ? (
-        <CaseEditor key={id ?? 'new'} onSaved={load} />
+        <CaseEditor key={id ?? 'new'} onSaved={handleSaved} />
       ) : (
         <div
           style={{
             height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-            flexDirection: 'column', gap: SPACING[2],
+            flexDirection: 'column', gap: 12,
           }}
         >
-          <span style={{ fontSize: 14, color: PALETTE.textSecondary }}>
+          <span style={{ fontSize: 14, color: '#646A73' }}>
             从左侧选择用例，或点击「+ 新建」创建
           </span>
-          <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>
+          <span style={{ fontSize: 12, color: '#BBBFC4' }}>
             声明式用例使用步骤树编辑器；低代码用例直接编写 Python
           </span>
         </div>
