@@ -49,7 +49,7 @@ export default function Cases() {
           activeId={id}
           extra={
             <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => nav('/cases/new')}>
-              + 新建
+              新建
             </Button>
           }
           onPick={(c) => {

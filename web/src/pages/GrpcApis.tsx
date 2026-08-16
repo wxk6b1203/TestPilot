@@ -429,6 +429,7 @@ export default function GrpcApis() {
   return (
     <IdeLayout panel={panel}>
       <Tabs
+        tabBarStyle={{ padding: '0 8px' }}
         activeKey={activeTab}
         onChange={(k) => setActiveTab(k as TabKey)}
         items={[
