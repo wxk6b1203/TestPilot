@@ -124,6 +124,7 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 
 	byParent := map[int64][]*treeNodeView{}
 	for _, n := range nodes {
+		// 只保留当前 kind 的叶子；目录节点全部保留，形成完整的项目目录结构。
 		if n.NodeType != model.NodeTypeFolder && !leafSet[n.NodeType] {
 			continue
 		}
@@ -165,7 +166,7 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"tree": roots})
 }
 
-// filterTreeNode 剪掉不包含当前 kind 叶子节点的空目录分支；返回该节点是否应保留。
+// filterTreeNode 过滤叶子；目录始终保留，形成完整的项目目录结构。
 func filterTreeNode(n *treeNodeView, leafSet map[int16]bool) bool {
 	if n.NodeType != model.NodeTypeFolder {
 		return leafSet[n.NodeType]
@@ -177,7 +178,7 @@ func filterTreeNode(n *treeNodeView, leafSet map[int16]bool) bool {
 		}
 	}
 	n.Children = kept
-	return len(kept) > 0
+	return true
 }
 
 // attachChildren 递归组装子树；depth 上限防止历史坏数据（环）导致栈溢出。

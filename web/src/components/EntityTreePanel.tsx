@@ -12,7 +12,7 @@ import {
 import type { MenuProps, TreeProps } from 'antd'
 import {
   ClusterOutlined, DeleteOutlined, EditOutlined, FileTextOutlined, FolderAddOutlined,
-  FolderOpenOutlined, FolderOutlined, MoreOutlined, PlusOutlined,
+  FolderOpenOutlined, FolderOutlined, MenuFoldOutlined, MoreOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { del, get, post, put } from '../api'
@@ -348,6 +348,71 @@ export default function EntityTreePanel({
     setExpandedKeys((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
   }
 
+  // ---- 拖拽：与接口树一致，支持目录/实体同父排序、跨目录移动、未挂载挂载 ----
+  const parseKey = (k: string) =>
+    k.startsWith('folder-') ? { kind: 'folder' as const, id: k.slice(7) }
+    : k.startsWith('entity-') ? { kind: 'entity' as const, id: k.slice(7) }
+    : { kind: 'root' as const, id: '' }
+
+  const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
+    const d = parseKey(dragKey)
+    const t = parseKey(dropKey)
+    let parentId = ''
+    let index: number | null = null
+    if (t.kind === 'root') {
+      parentId = ''
+    } else if (t.kind === 'folder') {
+      if (dropPos === 0) {
+        parentId = t.id
+      } else {
+        parentId = nodeMeta.parent[t.id] ?? ''
+        const siblings = nodeMeta.children[parentId] ?? []
+        index = siblings.findIndex((c) => c.id === t.id) + (dropPos > 0 ? 1 : 0)
+      }
+    } else {
+      const nodeId = nodeMeta.byRef[t.id]
+      if (nodeId) {
+        parentId = nodeMeta.parent[nodeId] ?? ''
+        const siblings = nodeMeta.children[parentId] ?? []
+        index = siblings.findIndex((c) => c.id === nodeId) + (dropPos >= 0 ? 1 : 0)
+      }
+    }
+    const draggedNodeId = d.kind === 'folder' ? d.id : nodeMeta.byRef[d.id] ?? ''
+    try {
+      if (!draggedNodeId) {
+        await post('/api/v1/tree/nodes', {
+          project_id: projectId,
+          ref_type: kind === 'case' ? 4 : 5,
+          ref_id: d.id,
+          parent_id: parentId || 0,
+          index: index ?? undefined,
+        })
+      } else if ((nodeMeta.parent[draggedNodeId] ?? '') === parentId) {
+        const siblings = nodeMeta.children[parentId] ?? []
+        const ids = siblings.map((s) => s.id).filter((id) => id !== draggedNodeId)
+        const at = index ?? ids.length
+        ids.splice(at, 0, draggedNodeId)
+        await put('/api/v1/tree/reorder', { parent_id: parentId || 0, ids })
+      } else {
+        await put(`/api/v1/tree/nodes/${draggedNodeId}/move`, {
+          parent_id: parentId || 0, index: index ?? undefined,
+        })
+      }
+      void reload()
+    } catch (e: any) {
+      message.error(e.message)
+    }
+  }
+
+  const onTreeDrop: TreeProps['onDrop'] = (info) => {
+    const dragKey = String(info.dragNode.key)
+    const dropKey = String(info.node.key)
+    const posArr = String(info.node.pos).split('-')
+    const dropPos = info.dropPosition - Number(posArr[posArr.length - 1])
+    void handleDrop(dragKey, dropKey, dropPos)
+  }
+
+
   const leafTitle = (item: EntityRow, node?: TreeNode) => {
     const Icon = kind === 'case' ? FileTextOutlined : ClusterOutlined
     return (
@@ -478,6 +543,9 @@ export default function EntityTreePanel({
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <span style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{title}</span>
           <Space size={4}>
+            <Button size="small" icon={<MenuFoldOutlined />}
+              onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
+            />
             <Tooltip title="新建目录">
               <Button size="small" icon={<FolderAddOutlined />} onClick={() => openFolderCreate()} />
             </Tooltip>
@@ -497,10 +565,12 @@ export default function EntityTreePanel({
         <Tree
           showLine={{ showLeafIcon: false }}
           blockNode
+          draggable={{ icon: false, nodeDraggable: (node) => String(node.key) !== '__root__' }}
           selectedKeys={activeId ? [`entity-${activeId}`] : []}
           expandedKeys={expandedKeys}
           onExpand={(keys) => setExpandedKeys(keys)}
           treeData={treeData}
+          onDrop={onTreeDrop}
           onSelect={onSelect}
         />
       </div>

@@ -80,17 +80,20 @@ func TestCaseSuiteTreeMountAndFilter(t *testing.T) {
 		t.Fatalf("suite tree children = %d, want 1", len(children))
 	}
 
-	// 默认 api 树应裁剪掉没有接口的空目录
+	// 默认 api 树应保留空目录（该目录只有用例/套件，但本身仍可新建接口）
 	code, out = getJSON(t, app, "/api/v1/tree?project_id="+fmt.Sprint(pid), tok)
 	if code != 200 {
 		t.Fatalf("api tree: %d %v", code, out)
 	}
 	tree = out["tree"].([]any)
-	if len(tree) != 0 {
-		t.Fatalf("api tree should be empty when folder has no api, got %v", tree)
+	if len(tree) != 1 {
+		t.Fatalf("api tree should keep the empty folder, got %v", tree)
+	}
+	if tree[0].(map[string]any)["name"] != "folder" {
+		t.Fatalf("api tree root should be folder, got %v", tree[0])
 	}
 
-	// 删除用例会级联摘除树节点，case 树恢复为空
+	// 删除用例会级联摘除树节点，目录结构仍保留（case 树中该目录为空）
 	code, _ = sendJSON(t, app, "DELETE", "/api/v1/cases/"+fmt.Sprint(caseID), tok, "")
 	if code != 200 {
 		t.Fatalf("delete case: %d", code)
@@ -99,8 +102,8 @@ func TestCaseSuiteTreeMountAndFilter(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("case tree after delete: %d %v", code, out)
 	}
-	if len(out["tree"].([]any)) != 0 {
-		t.Fatalf("case tree should be empty after delete, got %v", out["tree"])
+	if len(out["tree"].([]any)) != 1 {
+		t.Fatalf("case tree should keep the folder after delete, got %v", out["tree"])
 	}
 	// 套件树不受影响
 	code, out = getJSON(t, app, "/api/v1/tree?project_id="+fmt.Sprint(pid)+"&kind=suite", tok)
