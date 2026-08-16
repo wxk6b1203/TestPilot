@@ -15,6 +15,7 @@ import (
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
 	"github.com/testpilot/testpilot/internal/artifactstore"
 	"github.com/testpilot/testpilot/internal/config"
+	"github.com/testpilot/testpilot/internal/copilottrash"
 	"github.com/testpilot/testpilot/internal/cronsched"
 	"github.com/testpilot/testpilot/internal/db"
 	"github.com/testpilot/testpilot/internal/dispatch"
@@ -76,6 +77,7 @@ func main() {
 	}
 	disp.SetArtifactIngest(artifacts, cfg.ArtifactDir)
 	retention.Start(gormDB, artifacts, cfg.RetentionDays, cfg.RetentionIntervalMin)
+	copilottrash.Start(gormDB, cfg.CopilotTrashDays)
 
 	// gRPC（Worker 双向流 + Copilot 工具面同端口）
 	// A3：keepalive 让网络分区/静默断连的流在 ~40s 内被服务端发现（Recv 报错 → 连接清理）

@@ -20,7 +20,8 @@ func TestResolveDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if c.HTTPAddr != ":8080" || c.GRPCAddr != ":9090" || c.JWTExpireHours != 24 ||
-		c.BodyLimitMB != 64 || c.RetentionIntervalMin != 60 || c.LogFormat != "text" {
+		c.BodyLimitMB != 64 || c.RetentionIntervalMin != 60 || c.CopilotTrashDays != 30 ||
+		c.LogFormat != "text" {
 		t.Fatalf("defaults wrong: %+v", c)
 	}
 }
@@ -69,7 +70,11 @@ func TestResolveEnvKeyDerivation(t *testing.T) {
 	// yaml 键 snake_case → TP_ + 大写；flag kebab-case。
 	c, err := Resolve(
 		[]string{"--retention-run-days", "30"},
-		envOf(map[string]string{"TP_RETENTION_RUN_DAYS": "15", "TP_OTEL_EXPORTER": "stdout"}),
+		envOf(map[string]string{
+			"TP_RETENTION_RUN_DAYS":           "15",
+			"TP_OTEL_EXPORTER":                "stdout",
+			"TP_COPILOT_TRASH_RETENTION_DAYS": "15",
+		}),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -79,6 +84,9 @@ func TestResolveEnvKeyDerivation(t *testing.T) {
 	}
 	if c.OTelExporter != "stdout" {
 		t.Fatalf("otel env not applied: %q", c.OTelExporter)
+	}
+	if c.CopilotTrashDays != 15 {
+		t.Fatalf("copilot trash env not applied: %d", c.CopilotTrashDays)
 	}
 }
 

@@ -39,18 +39,19 @@ type Config struct {
 	LogLevel  string `yaml:"log_level"`  // debug/info/warn/error
 	LogFormat string `yaml:"log_format"` // text（默认彩色行）| json
 
-	ArtifactDir          string `yaml:"artifact_dir"`           // 产物根目录（与 Worker 一致；s3 后端下为暂存目录）
-	ArtifactBackend      string `yaml:"artifact_backend"`       // local（默认）| s3
-	S3Endpoint           string `yaml:"s3_endpoint"`            // S3 兼容端点（含 scheme，如 https://s3.cn-shanghai.aliyuncs.com）
+	ArtifactDir          string `yaml:"artifact_dir"`             // 产物根目录（与 Worker 一致；s3 后端下为暂存目录）
+	ArtifactBackend      string `yaml:"artifact_backend"`         // local（默认）| s3
+	S3Endpoint           string `yaml:"s3_endpoint"`              // S3 兼容端点（含 scheme，如 https://s3.cn-shanghai.aliyuncs.com）
 	S3AccessKey          string `yaml:"s3_access_key" tpflag:"-"` // 敏感：不暴露 CLI flag（进程列表可见）
 	S3SecretKey          string `yaml:"s3_secret_key" tpflag:"-"` // 敏感：同上
 	S3Bucket             string `yaml:"s3_bucket"`
 	S3Region             string `yaml:"s3_region"`
 	S3Prefix             string `yaml:"s3_prefix"` // 对象键前缀（多实例共享 bucket 时区分）
 	S3UseSSL             bool   `yaml:"s3_use_ssl"`
-	S3PathStyle          bool   `yaml:"s3_path_style"` // true=path-style（MinIO）；false=virtual-hosted（AWS/OSS）
-	RetentionDays        int    `yaml:"retention_run_days"`     // 运行数据保留天数（0=永久）
-	RetentionIntervalMin int    `yaml:"retention_interval_min"` // 保留清理周期分钟
+	S3PathStyle          bool   `yaml:"s3_path_style"`                // true=path-style（MinIO）；false=virtual-hosted（AWS/OSS）
+	RetentionDays        int    `yaml:"retention_run_days"`           // 运行数据保留天数（0=永久）
+	RetentionIntervalMin int    `yaml:"retention_interval_min"`       // 保留清理周期分钟
+	CopilotTrashDays     int    `yaml:"copilot_trash_retention_days"` // Copilot 回收站保留天数（0=不自动清理）
 
 	BodyLimitMB     int `yaml:"body_limit_mb"`    // 请求体上限（OpenAPI 导入可超 4MB）
 	ReadTimeoutSec  int `yaml:"read_timeout_sec"` // 0=不限
@@ -70,7 +71,6 @@ type Config struct {
 	// 多实例部署必须关闭（第二实例会误杀第一实例在跑的 run），默认开启。
 	RecoverInterrupted bool `yaml:"recover_interrupted"`
 
-
 	DefaultTenantID int64 `yaml:"-"` // 存根租户（不开放配置）
 }
 
@@ -88,6 +88,7 @@ func Defaults() Config {
 		ArtifactBackend:      "local",
 		S3UseSSL:             true,
 		RetentionIntervalMin: 60,
+		CopilotTrashDays:     30,
 		BodyLimitMB:          64,
 		OTelEndpoint:         "127.0.0.1:4317",
 		CopilotURL:           "http://127.0.0.1:8100",

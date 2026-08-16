@@ -29,6 +29,7 @@ otel_endpoint: 127.0.0.1:4317
 artifact_dir: .data/artifacts   # 与 Worker artifact_dir 一致
 retention_run_days: 0           # 0=永久
 retention_interval_min: 60
+copilot_trash_retention_days: 30  # Copilot 回收站保留天数（0=不自动清理；默认 30）
 
 # —— HTTP 调优 ——
 body_limit_mb: 64               # OpenAPI 导入需要较大上限

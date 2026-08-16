@@ -208,6 +208,7 @@ testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key
 | `TP_S3_REGION` / `TP_S3_PREFIX` / `TP_S3_USE_SSL` / `TP_S3_PATH_STYLE` | 空/空/`true`/`false` | 地域、对象键前缀、TLS、path-style 寻址（私有 MinIO 用） |
 | `TP_RETENTION_RUN_DAYS` | `0` | 运行数据保留天数（0=永久；>0 时级联清理） |
 | `TP_RETENTION_INTERVAL_MIN` | `60` | 保留清理轮询间隔 |
+| `TP_COPILOT_TRASH_RETENTION_DAYS` | `30` | Copilot 回收站保留天数（0=不自动清理；每天清理一次） |
 | `TP_BODY_LIMIT_MB` | `64` | 请求体上限（OpenAPI 导入需要较大值） |
 | `TP_READ_TIMEOUT_SEC` / `TP_WRITE_TIMEOUT_SEC` / `TP_IDLE_TIMEOUT_SEC` | `0` | HTTP 超时（0=不限） |
 | `TP_OTEL_EXPORTER` | 空 | 空=关 / `stdout` 调试 / `otlp`（配 `TP_OTEL_ENDPOINT`，默认 127.0.0.1:4317） |
@@ -251,8 +252,10 @@ GET  /export/postman?project_id=
 GET  /workers               GET  /artifacts/{id}/content
 GET|POST /stress-plans      GET|PUT|DELETE /stress-plans/{id}
 POST /stress-plans/{id}/run GET  /stress-runs  GET /stress-runs/{id}
-GET  /copilot/sessions      POST /copilot/sessions
-GET|POST /copilot/sessions/{id}/messages      GET /audit-logs
+GET  /copilot/sessions      POST /copilot/sessions   DELETE /copilot/sessions/{id}
+GET|POST /copilot/sessions/{id}/messages
+GET  /copilot/trash         DELETE /copilot/trash/{id}  # 回收站列表 / 彻底删除
+GET /audit-logs
 # 租户治理（admin+）
 GET|POST /tenant/members    PUT|DELETE /tenant/members/{userID}
 GET  /tenant/quotas         PUT  /tenant/quotas/{metric}

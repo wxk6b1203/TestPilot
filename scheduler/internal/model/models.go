@@ -437,12 +437,13 @@ type StressMetricPoint struct {
 // ---- Copilot / 审计 ----
 
 type CopilotSession struct {
-	ID        int64     `json:"id" gorm:"primaryKey"`
-	TenantID  int64     `json:"tenant_id" gorm:"index"`
-	UserID    int64     `json:"user_id" gorm:"index"`
-	Title     string    `json:"title"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID        int64      `json:"id" gorm:"primaryKey"`
+	TenantID  int64      `json:"tenant_id" gorm:"index"`
+	UserID    int64      `json:"user_id" gorm:"index"`
+	Title     string     `json:"title"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt time.Time  `json:"updated_at"`
+	DeletedAt *time.Time `json:"-" gorm:"index"` // 非空=已进回收站（软删除）
 }
 
 // CopilotMessage 会话消息（role: 1=user 2=assistant 3=tool）。

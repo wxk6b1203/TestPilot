@@ -1,6 +1,8 @@
 package httpserver
 
 import (
+	"time"
+
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/testpilot/testpilot/internal/apperr"
@@ -18,7 +20,7 @@ type sessionReq struct {
 func (s *Server) listCopilotSessions(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	return listOf[model.CopilotSession](s.db, ctx, func(q *gorm.DB) *gorm.DB {
-		return q.Where("tenant_id = ? AND user_id = ?", c.TenantID, c.UserID).Order("id desc")
+		return q.Where("tenant_id = ? AND user_id = ? AND deleted_at IS NULL", c.TenantID, c.UserID).Order("id desc")
 	})
 }
 
@@ -53,7 +55,8 @@ func (s *Server) listCopilotMessages(ctx fiber.Ctx) error {
 		return nil
 	}
 	var sess model.CopilotSession
-	if err := s.db.Where("id = ? AND tenant_id = ? AND user_id = ?", sid, c.TenantID, c.UserID).First(&sess).Error; err != nil {
+	if err := s.db.Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",
+		sid, c.TenantID, c.UserID).First(&sess).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "session not found"))
 	}
 	rows := make([]model.CopilotMessage, 0)
@@ -68,7 +71,8 @@ func (s *Server) appendCopilotMessage(ctx fiber.Ctx) error {
 		return nil
 	}
 	var sess model.CopilotSession
-	if err := s.db.Where("id = ? AND tenant_id = ? AND user_id = ?", sid, c.TenantID, c.UserID).First(&sess).Error; err != nil {
+	if err := s.db.Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",
+		sid, c.TenantID, c.UserID).First(&sess).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "session not found"))
 	}
 	var in messageReq
@@ -97,6 +101,114 @@ func (s *Server) appendCopilotMessage(ctx fiber.Ctx) error {
 		s.db.Model(&sess).Update("title", string(title))
 	}
 	return writeJSON(ctx, fiber.StatusOK, row)
+}
+
+// ---- 回收站：软删除 / 回收站列表 / 彻底删除 ----
+
+// deleteCopilotSession 软删除会话：deleted_at 非空即进入回收站。
+func (s *Server) deleteCopilotSession(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	sid, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	now := time.Now()
+	res := s.db.Model(&model.CopilotSession{}).
+		Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",
+			sid, c.TenantID, c.UserID).
+		Update("deleted_at", now)
+	if res.Error != nil {
+		return writeAppErr(ctx, apperr.Internal(res.Error.Error()))
+	}
+	if res.RowsAffected == 0 {
+		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "session not found"))
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"id": sid, "deleted_at": now})
+}
+
+type trashSession struct {
+	ID           int64     `json:"id"`
+	Title        string    `json:"title"`
+	CreatedAt    time.Time `json:"created_at"`
+	DeletedAt    time.Time `json:"deleted_at"`
+	MessageCount int64     `json:"message_count"`
+}
+
+// listCopilotTrash 当前用户的回收站列表（按删除时间倒序）。
+func (s *Server) listCopilotTrash(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	var total int64
+	base := s.db.Model(&model.CopilotSession{}).
+		Where("tenant_id = ? AND user_id = ? AND deleted_at IS NOT NULL", c.TenantID, c.UserID)
+	if err := base.Count(&total).Error; err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	rows := make([]model.CopilotSession, 0)
+	offset, limit := pageParams(ctx)
+	if err := base.Order("deleted_at desc").Offset(offset).Limit(limit).Find(&rows).Error; err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	counts := map[int64]int64{}
+	if len(ids) > 0 {
+		type msgCount struct {
+			SessionID int64
+			N         int64
+		}
+		var cc []msgCount
+		if err := s.db.Model(&model.CopilotMessage{}).
+			Select("session_id, COUNT(*) AS n").
+			Where("session_id IN ?", ids).
+			Group("session_id").
+			Scan(&cc).Error; err != nil {
+			return writeInternalErr(ctx, err)
+		}
+		for _, x := range cc {
+			counts[x.SessionID] = x.N
+		}
+	}
+	items := make([]trashSession, 0, len(rows))
+	for _, r := range rows {
+		if r.DeletedAt == nil {
+			continue
+		}
+		items = append(items, trashSession{
+			ID:           r.ID,
+			Title:        r.Title,
+			CreatedAt:    r.CreatedAt,
+			DeletedAt:    *r.DeletedAt,
+			MessageCount: counts[r.ID],
+		})
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"items": items, "total": total})
+}
+
+// purgeCopilotTrash 手动彻底删除回收站中的一条会话（连同其消息）。
+func (s *Server) purgeCopilotTrash(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	sid, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var sess model.CopilotSession
+	if err := s.db.Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NOT NULL",
+		sid, c.TenantID, c.UserID).First(&sess).Error; err != nil {
+		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "trash session not found"))
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("session_id = ? AND tenant_id = ?", sid, c.TenantID).
+			Delete(&model.CopilotMessage{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("id = ?", sid).Delete(&model.CopilotSession{}).Error
+	})
+	if err != nil {
+		return writeAppErr(ctx, apperr.Internal(err.Error()))
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"deleted": true})
 }
 
 func (s *Server) listAuditLogs(ctx fiber.Ctx) error {
