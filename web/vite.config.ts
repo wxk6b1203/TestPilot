@@ -16,5 +16,16 @@ export default defineConfig({
   },
   build: {
     chunkSizeWarningLimit: 1500,
+    rolldownOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (id.indexOf('node_modules') === -1) return undefined
+          if (id.indexOf('/antd/') !== -1 || id.indexOf('@ant-design') !== -1) return 'antd'
+          if (id.indexOf('/ai/') !== -1 || id.indexOf('@ai-sdk') !== -1) return 'ai'
+          if (id.indexOf('/react') !== -1 || id.indexOf('react-router') !== -1) return 'react'
+          return 'vendor'
+        },
+      },
+    },
   },
 })

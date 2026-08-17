@@ -9,6 +9,7 @@ import GrpcApis from './pages/GrpcApis'
 import Cases from './pages/Cases'
 import Suites from './pages/Suites'
 import Scripts from './pages/Scripts'
+import Certificates from './pages/Certificates'
 import Plans from './pages/Plans'
 import Runs from './pages/Runs'
 import Stress from './pages/Stress'
@@ -55,6 +56,7 @@ const router = createHashRouter([
       { path: 'suites/:id/edit', element: <Suites /> },
       { path: 'scripts', element: <Scripts /> },
       { path: 'scripts/:id/edit', element: <Scripts /> },
+      { path: 'certs', element: <Certificates /> },
       { path: 'plans', element: <Plans /> },
       { path: 'plans/:id/edit', element: <Plans /> },
       { path: 'runs', element: <Runs /> },

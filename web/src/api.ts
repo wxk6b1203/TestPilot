@@ -98,6 +98,16 @@ export interface Environment {
   base_url: string
   icon: string
 }
+export interface Certificate {
+  id: string
+  project_id: string
+  name: string
+  description: string
+  type: string // pem | p12 | ...
+  cert_ref: string
+  key_ref: string
+  password_secret_ref?: string
+}
 export interface Variable {
   id: string
   project_id: string

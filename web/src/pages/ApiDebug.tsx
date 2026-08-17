@@ -143,8 +143,8 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     params: clean(params),
     headers: clean(headers),
     body,
-    pre_scripts: preScript.trim() ? [{ lang: 'python', source: preScript }] : undefined,
-    post_scripts: postScript.trim() ? [{ lang: 'python', source: postScript }] : undefined,
+    pre_scripts: preScript.trim() ? [{ lang: 'python', source: preScript, enabled: true }] : undefined,
+    post_scripts: postScript.trim() ? [{ lang: 'python', source: postScript, enabled: true }] : undefined,
   })
 
   const save = () => {

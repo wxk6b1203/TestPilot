@@ -1,6 +1,6 @@
-import { Badge, Card, Collapse, Descriptions, Drawer, Space, Table, Tag, Typography } from 'antd'
+import { Badge, Button, Card, Collapse, Descriptions, Drawer, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
-import { get, getToken, STATUS, warnTruncated } from '../api'
+import { get, getToken, post, STATUS, warnTruncated } from '../api'
 import type { Artifact, ListResp, TestRun } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
@@ -118,9 +118,28 @@ export default function Runs() {
           { title: '结束时间', dataIndex: 'finished_at', width: 170, render: (v?: string) => v?.slice(0, 19).replace('T', ' ') || '-' },
           {
             title: '操作',
-            width: 90,
+            width: 150,
             render: (_, r) => (
-              <Typography.Link onClick={async () => setDetail(await get(`/api/v1/runs/${r.id}`))}>详情</Typography.Link>
+              <Space>
+                <Typography.Link onClick={async () => setDetail(await get(`/api/v1/runs/${r.id}`))}>详情</Typography.Link>
+                {(r.status === 0 || r.status === 1) && (
+                  <Popconfirm
+                    title="取消该运行？未完成用例将标记为跳过"
+                    onConfirm={async () => {
+                      try {
+                        await post(`/api/v1/runs/${r.id}/cancel`)
+                        message.success('已取消')
+                        void load()
+                        if (detail?.id === r.id) setDetail(await get(`/api/v1/runs/${r.id}`))
+                      } catch (e: any) {
+                        message.error(e.message)
+                      }
+                    }}
+                  >
+                    <Button size="small" danger type="link" style={{ padding: 0 }}>取消</Button>
+                  </Popconfirm>
+                )}
+              </Space>
             ),
           },
         ]}

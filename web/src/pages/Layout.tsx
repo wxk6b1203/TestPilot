@@ -3,6 +3,7 @@ import {
   ApiOutlined, ExperimentOutlined, ThunderboltOutlined, FileTextOutlined,
   ClusterOutlined, PlayCircleOutlined, EnvironmentOutlined, ProjectOutlined,
   SettingOutlined, DesktopOutlined, RobotOutlined, LogoutOutlined, DownOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
@@ -25,6 +26,7 @@ const NAV = [
   { path: '/stress', label: '压测', icon: <ThunderboltOutlined /> },
   { path: '/grpc', label: 'gRPC', icon: <ApiOutlined /> },
   { path: '/envs', label: '环境', icon: <EnvironmentOutlined /> },
+  { path: '/certs', label: '证书', icon: <SafetyCertificateOutlined /> },
   { path: '/projects', label: '项目', icon: <ProjectOutlined /> },
   { path: '/admin', label: '管理', icon: <SettingOutlined />, admin: true },
   { path: '/workers', label: 'Worker', icon: <DesktopOutlined /> },
