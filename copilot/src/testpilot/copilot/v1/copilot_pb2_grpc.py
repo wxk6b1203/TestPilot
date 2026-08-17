@@ -84,6 +84,21 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageResponse.FromString,
                 _registered_method=True)
+        self.QueryApiDirectory = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/QueryApiDirectory',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryResponse.FromString,
+                _registered_method=True)
+        self.CheckVariableRefs = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/CheckVariableRefs',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsResponse.FromString,
+                _registered_method=True)
+        self.CreateProject = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/CreateProject',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectResponse.FromString,
+                _registered_method=True)
         self.CreateApi = channel.unary_unary(
                 '/testpilot.copilot.v1.CopilotToolService/CreateApi',
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateApiRequest.SerializeToString,
@@ -190,9 +205,27 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def CreateApi(self, request, context):
+    def QueryApiDirectory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CheckVariableRefs(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateProject(self, request, context):
         """---- 写工具（默认 HITL 审批） ----
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateApi(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -292,6 +325,21 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.QueryCoverage,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageResponse.SerializeToString,
+            ),
+            'QueryApiDirectory': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryApiDirectory,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryResponse.SerializeToString,
+            ),
+            'CheckVariableRefs': grpc.unary_unary_rpc_method_handler(
+                    servicer.CheckVariableRefs,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsResponse.SerializeToString,
+            ),
+            'CreateProject': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateProject,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectResponse.SerializeToString,
             ),
             'CreateApi': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateApi,
@@ -604,6 +652,87 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/QueryCoverage',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryCoverageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueryApiDirectory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/QueryApiDirectory',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.QueryApiDirectoryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CheckVariableRefs(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/CheckVariableRefs',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateProject(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/CreateProject',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectResponse.FromString,
             options,
             channel_credentials,
             insecure,

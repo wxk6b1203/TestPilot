@@ -1,4 +1,5 @@
 from testpilot.common.v1 import types_pb2 as _types_pb2
+from google.protobuf import struct_pb2 as _struct_pb2
 from google.protobuf.internal import containers as _containers
 from google.protobuf.internal import enum_type_wrapper as _enum_type_wrapper
 from google.protobuf import descriptor as _descriptor
@@ -202,6 +203,106 @@ class QueryCoverageResponse(_message.Message):
     uncovered_api_ids: _containers.RepeatedScalarFieldContainer[str]
     coverage_ratio: float
     def __init__(self, total_apis: _Optional[int] = ..., covered_apis: _Optional[int] = ..., uncovered_api_ids: _Optional[_Iterable[str]] = ..., coverage_ratio: _Optional[float] = ...) -> None: ...
+
+class ApiDirectoryEntry(_message.Message):
+    __slots__ = ("node_id", "parent_id", "parent_name", "node_type", "name", "ref_id", "path", "method", "uri", "full_service", "rpc_method")
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    PARENT_ID_FIELD_NUMBER: _ClassVar[int]
+    PARENT_NAME_FIELD_NUMBER: _ClassVar[int]
+    NODE_TYPE_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    REF_ID_FIELD_NUMBER: _ClassVar[int]
+    PATH_FIELD_NUMBER: _ClassVar[int]
+    METHOD_FIELD_NUMBER: _ClassVar[int]
+    URI_FIELD_NUMBER: _ClassVar[int]
+    FULL_SERVICE_FIELD_NUMBER: _ClassVar[int]
+    RPC_METHOD_FIELD_NUMBER: _ClassVar[int]
+    node_id: str
+    parent_id: str
+    parent_name: str
+    node_type: int
+    name: str
+    ref_id: str
+    path: str
+    method: int
+    uri: str
+    full_service: str
+    rpc_method: str
+    def __init__(self, node_id: _Optional[str] = ..., parent_id: _Optional[str] = ..., parent_name: _Optional[str] = ..., node_type: _Optional[int] = ..., name: _Optional[str] = ..., ref_id: _Optional[str] = ..., path: _Optional[str] = ..., method: _Optional[int] = ..., uri: _Optional[str] = ..., full_service: _Optional[str] = ..., rpc_method: _Optional[str] = ...) -> None: ...
+
+class QueryApiDirectoryRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "query", "parent_node_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    PARENT_NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    query: str
+    parent_node_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., query: _Optional[str] = ..., parent_node_id: _Optional[str] = ...) -> None: ...
+
+class QueryApiDirectoryResponse(_message.Message):
+    __slots__ = ("entries", "total", "summary")
+    ENTRIES_FIELD_NUMBER: _ClassVar[int]
+    TOTAL_FIELD_NUMBER: _ClassVar[int]
+    SUMMARY_FIELD_NUMBER: _ClassVar[int]
+    entries: _containers.RepeatedCompositeFieldContainer[ApiDirectoryEntry]
+    total: int
+    summary: str
+    def __init__(self, entries: _Optional[_Iterable[_Union[ApiDirectoryEntry, _Mapping]]] = ..., total: _Optional[int] = ..., summary: _Optional[str] = ...) -> None: ...
+
+class VariableRefIssue(_message.Message):
+    __slots__ = ("location", "field", "variable", "expression")
+    LOCATION_FIELD_NUMBER: _ClassVar[int]
+    FIELD_FIELD_NUMBER: _ClassVar[int]
+    VARIABLE_FIELD_NUMBER: _ClassVar[int]
+    EXPRESSION_FIELD_NUMBER: _ClassVar[int]
+    location: str
+    field: str
+    variable: str
+    expression: str
+    def __init__(self, location: _Optional[str] = ..., field: _Optional[str] = ..., variable: _Optional[str] = ..., expression: _Optional[str] = ...) -> None: ...
+
+class CheckVariableRefsRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "environment_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    ENVIRONMENT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    environment_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., environment_id: _Optional[str] = ...) -> None: ...
+
+class CheckVariableRefsResponse(_message.Message):
+    __slots__ = ("defined_variables", "issues", "scanned_apis", "scanned_cases")
+    DEFINED_VARIABLES_FIELD_NUMBER: _ClassVar[int]
+    ISSUES_FIELD_NUMBER: _ClassVar[int]
+    SCANNED_APIS_FIELD_NUMBER: _ClassVar[int]
+    SCANNED_CASES_FIELD_NUMBER: _ClassVar[int]
+    defined_variables: _containers.RepeatedScalarFieldContainer[str]
+    issues: _containers.RepeatedCompositeFieldContainer[VariableRefIssue]
+    scanned_apis: int
+    scanned_cases: int
+    def __init__(self, defined_variables: _Optional[_Iterable[str]] = ..., issues: _Optional[_Iterable[_Union[VariableRefIssue, _Mapping]]] = ..., scanned_apis: _Optional[int] = ..., scanned_cases: _Optional[int] = ...) -> None: ...
+
+class CreateProjectRequest(_message.Message):
+    __slots__ = ("ctx", "name", "description", "config")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    CONFIG_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    name: str
+    description: str
+    config: _struct_pb2.Struct
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., config: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
+
+class CreateProjectResponse(_message.Message):
+    __slots__ = ("project_id",)
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    project_id: str
+    def __init__(self, project_id: _Optional[str] = ...) -> None: ...
 
 class CreateApiRequest(_message.Message):
     __slots__ = ("ctx", "project_id", "http", "grpc", "parent_node_id")

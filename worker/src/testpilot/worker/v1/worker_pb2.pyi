@@ -139,7 +139,7 @@ class ExecutionEnv(_message.Message):
     def __init__(self, environment: _Optional[_Union[_types_pb2.Environment, _Mapping]] = ..., variables: _Optional[_Iterable[_Union[_types_pb2.Variable, _Mapping]]] = ..., base_url: _Optional[str] = ...) -> None: ...
 
 class FunctionalTask(_message.Message):
-    __slots__ = ("case", "case_result_id", "grpc_apis")
+    __slots__ = ("case", "case_result_id", "grpc_apis", "inline_files")
     class GrpcApisEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -147,13 +147,22 @@ class FunctionalTask(_message.Message):
         key: str
         value: _types_pb2.GrpcApi
         def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.GrpcApi, _Mapping]] = ...) -> None: ...
+    class InlineFilesEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: bytes
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[bytes] = ...) -> None: ...
     CASE_FIELD_NUMBER: _ClassVar[int]
     CASE_RESULT_ID_FIELD_NUMBER: _ClassVar[int]
     GRPC_APIS_FIELD_NUMBER: _ClassVar[int]
+    INLINE_FILES_FIELD_NUMBER: _ClassVar[int]
     case: _types_pb2.TestCase
     case_result_id: str
     grpc_apis: _containers.MessageMap[str, _types_pb2.GrpcApi]
-    def __init__(self, case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ..., case_result_id: _Optional[str] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ...) -> None: ...
+    inline_files: _containers.ScalarMap[str, bytes]
+    def __init__(self, case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ..., case_result_id: _Optional[str] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ..., inline_files: _Optional[_Mapping[str, bytes]] = ...) -> None: ...
 
 class StressTask(_message.Message):
     __slots__ = ("plan", "worker_index", "assigned_concurrency", "metrics_label", "inline_api", "behavior_source", "behavior_entry")

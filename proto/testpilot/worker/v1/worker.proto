@@ -112,6 +112,7 @@ message FunctionalTask {
   testpilot.common.v1.TestCase case = 1;
   string case_result_id = 2;   // 预分配的结果 ID（幂等）
   map<string, testpilot.common.v1.GrpcApi> grpc_apis = 3;  // grpc_call 步骤引用的接口（Scheduler 派发前解析内联，Worker 无 DB）
+  map<string, bytes> inline_files = 4;  // binary_ref 负载（Scheduler 派发前从 artifact 解析；键=ref 原文）
 }
 
 // 压测任务（Scheduler 为 master，拆分总负载到 N 个 Worker）

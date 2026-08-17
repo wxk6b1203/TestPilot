@@ -33,7 +33,10 @@ type CopilotToolServiceClient interface {
 	ListRuns(ctx context.Context, in *ListRunsRequest, opts ...grpc.CallOption) (*ListRunsResponse, error)
 	GetRun(ctx context.Context, in *GetRunRequest, opts ...grpc.CallOption) (*GetRunResponse, error)
 	QueryCoverage(ctx context.Context, in *QueryCoverageRequest, opts ...grpc.CallOption) (*QueryCoverageResponse, error)
+	QueryApiDirectory(ctx context.Context, in *QueryApiDirectoryRequest, opts ...grpc.CallOption) (*QueryApiDirectoryResponse, error)
+	CheckVariableRefs(ctx context.Context, in *CheckVariableRefsRequest, opts ...grpc.CallOption) (*CheckVariableRefsResponse, error)
 	// ---- 写工具（默认 HITL 审批） ----
+	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	CreateApi(ctx context.Context, in *CreateApiRequest, opts ...grpc.CallOption) (*CreateApiResponse, error)
 	UpdateApi(ctx context.Context, in *UpdateApiRequest, opts ...grpc.CallOption) (*UpdateApiResponse, error)
 	CreateTestCase(ctx context.Context, in *CreateTestCaseRequest, opts ...grpc.CallOption) (*CreateTestCaseResponse, error)
@@ -143,6 +146,33 @@ func (c *copilotToolServiceClient) QueryCoverage(ctx context.Context, in *QueryC
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) QueryApiDirectory(ctx context.Context, in *QueryApiDirectoryRequest, opts ...grpc.CallOption) (*QueryApiDirectoryResponse, error) {
+	out := new(QueryApiDirectoryResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/QueryApiDirectory", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) CheckVariableRefs(ctx context.Context, in *CheckVariableRefsRequest, opts ...grpc.CallOption) (*CheckVariableRefsResponse, error) {
+	out := new(CheckVariableRefsResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CheckVariableRefs", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error) {
+	out := new(CreateProjectResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateProject", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *copilotToolServiceClient) CreateApi(ctx context.Context, in *CreateApiRequest, opts ...grpc.CallOption) (*CreateApiResponse, error) {
 	out := new(CreateApiResponse)
 	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateApi", in, out, opts...)
@@ -230,7 +260,10 @@ type CopilotToolServiceServer interface {
 	ListRuns(context.Context, *ListRunsRequest) (*ListRunsResponse, error)
 	GetRun(context.Context, *GetRunRequest) (*GetRunResponse, error)
 	QueryCoverage(context.Context, *QueryCoverageRequest) (*QueryCoverageResponse, error)
+	QueryApiDirectory(context.Context, *QueryApiDirectoryRequest) (*QueryApiDirectoryResponse, error)
+	CheckVariableRefs(context.Context, *CheckVariableRefsRequest) (*CheckVariableRefsResponse, error)
 	// ---- 写工具（默认 HITL 审批） ----
+	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	CreateApi(context.Context, *CreateApiRequest) (*CreateApiResponse, error)
 	UpdateApi(context.Context, *UpdateApiRequest) (*UpdateApiResponse, error)
 	CreateTestCase(context.Context, *CreateTestCaseRequest) (*CreateTestCaseResponse, error)
@@ -276,6 +309,15 @@ func (UnimplementedCopilotToolServiceServer) GetRun(context.Context, *GetRunRequ
 }
 func (UnimplementedCopilotToolServiceServer) QueryCoverage(context.Context, *QueryCoverageRequest) (*QueryCoverageResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method QueryCoverage not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) QueryApiDirectory(context.Context, *QueryApiDirectoryRequest) (*QueryApiDirectoryResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method QueryApiDirectory not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) CheckVariableRefs(context.Context, *CheckVariableRefsRequest) (*CheckVariableRefsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CheckVariableRefs not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateProject not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) CreateApi(context.Context, *CreateApiRequest) (*CreateApiResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateApi not implemented")
@@ -494,6 +536,60 @@ func _CopilotToolService_QueryCoverage_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_QueryApiDirectory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryApiDirectoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).QueryApiDirectory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/QueryApiDirectory",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).QueryApiDirectory(ctx, req.(*QueryApiDirectoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_CheckVariableRefs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CheckVariableRefsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).CheckVariableRefs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/CheckVariableRefs",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).CheckVariableRefs(ctx, req.(*CheckVariableRefsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_CreateProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateProjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).CreateProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/CreateProject",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).CreateProject(ctx, req.(*CreateProjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CopilotToolService_CreateApi_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateApiRequest)
 	if err := dec(in); err != nil {
@@ -684,6 +780,18 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "QueryCoverage",
 			Handler:    _CopilotToolService_QueryCoverage_Handler,
+		},
+		{
+			MethodName: "QueryApiDirectory",
+			Handler:    _CopilotToolService_QueryApiDirectory_Handler,
+		},
+		{
+			MethodName: "CheckVariableRefs",
+			Handler:    _CopilotToolService_CheckVariableRefs_Handler,
+		},
+		{
+			MethodName: "CreateProject",
+			Handler:    _CopilotToolService_CreateProject_Handler,
 		},
 		{
 			MethodName: "CreateApi",

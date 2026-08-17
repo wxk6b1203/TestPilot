@@ -7,6 +7,7 @@ syntax = "proto3";
 package testpilot.copilot.v1;
 
 import "testpilot/common/v1/types.proto";
+import "google/protobuf/struct.proto";
 
 option go_package = "github.com/testpilot/testpilot/gen/copilot/v1;copilotv1";
 option java_multiple_files = true;
@@ -24,8 +25,11 @@ service CopilotToolService {
   rpc ListRuns(ListRunsRequest) returns (ListRunsResponse);
   rpc GetRun(GetRunRequest) returns (GetRunResponse);
   rpc QueryCoverage(QueryCoverageRequest) returns (QueryCoverageResponse);
+  rpc QueryApiDirectory(QueryApiDirectoryRequest) returns (QueryApiDirectoryResponse);
+  rpc CheckVariableRefs(CheckVariableRefsRequest) returns (CheckVariableRefsResponse);
 
   // ---- 写工具（默认 HITL 审批） ----
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc CreateApi(CreateApiRequest) returns (CreateApiResponse);
   rpc UpdateApi(UpdateApiRequest) returns (UpdateApiResponse);
   rpc CreateTestCase(CreateTestCaseRequest) returns (CreateTestCaseResponse);
@@ -155,9 +159,70 @@ message QueryCoverageResponse {
   double coverage_ratio = 4;
 }
 
+// 接口目录问答：返回项目目录树 + 接口摘要的扁平条目（含 human-readable 路径），
+// 供 Copilot 回答“某目录下有哪些接口 / 接口挂在哪个目录”等问题。
+message ApiDirectoryEntry {
+  string node_id = 1;
+  string parent_id = 2;
+  string parent_name = 3;
+  int32 node_type = 4;          // common.NodeType：1=folder 2=http_api 3=grpc_api …
+  string name = 5;
+  string ref_id = 6;            // 接口/用例等实体 id（folder 为空）
+  string path = 7;              // 人读路径，如 /订单/支付/创建订单
+  int32 method = 8;             // 仅 http_api
+  string uri = 9;               // 仅 http_api
+  string full_service = 10;     // 仅 grpc_api
+  string rpc_method = 11;       // 仅 grpc_api
+}
+
+message QueryApiDirectoryRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string query = 3;             // 按名称/uri/service/method 模糊过滤
+  string parent_node_id = 4;    // 只返回该目录子树（可选）
+}
+
+message QueryApiDirectoryResponse {
+  repeated ApiDirectoryEntry entries = 1;
+  int32 total = 2;
+  string summary = 3;
+}
+
+// 变量引用检查：扫描项目接口与用例中的 {{expr}} 模板，报告未定义变量。
+message VariableRefIssue {
+  string location = 1;          // 如 http_api:123 / case:456
+  string field = 2;             // 如 uri / headers / definition
+  string variable = 3;          // 未定义的根变量名
+  string expression = 4;        // 完整模板表达式（可能较长，截断 200 字符）
+}
+
+message CheckVariableRefsRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string environment_id = 3;    // 可选：仅校验该环境可见变量；空=项目全部变量
+}
+
+message CheckVariableRefsResponse {
+  repeated string defined_variables = 1;
+  repeated VariableRefIssue issues = 2;
+  int32 scanned_apis = 3;
+  int32 scanned_cases = 4;
+}
+
 // ---------------------------------------------------------------------------
 // 写
 // ---------------------------------------------------------------------------
+
+message CreateProjectRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string name = 2;
+  string description = 3;
+  google.protobuf.Struct config = 4;   // 可选项目级配置
+}
+
+message CreateProjectResponse {
+  string project_id = 1;
+}
 
 message CreateApiRequest {
   testpilot.common.v1.RequestContext ctx = 1;

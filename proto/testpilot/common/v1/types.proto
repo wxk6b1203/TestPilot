@@ -189,9 +189,9 @@ message BodySpec {
 }
 
 message ApiSettings {
-  bool tls_verify = 1;
-  bool follow_redirects = 2;
-  bool comment_tolerant_json = 3;   // 兼容带注释 JSON
+  optional bool tls_verify = 1;          // 缺省=true（与历史行为一致）；显式 false 跳过 TLS 校验
+  optional bool follow_redirects = 2;    // 缺省=true（与历史行为一致）
+  bool comment_tolerant_json = 3;        // 兼容带注释 JSON
   google.protobuf.Duration timeout = 4;
 }
 
