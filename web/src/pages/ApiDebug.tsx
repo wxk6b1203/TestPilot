@@ -1,4 +1,4 @@
-import { Button, Input, Select, Tabs, Tag, Typography } from 'antd'
+import { Button, Checkbox, Input, Select, Tabs, Tag, Typography } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -27,8 +27,8 @@ const EMPTY_BODY: BodyValue = { contentType: 0, raw: '' }
 const scriptOf = (rows?: ScriptRow[]) => rows?.find((s) => s.lang === 'python')?.source ?? ''
 
 // 表单快照（用于 dirty 判定：与"已保存/已回填"时刻的快照对比）
-const formOf = (name: string, method: number, uri: string, params: Kv[], headers: Kv[], body: BodyValue, pre: string, post: string) =>
-  JSON.stringify({ name, method, uri, params, headers, body, preScript: pre, postScript: post })
+const formOf = (name: string, method: number, uri: string, params: Kv[], headers: Kv[], cookies: Kv[], body: BodyValue, pre: string, post: string, settings: HttpApi['settings']) =>
+  JSON.stringify({ name, method, uri, params, headers, cookies, body, preScript: pre, postScript: post, settings })
 
 const methodOptions = Object.entries(METHOD_COLORS).map(([v, m]) => ({
   value: Number(v),
@@ -47,6 +47,10 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const [uri, setUri] = useState('')
   const [params, setParams] = useState<Kv[]>([EMPTY_ROW])
   const [headers, setHeaders] = useState<Kv[]>([EMPTY_ROW])
+  const [cookies, setCookies] = useState<Kv[]>([EMPTY_ROW])
+  const [settings, setSettings] = useState<NonNullable<HttpApi['settings']>>({
+    tls_verify: true, follow_redirects: true, comment_tolerant_json: false,
+  })
   const [body, setBody] = useState<BodyValue>(EMPTY_BODY)
   const [preScript, setPreScript] = useState('')
   const [postScript, setPostScript] = useState('')
@@ -54,7 +58,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const [env, setEnv] = useState(envId)
   const [loading, setLoading] = useState(false)
   const [debugResult, setDebugResult] = useState<DebugResult>()
-  const [savedSnapshot, setSavedSnapshot] = useState(() => formOf('', 1, '', [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', ''))
+  const [savedSnapshot, setSavedSnapshot] = useState(() => formOf('', 1, '', [EMPTY_ROW], [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', '', { tls_verify: true, follow_redirects: true, comment_tolerant_json: false }))
   const sendingRef = useRef(false)
 
   // 回填已有接口
@@ -66,7 +70,9 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         const u = a.uri || ''
         const p = a.params?.length ? a.params : [EMPTY_ROW]
         const h = a.headers?.length ? a.headers : [EMPTY_ROW]
+        const ck = a.cookies?.length ? a.cookies.map((c) => ({ key: c.name, value: c.value })) : [EMPTY_ROW]
         const b = a.body ?? EMPTY_BODY
+        const st = { tls_verify: a.settings?.tls_verify ?? true, follow_redirects: a.settings?.follow_redirects ?? true, comment_tolerant_json: a.settings?.comment_tolerant_json ?? false }
         const pre = scriptOf(a.pre_scripts)
         const post = scriptOf(a.post_scripts)
         setMethod(m)
@@ -74,11 +80,13 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         setUri(u)
         setParams(p)
         setHeaders(h)
+        setCookies(ck)
+        setSettings(st)
         setBody(b)
         setPreScript(pre)
         setPostScript(post)
         setSavedId(String(a.id))
-        setSavedSnapshot(formOf(a.name ?? '', m, u, p, h, b, pre, post))
+        setSavedSnapshot(formOf(a.name ?? '', m, u, p, h, ck, b, pre, post, st))
       })
       .catch((e) => message.error(e.message))
   }, [id, newMode])
@@ -86,7 +94,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   // 环境：默认跟随全局选择，工作区可临时改
   useEffect(() => setEnv(envId), [envId])
 
-  const currentSnapshot = formOf(name, method, uri, params, headers, body, preScript, postScript)
+  const currentSnapshot = formOf(name, method, uri, params, headers, cookies, body, preScript, postScript, settings)
   const dirty = currentSnapshot !== savedSnapshot
   const { guard, allowOnce } = useLeaveGuard(dirty)
 
@@ -108,6 +116,8 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         uri,
         params: clean(params),
         headers: clean(headers),
+        cookies: clean(cookies).map((r) => ({ name: r.key, value: r.value })),
+        settings,
         body: body.contentType === 0 ? undefined : body,
         env_id: env || undefined,
       })
@@ -130,6 +140,8 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     uri,
     params: clean(params),
     headers: clean(headers),
+    cookies: clean(cookies).map((r) => ({ name: r.key, value: r.value })),
+    settings,
     body,
     pre_scripts: preScript.trim() ? [{ lang: 'python', source: preScript, enabled: true }] : undefined,
     post_scripts: postScript.trim() ? [{ lang: 'python', source: postScript, enabled: true }] : undefined,
@@ -168,7 +180,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
       })
       message.success('已保存')
       setName(saveName)
-      setSavedSnapshot(formOf(saveName, method, uri, params, headers, body, preScript, postScript))
+      setSavedSnapshot(formOf(saveName, method, uri, params, headers, cookies, body, preScript, postScript, settings))
       allowOnce() // 新建成功后直接放行跳转，避免触发未保存确认
       onSaved?.()
       nav(`/apis/${r.id}`)
@@ -274,9 +286,47 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
               ),
             },
             {
+              key: 'cookies',
+              label: 'Cookies',
+              children: (
+                <KvEditor
+                  value={cookies}
+                  onChange={setCookies}
+                  keyPlaceholder="Cookie 名"
+                  valuePlaceholder="Cookie 值（支持 {{var}}）"
+                />
+              ),
+            },
+            {
               key: 'body',
               label: '请求体',
               children: <BodyEditor value={body} onChange={setBody} />,
+            },
+            {
+              key: 'settings',
+              label: '设置',
+              children: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 420 }}>
+                  <Checkbox
+                    checked={settings.tls_verify}
+                    onChange={(e) => setSettings({ ...settings, tls_verify: e.target.checked })}
+                  >
+                    校验 TLS 证书（关闭仅用于自签名测试环境）
+                  </Checkbox>
+                  <Checkbox
+                    checked={settings.follow_redirects}
+                    onChange={(e) => setSettings({ ...settings, follow_redirects: e.target.checked })}
+                  >
+                    跟随重定向
+                  </Checkbox>
+                  <Checkbox
+                    checked={settings.comment_tolerant_json}
+                    onChange={(e) => setSettings({ ...settings, comment_tolerant_json: e.target.checked })}
+                  >
+                    兼容带注释 JSON（请求体）
+                  </Checkbox>
+                </div>
+              ),
             },
             {
               key: 'pre',

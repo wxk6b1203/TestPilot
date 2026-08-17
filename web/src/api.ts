@@ -124,7 +124,14 @@ export interface HttpApi {
   uri: string
   params?: { key: string; value: string }[]
   headers?: { key: string; value: string }[]
-  body?: { contentType: number; raw?: string }
+  cookies?: { name: string; value: string; type?: string }[]
+  settings?: {
+    tls_verify?: boolean
+    follow_redirects?: boolean
+    comment_tolerant_json?: boolean
+    timeout_ms?: number
+  }
+  body?: { contentType: number; raw?: string; binary_ref?: string; form?: any }
 }
 export interface TreeNode {
   id: string

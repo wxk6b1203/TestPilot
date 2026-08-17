@@ -9,7 +9,7 @@ import { message } from '../messageBridge'
 // form 形状与 proto 对齐（FormData{fields:[…]}）：后端 protojson 直接解析，
 // 旧数据里 form 为数组的形态在读取侧兼容（见 fieldsOf）。
 export interface FormBody { fields: Kv[] }
-export interface BodyValue { contentType: number; raw?: string; form?: FormBody }
+export interface BodyValue { contentType: number; raw?: string; form?: FormBody; binary_ref?: string }
 
 // 兼容读取：旧形状 form 是数组，新形状是 {fields:[…]}
 const fieldsOf = (f: FormBody | Kv[] | undefined): Kv[] =>
@@ -52,6 +52,22 @@ export default function BodyEditor({
       />
     </div>
   )
+  const binaryDraftRef = useRef(value.binary_ref ?? '')
+  binaryDraftRef.current = value.binary_ref ?? binaryDraftRef.current
+  const binaryTab = (
+    <div>
+      <Input.TextArea
+        rows={6}
+        value={value.binary_ref ?? binaryDraftRef.current}
+        onChange={(e) => onChange({ contentType: 6, binary_ref: e.target.value })}
+        placeholder={'artifact:<产物ID> 或 base64:<base64数据>'}
+        style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+      />
+      <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
+        binary_ref 支持 artifact:&lt;id&gt;（Scheduler 派发时读取产物）与 base64:&lt;payload&gt;（直接内联）
+      </div>
+    </div>
+  )
   const formTab = (ct: number) => (
     <KvEditor
       value={fields}
@@ -64,6 +80,7 @@ export default function BodyEditor({
       case 4: return 'json'
       case 2: return 'form-data'
       case 3: return 'urlencoded'
+      case 6: return 'binary'
       default: return 'none'
     }
   })()
@@ -75,6 +92,7 @@ export default function BodyEditor({
         if (k === 'none') onChange({ contentType: 0 })
         else if (k === 'json') onChange({ contentType: 4, raw: rawDraftRef.current })
         else if (k === 'form-data') onChange({ contentType: 2, form: { fields: formDraftRef.current } })
+        else if (k === 'binary') onChange({ contentType: 6, binary_ref: binaryDraftRef.current })
         else onChange({ contentType: 3, form: { fields: formDraftRef.current } })
       }}
       items={[
@@ -82,6 +100,7 @@ export default function BodyEditor({
         { key: 'json', label: 'JSON', children: jsonTab },
         { key: 'form-data', label: 'form-data', children: formTab(2) },
         { key: 'urlencoded', label: 'x-www-form-urlencoded', children: formTab(3) },
+        { key: 'binary', label: '二进制引用', children: binaryTab },
       ]}
     />
   )
