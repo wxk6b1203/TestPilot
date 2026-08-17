@@ -43,6 +43,7 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 | v2 第二批补完 | ✅ | api_call 步骤 api_id 派发期解析、PlanItem param_overrides 应用（原遗留边界清零） |
 | 前端 IDE 化重构 | ✅ | 三栏布局 + 接口调试工作区（/apis/debug 后端支撑）+ 用例步骤树编辑器 + 全部缺失页面（gRPC/proto/套件/脚本/管理台/注册/SSO）+ 设计 token 体系 |
 | 2026-08-17 补齐轮 | ✅ | 证书 CRUD / 接口 pre-post 脚本 / Copilot gRPC 工具面 / 运行取消 / 雪花节点可配置 / DNS 解析绑定 / sandbox rlimits 移除 preexec_fn / 生产 egress 默认拦私网 / 通知 dialer 防 rebinding |
+| 2026-08-17 HTTP 契约补齐 | ✅ | cookies / tls_verify(optional) / comment_tolerant_json / binary_ref（artifact 解析 + base64 内联）| Copilot 新增 create_project / query_api_directory / check_variable_refs |
 
 **v2 状态**（三批均已完成，详见本文件末尾「v2 范围」）：
 - 第一批：curl 导出 / Copilot 反代 / OpenAPI URL 导入
@@ -378,6 +379,6 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 - **证书客户端证书执行**：cert_ref/key_ref 实际解析与 TLS 绑定依赖 Vault/制品密钥后端，另议；CRUD 已落地
 - **沙箱容器/gVisor 后端**：当前为 subprocess + sandbox-exec/bwrap 尽力隔离；生产可开 `TP_SANDBOX_REQUIRE_ISOLATION=1` fail-closed，容器/gVisor 后端需部署层实现
 - **gRPC mTLS**：Worker token + Copilot JWT 已启用；mTLS 可选增强另议
-- **HTTP 契约预留字段**：cookies / tls_verify / comment_tolerant_json / binary_ref 当前仅存取不消费；补齐需逐项定义语义
+- **HTTP cookies / tls_verify / comment_tolerant_json / binary_ref**：✅ 已补齐执行语义（cookies 渲染发送；tls_verify 缺省 true；注释 JSON 请求体解析；binary_ref 支持 `artifact:<id>` / `base64:<data>`）
 - **VictoriaMetrics**：压测时序当前落 `stress_metric_points` 表；设计文档保留 VictoriaMetrics 为大规模部署的可选替换，非排期项
 - **Vault**：密钥管理走敏感变量 + secret_ref 引用（沙箱零凭据设计）；Vault 对接非排期项

@@ -73,8 +73,8 @@ worker/venv/bin/python scripts/e2e_phase9.py
   BrowserContext 隔离、全程 tracing；产物 = 截图（含失败自动截图）+ trace.zip + network.har，
   运行详情页内联看图、trace 下载后可 `npx playwright show-trace` 回放
 - **Copilot（Phase 6）**：FastAPI + pydantic-ai 2.28，Provider 注册表（deepseek /
-  openai_compatible）直连 OpenAI 兼容端点；工具 = CopilotToolService gRPC（19 RPC，
-  不直连 DB）；写/触发工具 `requires_approval` → 前端 HITL 批准后才执行，
+  openai_compatible）直连 OpenAI 兼容端点；工具 = CopilotToolService gRPC（22 RPC，
+  不直连 DB；新增 create_project / query_api_directory / check_variable_refs）；写/触发工具 `requires_approval` → 前端 HITL 批准后才执行，
   Scheduler 落审计（actor=copilot, approved_by=用户）；上下文压缩经
   pydantic-ai-extensions 的 ContextCompression capability（fraction 0.7 触发、保留最近 6 条）；
   前端手写 Vercel AI SSE 消费（文本流 + 工具调用 + 审批按钮），会话经 Scheduler REST 持久化
@@ -92,6 +92,9 @@ worker/venv/bin/python scripts/e2e_phase9.py
   （声明式与低代码能力桥一致生效；接口/SDK 显式同名头优先，忽略大小写；值支持 `{{var}}`
   模板；敏感变量不注入——沙箱零凭据不变）
 - **统一断言**：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/NOT_EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS
+- **HTTP 请求增强**：`cookies` 发送（值可 `{{var}}`）；`settings.tls_verify` 缺省校验、显式
+  false 跳过；`settings.comment_tolerant_json` 兼容注释 JSON；`body.binary_ref` 支持
+  `base64:<data>` 或 `artifact:<id>`（Scheduler 派发前读产物内联，上限 8MiB）
 - **多租户**：tenant_id 全表隔离（应用层过滤），雪花 ID，REST 层 ID 字符串化（JS 安全、输入字符串自动还原）
 - **认证 / RBAC（Phase 8）**：本地账号（bcrypt + JWT 24h；种子 `admin/admin123` = tenant 1 owner）
   + **OIDC / OAuth2 授权码双轨**（可插拔 identity_providers，租户级；OIDC=id_token 验签

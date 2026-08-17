@@ -48,6 +48,7 @@
 - `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
 - `/certificates`：`{project_id,name,type(pem|p12),cert_ref,key_ref,password_secret_ref?}`；当前为资产 CRUD，Worker 客户端证书执行另议。
 - `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
+- 接口 `cookies`/`settings.tls_verify`/`settings.comment_tolerant_json`/`body.binary_ref` 已进入执行引擎，语义见 `docs/usage.md`。
 
 ## gRPC 接口 / proto 文件（v2 第三批）
 

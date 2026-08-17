@@ -77,6 +77,12 @@ base_url（host[:port]），响应经 `$.字段` JSONPATH 断言。
 自动解析为接口快照；计划条目 `param_overrides` 深合并进低代码 `parameters`（`ctx.parameters`），
 并追加为 `{{key}}` 模板变量（优先级最高）。详见 `docs/v2-features.md`。
 
+**Cookies / TLS / JSONC / binary**：`HttpApi.cookies` 为 `{name,value,type}` 列表，值支持 `{{var}}`
+模板；`settings.tls_verify` 缺省 true（显式 false 才跳过证书校验）、`follow_redirects` 缺省 true；
+`settings.comment_tolerant_json=true` 时请求 JSON body 允许 `//` / `/* */` 注释与尾逗号；
+`body.binary_ref` 支持 `base64:<data>`（Worker 直接解码）或 `artifact:<id>`（Scheduler 派发前从
+`artifacts` 读取内容内联，上限 8MiB）。
+
 **接口级 pre/post 脚本**：`HttpApi.pre_scripts / post_scripts` 为 `{lang, source, enabled}` 列表。
 source 定义 `run(ctx)`（可 async），与 CODE_BLOCK 同一沙箱执行：pre 在请求前运行，写入
 `ctx.vars` 参与本次 URL/header/body 模板渲染；post 在响应后运行，可读 `ctx.response`
@@ -151,7 +157,9 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 
 ## Copilot
 
-对话页（`/copilot`）自然语言生成接口/用例/压测计划、触发运行、查询结果。
+对话页（`/copilot`）自然语言生成项目/接口/用例/压测计划、触发运行、查询结果。
+新增工具：`create_project`（创建项目）、`query_api_directory`（接口目录问答）、
+`check_variable_refs`（检查接口/用例中的 `{{var}}` 引用是否已定义）。
 写操作需 HITL 审批（前端按钮）；全部工具调用经 Scheduler gRPC 落审计（actor=copilot）。
 API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。
 
