@@ -1,6 +1,6 @@
 import { Button, Card, Form, Input, Modal, Popconfirm, Table } from 'antd'
 import { useEffect, useState } from 'react'
-import { del, get, post, warnTruncated } from '../api'
+import { del, get, post } from '../api'
 import type { ListResp, Project } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
@@ -8,14 +8,30 @@ import { message } from '../messageBridge'
 export default function Projects() {
   const { refreshProjects } = useLayout()
   const [rows, setRows] = useState<Project[]>([])
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(10)
+  const [total, setTotal] = useState(0)
   const [open, setOpen] = useState(false)
   const [form] = Form.useForm()
 
-  const load = () =>
-    get<ListResp<Project>>('/api/v1/projects?page_size=100').then((r) => { setRows(r.items); warnTruncated(r, '项目') })
+  const load = async (p = page, ps = pageSize) => {
+    const r = await get<ListResp<Project>>(`/api/v1/projects?page=${p}&page_size=${ps}`)
+    setRows(r.items)
+    setTotal(r.total)
+    setPage(p)
+    setPageSize(ps)
+  }
+
   useEffect(() => {
-    load().catch((e) => message.error(e.message))
+    load(1, 10).catch((e) => message.error(e.message))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const reloadAfterChange = async (deleted = false) => {
+    // 删除当前页最后一条时回退一页，避免停留在空页
+    const next = deleted && rows.length === 1 && page > 1 ? page - 1 : page
+    await load(next, pageSize)
+  }
 
   return (
     <Card
@@ -27,7 +43,15 @@ export default function Projects() {
       <Table
         rowKey="id"
         dataSource={rows}
-        pagination={false}
+        pagination={{
+          current: page,
+          pageSize,
+          total,
+          size: 'small',
+          showSizeChanger: true,
+          showTotal: (t) => `共 ${t} 条`,
+          onChange: (p, ps) => { void load(p, ps) },
+        }}
         columns={[
           { title: '名称', dataIndex: 'name' },
           { title: '描述', dataIndex: 'description' },
@@ -40,7 +64,7 @@ export default function Projects() {
                 onConfirm={async () => {
                   try {
                     await del(`/api/v1/projects/${r.id}`)
-                    await load()
+                    await reloadAfterChange(true)
                     await refreshProjects()
                     message.success('已删除')
                   } catch (e: any) {
@@ -69,7 +93,7 @@ export default function Projects() {
               await post('/api/v1/projects', v)
               setOpen(false)
               form.resetFields()
-              await load()
+              await load(1, pageSize)
               await refreshProjects()
               message.success('已创建')
             } catch (e: any) {
