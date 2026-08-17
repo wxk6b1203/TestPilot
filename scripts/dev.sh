@@ -27,6 +27,8 @@ if [ ! -s "$JWT_FILE" ]; then
 fi
 chmod 600 "$JWT_FILE"
 export TP_JWT_SECRET="$(cat "$JWT_FILE")"
+# 本地 e2e 的通知 webhook 落在 127.0.0.1 echo 服务；仅 dev 放开私网通知目标。
+export TP_NOTIFY_ALLOW_PRIVATE=1
 
 _start() {
   local name="$1"; shift

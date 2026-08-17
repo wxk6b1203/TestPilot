@@ -17,6 +17,7 @@ db_conn_max_lifetime_min: 0
 # —— 认证 ——
 jwt_secret: dev-secret-change-me  # 生产必改
 jwt_expire_hours: 24
+snowflake_node: 1            # 多 Scheduler 实例必须各不相同（0-1023）
 registration_enabled: false      # 公开注册（POST /auth/register）：注册即自建租户 owner；生产按需开启
 
 # —— 日志 / 链路 ——

@@ -15,7 +15,7 @@ artifact_dir: .data/artifacts   # 与 Scheduler artifact_dir 一致
 
 # —— SSRF 出口控制 ——
 egress_allow: ""                # 逗号分隔 host 白名单（支持 .后缀；空=不限）
-egress_block_private: false     # true=解析后拦截私网/环回/链路本地
+egress_block_private: true      # 生产默认 true=解析后拦截私网/环回/链路本地
 
 # —— 低代码沙箱限额 ——
 sandbox_cpu: 30                 # 秒

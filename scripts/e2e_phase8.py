@@ -41,8 +41,10 @@ print("✓ login")
 # ---- RBAC：viewer 只读、member 可写、最后 owner 保护 ----
 api.post("/api/v1/tenant/members", json={"username": f"p8viewer{stamp}", "password": "view12345", "role": 4})
 api.post("/api/v1/tenant/members", json={"username": f"p8member{stamp}", "password": "memb12345", "role": 3})
+api.post("/api/v1/tenant/members", json={"username": f"p8admin2{stamp}", "password": "admi12345", "role": 2})
 viewer = authed(login(f"p8viewer{stamp}", "view12345"))
 member = authed(login(f"p8member{stamp}", "memb12345"))
+admin2 = authed(login(f"p8admin2{stamp}", "admi12345"))
 
 r = viewer.get("/api/v1/projects")
 assert r.status_code == 200, r.text
@@ -55,11 +57,13 @@ assert r.status_code == 200, f"member 应可建项目: {r.text}"
 rbac_project = r.json()["id"]
 r = member.get("/api/v1/tenant/members")
 assert r.status_code == 403, "member 不应能看成员列表"
-# 最后 owner 保护
+# 最后 owner 保护 + 禁止修改自己的角色
 me = api.get("/api/v1/me").json()
-r = api.put(f"/api/v1/tenant/members/{me['user']['id']}", json={"role": 2})
+r = admin2.put(f"/api/v1/tenant/members/{me['user']['id']}", json={"role": 2})
 assert r.status_code == 409 and "LAST_OWNER" in r.text, r.text
-print("✓ RBAC: viewer 只读 / member 可写 / last-owner 保护")
+r = api.put(f"/api/v1/tenant/members/{me['user']['id']}", json={"role": 2})
+assert r.status_code == 400 and "cannot change your own role" in r.text, r.text
+print("✓ RBAC: viewer 只读 / member 可写 / last-owner + self-role 保护")
 
 # ---- 跨租户隔离 ----
 r = api.post("/api/v1/tenants", json={"name": f"tenantB-{stamp}"})

@@ -33,6 +33,7 @@ services:
     environment:
       TP_DB_DSN: postgres://testpilot:${PG_PASSWORD}@postgres:5432/testpilot?sslmode=disable
       TP_JWT_SECRET: ${TP_JWT_SECRET:?set in .env}
+      TP_SNOWFLAKE_NODE: ${TP_SNOWFLAKE_NODE:-1}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
       TP_RETENTION_RUN_DAYS: ${TP_RETENTION_RUN_DAYS:-0}
       TP_ARTIFACT_DIR: /data/artifacts
@@ -65,7 +66,7 @@ services:
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
-      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-}
+      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
       PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
     volumes:
@@ -88,7 +89,7 @@ services:
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
-      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-}
+      TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
     volumes:
       - artifacts:/data/artifacts
