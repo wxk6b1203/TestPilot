@@ -11,11 +11,11 @@ import (
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/model"
 	"github.com/testpilot/testpilot/internal/quota"
-	"gorm.io/gorm"
 	"github.com/testpilot/testpilot/internal/tracing"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/structpb"
+	"gorm.io/gorm"
 )
 
 // structToAny structpb.Struct → JSON 友好值（调试响应直出）。
@@ -61,6 +61,8 @@ type DebugRequest struct {
 	URI       string
 	Params    []*commonv1.KeyValue
 	Headers   []*commonv1.KeyValue
+	Cookies   []*commonv1.CookieParam
+	Settings  *commonv1.ApiSettings
 	Body      *commonv1.BodySpec
 	EnvID     int64
 	TimeoutMs int
@@ -115,6 +117,12 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 	if in.Headers != nil {
 		api.Headers = in.Headers
 	}
+	if in.Cookies != nil {
+		api.Cookies = in.Cookies
+	}
+	if in.Settings != nil {
+		api.Settings = in.Settings
+	}
 	if in.Body != nil {
 		api.Body = in.Body
 	}
@@ -167,6 +175,25 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 		return nil, err
 	}
 
+	debugCase := &commonv1.TestCase{
+		Id:   "debug",
+		Type: commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE,
+		Name: "api-debug",
+		Definition: &commonv1.TestCase_Declarative{Declarative: &commonv1.DeclarativeCase{
+			Steps: []*commonv1.TestStep{{
+				Id:   "1",
+				Name: "debug",
+				Params: &commonv1.TestStep_ApiCall{ApiCall: &commonv1.ApiCallStep{
+					Inline: api,
+				}},
+			}},
+		}},
+	}
+	inlineFiles, err := r.resolveInlineFiles(tenantID, debugCase)
+	if err != nil {
+		return nil, apperr.BadRequest(apperr.CodeInvalidParam, "binary_ref resolve: "+err.Error())
+	}
+
 	task := &workerv1.TaskAssignment{
 		TaskId:   idStr(model.NextID()),
 		RunId:    idStr(run.ID),
@@ -175,21 +202,9 @@ func (r *Runner) Debug(ctx context.Context, tenantID int64, in DebugRequest) (*D
 		Timeout:  durationpb.New(30 * time.Second),
 		Payload: &workerv1.TaskAssignment_Functional{
 			Functional: &workerv1.FunctionalTask{
-				Case: &commonv1.TestCase{
-					Id:   "debug",
-					Type: commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE,
-					Name: "api-debug",
-					Definition: &commonv1.TestCase_Declarative{Declarative: &commonv1.DeclarativeCase{
-						Steps: []*commonv1.TestStep{{
-							Id:   "1",
-							Name: "debug",
-							Params: &commonv1.TestStep_ApiCall{ApiCall: &commonv1.ApiCallStep{
-								Inline: api,
-							}},
-						}},
-					}},
-				},
+				Case:         debugCase,
 				CaseResultId: idStr(cr.ID),
+				InlineFiles:  inlineFiles,
 			},
 		},
 		Env:         execEnv,

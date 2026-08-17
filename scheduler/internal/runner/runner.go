@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -139,38 +140,115 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	return run.ID, nil
 }
 
-// materializeCase 转换用例为 proto，并完成三类派发期解析（Worker 无 DB，只接受内联形态）：
+// materializeCase 转换用例为 proto，并完成四类派发期解析（Worker 无 DB，只接受内联形态）：
 //  1. 低代码 script_ref → 内联 source（脚本按租户从 scripts 资产库读取）；
 //  2. 声明式 api_call 步骤的 api_id 引用 → inline 快照（保留 api_id 与 override）；
-//  3. grpc_call 步骤的 grpc_api_id 引用 → 收集进任务级 grpc_apis 映射（按 id 字符串键控）。
+//  3. grpc_call 步骤的 grpc_api_id 引用 → 收集进任务级 grpc_apis 映射（按 id 字符串键控）；
+//  4. api_call body.binary_ref → FunctionalTask.inline_files 负载（artifact 引用）。
 //
 // 解析失败即报错——dispatchCase 把该 case_result 置 FAILED，不派发残缺任务。
-func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, map[string]*commonv1.GrpcApi, error) {
+func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, map[string]*commonv1.GrpcApi, map[string][]byte, error) {
 	grpcAPIs := map[string]*commonv1.GrpcApi{}
 	pcase := ToProtoCase(tc)
 	if lc := pcase.GetLowcode(); lc != nil && lc.GetScriptRef() != "" {
 		scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
 		if err != nil {
-			return nil, nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+			return nil, nil, nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
 		}
 		var script model.Script
 		if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
 			First(&script).Error; err != nil {
-			return nil, nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
+			return nil, nil, nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
 		}
 		lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
 	}
 	if dc := pcase.GetDeclarative(); dc != nil {
 		if err := r.resolveAPIRefs(tc.TenantID, dc.GetSteps()); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		var err error
 		grpcAPIs, err = r.resolveGrpcRefs(tc.TenantID, dc.GetSteps())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
-	return pcase, grpcAPIs, nil
+	files, err := r.resolveInlineFiles(tc.TenantID, pcase)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return pcase, grpcAPIs, files, nil
+}
+
+const maxInlineFileBytes = 8 << 20 // 8 MiB：binary_ref 内联负载上限
+
+// resolveInlineFiles 扫描声明式步骤树中的 binary_ref，并把 artifact 内容读入任务级映射。
+// 键为 ref 原文；base64: 前缀由 Worker 直接解码，不走 DB。
+func (r *Runner) resolveInlineFiles(tenantID int64, pcase *commonv1.TestCase) (map[string][]byte, error) {
+	refs := map[string]bool{}
+	var collect func([]*commonv1.TestStep)
+	collect = func(list []*commonv1.TestStep) {
+		for _, st := range list {
+			switch p := st.Params.(type) {
+			case *commonv1.TestStep_ApiCall:
+				if b := p.ApiCall.GetInline().GetBody(); b != nil && b.GetBinaryRef() != "" {
+					refs[b.GetBinaryRef()] = true
+				}
+			case *commonv1.TestStep_IfStep:
+				collect(p.IfStep.GetThenSteps())
+				collect(p.IfStep.GetElseSteps())
+			case *commonv1.TestStep_LoopStep:
+				collect(p.LoopStep.GetBodySteps())
+			case *commonv1.TestStep_RetryStep:
+				if b := p.RetryStep.GetBodyStep(); b != nil {
+					collect([]*commonv1.TestStep{b})
+				}
+			}
+		}
+	}
+	if dc := pcase.GetDeclarative(); dc != nil {
+		collect(dc.GetSteps())
+	}
+	if len(refs) == 0 {
+		return map[string][]byte{}, nil
+	}
+	out := make(map[string][]byte, len(refs))
+	for ref := range refs {
+		id, err := artifactIDFromRef(ref)
+		if err != nil {
+			return nil, err
+		}
+		if id == 0 { // base64: 内联形态由 Worker 解码
+			continue
+		}
+		var art model.Artifact
+		if err := r.db.Where("id = ? AND tenant_id = ?", id, tenantID).First(&art).Error; err != nil {
+			return nil, fmt.Errorf("binary_ref %q: artifact %d not found in tenant: %w", ref, id, err)
+		}
+		raw, err := r.disp.ReadArtifact(tenantID, art.URI)
+		if err != nil {
+			return nil, fmt.Errorf("binary_ref %q: read artifact %d: %w", ref, id, err)
+		}
+		if len(raw) > maxInlineFileBytes {
+			return nil, fmt.Errorf("binary_ref %q: artifact %d exceeds %d bytes", ref, id, maxInlineFileBytes)
+		}
+		out[ref] = raw
+	}
+	return out, nil
+}
+
+// artifactIDFromRef 解析 binary_ref：artifact:<id> / 纯数字 / base64:（返回 0=Worker 内联）。
+func artifactIDFromRef(ref string) (int64, error) {
+	s := ref
+	if v, ok := strings.CutPrefix(s, "artifact:"); ok {
+		s = v
+	} else if strings.HasPrefix(s, "base64:") {
+		return 0, nil
+	}
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid binary_ref %q (want artifact:<id> | base64:<data>)", ref)
+	}
+	return id, nil
 }
 
 // resolveGrpcRefs 收集 grpc_call 步骤的 grpc_api_id 引用并批量解析为任务级映射
@@ -348,7 +426,7 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 	r.db.Create(cr)
 
 	// 派发期解析：script_ref → source；api_id → inline；grpc_api_id → 任务级映射。
-	pcase, grpcAPIs, failErr := r.materializeCase(&tc)
+	pcase, grpcAPIs, inlineFiles, failErr := r.materializeCase(&tc)
 	if failErr != nil {
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
@@ -376,6 +454,7 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 				Case:         pcase,
 				CaseResultId: idStr(cr.ID),
 				GrpcApis:     grpcAPIs,
+				InlineFiles:  inlineFiles,
 			},
 		},
 		Env:         taskEnv,

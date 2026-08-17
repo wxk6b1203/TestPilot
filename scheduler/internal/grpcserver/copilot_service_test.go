@@ -2,6 +2,7 @@ package grpcserver_test
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -566,4 +567,109 @@ func TestCreateApiCrossTenantProjectRejected(t *testing.T) {
 	if resp.GetApiId() == "" {
 		t.Fatal("empty api id")
 	}
+}
+
+func TestCopilotCreateProject(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	resp, err := cli.CreateProject(ctx, &copilotv1.CreateProjectRequest{
+		Ctx: copilotCtx(1, "u-1"), Name: "copilot-project", Description: "d"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetProjectId() == "" {
+		t.Fatal("empty project id")
+	}
+	var p model.Project
+	if err := d.First(&p, mustIDStr(resp.GetProjectId())).Error; err != nil {
+		t.Fatal(err)
+	}
+	if p.Name != "copilot-project" || p.TenantID != 1 {
+		t.Fatalf("project mismatch: %+v", p)
+	}
+}
+
+func TestCopilotCheckVariableRefs(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	if err := d.Create(&model.Variable{
+		ID: model.NextID(), TenantID: 1, ProjectID: 100, Key: "token", Value: "t1",
+		Scope: int16(commonv1.VariableScope_VARIABLE_SCOPE_PROJECT),
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	api := &model.HttpApi{ID: model.NextID(), TenantID: 1, ProjectID: 100,
+		Method: int16(commonv1.HttpMethod_HTTP_METHOD_GET), URI: "/users?token={{token}}"}
+	if err := d.Create(api).Error; err != nil {
+		t.Fatal(err)
+	}
+	bad := &model.HttpApi{ID: model.NextID(), TenantID: 1, ProjectID: 100,
+		Method: int16(commonv1.HttpMethod_HTTP_METHOD_GET), URI: "/users?q={{missing_var}}"}
+	if err := d.Create(bad).Error; err != nil {
+		t.Fatal(err)
+	}
+	resp, err := cli.CheckVariableRefs(ctx, &copilotv1.CheckVariableRefsRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.GetIssues()) == 0 {
+		t.Fatal("want missing_var issue")
+	}
+	if resp.GetIssues()[0].GetVariable() != "missing_var" {
+		t.Fatalf("issue variable mismatch: %v", resp.GetIssues())
+	}
+	found := false
+	for _, v := range resp.GetDefinedVariables() {
+		if v == "token" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("defined variables should contain token: %v", resp.GetDefinedVariables())
+	}
+}
+
+func TestCopilotQueryApiDirectory(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	folder := model.TreeNode{ID: model.NextID(), TenantID: 1, ProjectID: 100,
+		NodeType: model.NodeTypeFolder, Name: "订单", ParentID: 0, Order: 0}
+	if err := d.Create(&folder).Error; err != nil {
+		t.Fatal(err)
+	}
+	api := model.HttpApi{ID: model.NextID(), TenantID: 1, ProjectID: 100,
+		Method: int16(commonv1.HttpMethod_HTTP_METHOD_POST), URI: "/orders"}
+	if err := d.Create(&api).Error; err != nil {
+		t.Fatal(err)
+	}
+	node := model.TreeNode{ID: model.NextID(), TenantID: 1, ProjectID: 100,
+		NodeType: model.NodeTypeHTTPAPI, RefID: api.ID, Name: "创建订单", ParentID: folder.ID, Order: 0}
+	if err := d.Create(&node).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := cli.QueryApiDirectory(ctx, &copilotv1.QueryApiDirectoryRequest{
+		Ctx: copilotCtx(1, "u-1"), ProjectId: "100", Query: "订单"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.GetTotal() == 0 {
+		t.Fatal("want directory entries")
+	}
+	foundAPI := false
+	for _, e := range resp.GetEntries() {
+		if e.GetUri() == "/orders" && strings.Contains(e.GetPath(), "订单") {
+			foundAPI = true
+		}
+	}
+	if !foundAPI {
+		t.Fatalf("directory missing api under folder: %v", resp.GetEntries())
+	}
+}
+
+func mustIDStr(s string) int64 {
+	var x int64
+	fmt.Sscan(s, &x)
+	return x
 }

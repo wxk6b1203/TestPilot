@@ -98,7 +98,7 @@
    {
     "name": "binary_ref",
     "type": "string",
-    "doc": "artifact 引用"
+    "doc": "artifact:<id>（Scheduler 解析）或 base64:<data>（Worker 内联）"
    }
   ],
   "Assertion": [
@@ -318,7 +318,7 @@
    {
     "name": "script_ref",
     "type": "string",
-    "doc": "artifact 引用"
+    "doc": "artifact:<id>（Scheduler 解析）或 base64:<data>（Worker 内联）"
    },
    {
     "name": "source",

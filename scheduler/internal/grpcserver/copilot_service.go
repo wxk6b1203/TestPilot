@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -782,4 +784,362 @@ func (s *CopilotService) TriggerStress(ctx context.Context, req *copilotv1.Trigg
 	}
 	s.audit(req.GetCtx(), "run", "stress_plan", req.GetStressPlanId(), map[string]any{"run_id": runID})
 	return &copilotv1.TriggerStressResponse{RunId: idStr(runID)}, nil
+}
+
+// ---- 本轮新增工具：创建项目 / 接口目录问答 / 变量引用检查 ----
+
+func (s *CopilotService) CreateProject(_ context.Context, req *copilotv1.CreateProjectRequest) (*copilotv1.CreateProjectResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	name := strings.TrimSpace(req.GetName())
+	if name == "" {
+		return nil, status.Error(codes.InvalidArgument, "name required")
+	}
+	p := &model.Project{
+		ID:          model.NextID(),
+		TenantID:    tid(req.GetCtx()),
+		Name:        name,
+		Description: req.GetDescription(),
+	}
+	if req.GetConfig() != nil {
+		if raw, err := protojson.Marshal(req.GetConfig()); err == nil {
+			p.Config = model.JSON(raw)
+		}
+	}
+	if err := s.db.Create(p).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "create", "project", idStr(p.ID), map[string]any{"name": name})
+	return &copilotv1.CreateProjectResponse{ProjectId: idStr(p.ID)}, nil
+}
+
+// QueryApiDirectory 返回项目接口目录树（folder + http/grpc 叶子）的扁平化条目，
+// 含人读路径；支持 query 过滤与 parent_node_id 子树限定。
+func (s *CopilotService) QueryApiDirectory(_ context.Context, req *copilotv1.QueryApiDirectoryRequest) (*copilotv1.QueryApiDirectoryResponse, error) {
+	tenant := tid(req.GetCtx())
+	pid := mustID(req.GetProjectId())
+	if pid <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	var n int64
+	if err := s.db.Model(&model.Project{}).Where("id = ? AND tenant_id = ?", pid, tenant).Count(&n).Error; err != nil || n == 0 {
+		return nil, status.Error(codes.NotFound, "project not found in tenant")
+	}
+
+	var nodes []model.TreeNode
+	if err := s.db.Where("tenant_id = ? AND project_id = ?", tenant, pid).Order("\"order\" asc, id asc").Find(&nodes).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	if len(nodes) == 0 {
+		return &copilotv1.QueryApiDirectoryResponse{Entries: []*copilotv1.ApiDirectoryEntry{}, Summary: "0 nodes, 0 http apis, 0 grpc apis"}, nil
+	}
+
+	httpByID := map[int64]model.HttpApi{}
+	grpcByID := map[int64]model.GrpcApi{}
+	httpIDs := []int64{}
+	grpcIDs := []int64{}
+	for _, nd := range nodes {
+		switch nd.NodeType {
+		case model.NodeTypeHTTPAPI:
+			httpIDs = append(httpIDs, nd.RefID)
+		case model.NodeTypeGRPCAPI:
+			grpcIDs = append(grpcIDs, nd.RefID)
+		}
+	}
+	if len(httpIDs) > 0 {
+		var rows []model.HttpApi
+		s.db.Where("tenant_id = ? AND id IN ?", tenant, httpIDs).Find(&rows)
+		for _, r := range rows {
+			httpByID[r.ID] = r
+		}
+	}
+	if len(grpcIDs) > 0 {
+		var rows []model.GrpcApi
+		s.db.Where("tenant_id = ? AND id IN ?", tenant, grpcIDs).Find(&rows)
+		for _, r := range rows {
+			grpcByID[r.ID] = r
+		}
+	}
+
+	nodeByID := map[int64]*model.TreeNode{}
+	childrenByParent := map[int64][]*model.TreeNode{}
+	parentNameByID := map[int64]string{}
+	for i := range nodes {
+		nd := &nodes[i]
+		nodeByID[nd.ID] = nd
+		childrenByParent[nd.ParentID] = append(childrenByParent[nd.ParentID], nd)
+	}
+	for id, nd := range nodeByID {
+		if p, ok := nodeByID[nd.ParentID]; ok {
+			parentNameByID[id] = p.Name
+		}
+	}
+	pathCache := map[int64]string{}
+	var namePath func(int64, int) string
+	namePath = func(id int64, depth int) string {
+		if depth > 64 {
+			return "/…"
+		}
+		if p, ok := pathCache[id]; ok {
+			return p
+		}
+		nd := nodeByID[id]
+		if nd == nil {
+			return ""
+		}
+		path := "/" + nd.Name
+		if nd.ParentID != 0 {
+			if p := namePath(nd.ParentID, depth+1); p != "" {
+				path = strings.TrimSuffix(p, "/") + "/" + nd.Name
+			}
+		}
+		pathCache[id] = path
+		return path
+	}
+
+	makeEntry := func(nd *model.TreeNode) *copilotv1.ApiDirectoryEntry {
+		e := &copilotv1.ApiDirectoryEntry{
+			NodeId: idStr(nd.ID), ParentId: idStr(nd.ParentID), ParentName: parentNameByID[nd.ID],
+			NodeType: int32(nd.NodeType), Name: nd.Name, Path: namePath(nd.ID, 0),
+		}
+		if nd.RefID != 0 {
+			e.RefId = idStr(nd.RefID)
+		}
+		switch nd.NodeType {
+		case model.NodeTypeHTTPAPI:
+			if a, ok := httpByID[nd.RefID]; ok {
+				if e.Name == "" {
+					if a.Name != "" {
+						e.Name = a.Name
+					} else {
+						e.Name = fmt.Sprintf("%s %s", commonv1.HttpMethod_name[int32(a.Method)], a.URI)
+					}
+				}
+				e.Method = int32(a.Method)
+				e.Uri = a.URI
+			}
+		case model.NodeTypeGRPCAPI:
+			if g, ok := grpcByID[nd.RefID]; ok {
+				e.Name = g.Method
+				e.FullService = g.FullService
+				e.RpcMethod = g.Method
+			}
+		}
+		return e
+	}
+
+	roots := childrenByParent[0]
+	if raw := req.GetParentNodeId(); raw != "" {
+		nd := nodeByID[mustID(raw)]
+		if nd == nil {
+			return nil, status.Error(codes.NotFound, "parent node not found")
+		}
+		roots = []*model.TreeNode{nd}
+	}
+
+	query := strings.ToLower(strings.TrimSpace(req.GetQuery()))
+	match := func(e *copilotv1.ApiDirectoryEntry) bool {
+		if query == "" {
+			return true
+		}
+		return strings.Contains(strings.ToLower(e.GetName()), query) ||
+			strings.Contains(strings.ToLower(e.GetUri()), query) ||
+			strings.Contains(strings.ToLower(e.GetFullService()), query) ||
+			strings.Contains(strings.ToLower(e.GetRpcMethod()), query)
+	}
+
+	entries := []*copilotv1.ApiDirectoryEntry{}
+	var walk func(nd *model.TreeNode) bool
+	walk = func(nd *model.TreeNode) bool {
+		e := makeEntry(nd)
+		childKept := false
+		for _, c := range childrenByParent[nd.ID] {
+			if walk(c) {
+				childKept = true
+			}
+		}
+		if match(e) || childKept {
+			entries = append(entries, e)
+			return true
+		}
+		return false
+	}
+	for _, root := range roots {
+		walk(root)
+	}
+	// 目录祖先补齐（匹配接口时父目录一并返回，给 LLM 完整路径上下文）。
+	ancestors := map[int64]bool{}
+	for _, e := range entries {
+		cur := mustID(e.GetNodeId())
+		for depth := 0; depth < 64; depth++ {
+			nd := nodeByID[cur]
+			if nd == nil || nd.ParentID == 0 {
+				break
+			}
+			ancestors[nd.ParentID] = true
+			cur = nd.ParentID
+		}
+	}
+	for id := range ancestors {
+		if nd := nodeByID[id]; nd != nil {
+			entries = append(entries, makeEntry(nd))
+		}
+	}
+	sort.SliceStable(entries, func(i, j int) bool { return entries[i].GetPath() < entries[j].GetPath() })
+	uniq := entries[:0]
+	seenIDs := map[string]bool{}
+	for _, e := range entries {
+		if seenIDs[e.GetNodeId()] {
+			continue
+		}
+		seenIDs[e.GetNodeId()] = true
+		uniq = append(uniq, e)
+	}
+	summary := fmt.Sprintf("%d nodes, %d http apis, %d grpc apis", len(nodes), len(httpByID), len(grpcByID))
+	return &copilotv1.QueryApiDirectoryResponse{Entries: uniq, Total: int32(len(uniq)), Summary: summary}, nil
+}
+
+var _templatePattern = regexp.MustCompile(`\{\{\s*(.+?)\s*\}\}`)
+
+var _exprKeywords = map[string]bool{
+	"and": true, "or": true, "not": true, "in": true,
+	"True": true, "False": true, "None": true,
+}
+
+func rootIdentifiers(expr string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	prevDot := false
+	i := 0
+	for i < len(expr) {
+		c := expr[i]
+		if c == '"' || c == '\'' {
+			quote := c
+			i++
+			for i < len(expr) {
+				if expr[i] == '\\' {
+					i += 2
+					continue
+				}
+				if expr[i] == quote {
+					i++
+					break
+				}
+				i++
+			}
+			prevDot = false
+			continue
+		}
+		if c == '.' {
+			prevDot = true
+			i++
+			continue
+		}
+		if c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') {
+			j := i
+			for j < len(expr) && (expr[j] == '_' || (expr[j] >= 'A' && expr[j] <= 'Z') ||
+				(expr[j] >= 'a' && expr[j] <= 'z') || (expr[j] >= '0' && expr[j] <= '9')) {
+				j++
+			}
+			tok := expr[i:j]
+			if !prevDot && !_exprKeywords[tok] && !seen[tok] {
+				seen[tok] = true
+				out = append(out, tok)
+			}
+			i = j
+			prevDot = false
+			continue
+		}
+		prevDot = false
+		i++
+	}
+	return out
+}
+
+// CheckVariableRefs 扫描项目接口与用例中的 {{expr}} 模板，报告未定义根变量。
+func (s *CopilotService) CheckVariableRefs(_ context.Context, req *copilotv1.CheckVariableRefsRequest) (*copilotv1.CheckVariableRefsResponse, error) {
+	tenant := tid(req.GetCtx())
+	pid := mustID(req.GetProjectId())
+	if pid <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	var n int64
+	if err := s.db.Model(&model.Project{}).Where("id = ? AND tenant_id = ?", pid, tenant).Count(&n).Error; err != nil || n == 0 {
+		return nil, status.Error(codes.NotFound, "project not found in tenant")
+	}
+
+	var variables []model.Variable
+	vq := s.db.Where("tenant_id = ? AND project_id = ?", tenant, pid)
+	if raw := req.GetEnvironmentId(); raw != "" {
+		vq = vq.Where("(environment_id = 0 OR environment_id = ?)", mustID(raw))
+	}
+	vq.Find(&variables)
+	defined := map[string]bool{}
+	definedNames := []string{}
+	for _, v := range variables {
+		if !defined[v.Key] {
+			defined[v.Key] = true
+			definedNames = append(definedNames, v.Key)
+		}
+	}
+	reserved := map[string]bool{"vars": true, "response": true, "base_url": true}
+
+	issues := []*copilotv1.VariableRefIssue{}
+	issueSeen := map[string]bool{}
+	addIssues := func(location, field, raw string) {
+		if !strings.Contains(raw, "{{") {
+			return
+		}
+		for _, m := range _templatePattern.FindAllStringSubmatch(raw, -1) {
+			expr := m[1]
+			for _, name := range rootIdentifiers(expr) {
+				if reserved[name] || defined[name] {
+					continue
+				}
+				key := location + "|" + field + "|" + name
+				if issueSeen[key] {
+					continue
+				}
+				issueSeen[key] = true
+				if len(expr) > 200 {
+					expr = expr[:200] + "…"
+				}
+				issues = append(issues, &copilotv1.VariableRefIssue{
+					Location: location, Field: field, Variable: name, Expression: expr,
+				})
+			}
+		}
+	}
+	scanJSON := func(location, field string, raw model.JSON) {
+		if len(raw) > 0 {
+			addIssues(location, field, string(raw))
+		}
+	}
+
+	var apis []model.HttpApi
+	s.db.Where("tenant_id = ? AND project_id = ?", tenant, pid).Find(&apis)
+	for _, a := range apis {
+		loc := "http_api:" + idStr(a.ID)
+		addIssues(loc, "uri", a.URI)
+		scanJSON(loc, "params", a.Params)
+		scanJSON(loc, "headers", a.Headers)
+		scanJSON(loc, "cookies", a.Cookies)
+		scanJSON(loc, "body", a.Body)
+		scanJSON(loc, "pre_scripts", a.PreScripts)
+		scanJSON(loc, "post_scripts", a.PostScripts)
+	}
+
+	var cases []model.TestCase
+	s.db.Where("tenant_id = ? AND project_id = ?", tenant, pid).Find(&cases)
+	for _, c := range cases {
+		loc := "case:" + idStr(c.ID)
+		scanJSON(loc, "definition", c.Definition)
+	}
+	return &copilotv1.CheckVariableRefsResponse{
+		DefinedVariables: definedNames,
+		Issues:           issues,
+		ScannedApis:      int32(len(apis)),
+		ScannedCases:     int32(len(cases)),
+	}, nil
 }

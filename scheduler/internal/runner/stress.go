@@ -55,7 +55,7 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 		if tc.Type != int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE) {
 			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "stress behavior target must be a lowcode case")
 		}
-		pcase, _, err := r.materializeCase(&tc)
+		pcase, _, _, err := r.materializeCase(&tc)
 		if err != nil {
 			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "behavior case materialize: "+err.Error())
 		}

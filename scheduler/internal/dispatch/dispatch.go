@@ -3,6 +3,7 @@ package dispatch
 import (
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sync"
 	"sync/atomic"
@@ -108,6 +109,25 @@ type runTaskSet struct {
 func (d *Dispatcher) SetArtifactIngest(store artifactstore.Backend, localRoot string) {
 	d.artifactStore = store
 	d.artifactRoot = localRoot
+}
+
+// ReadArtifact 读取产物内容（binary_ref 派发前解析用）。
+// store 未注入（测试）时回退 local 后端，仍带根目录穿越防护。
+func (d *Dispatcher) ReadArtifact(tenantID int64, uri string) ([]byte, error) {
+	store := d.artifactStore
+	if store == nil {
+		var err error
+		store, err = artifactstore.NewLocal(d.artifactRoot)
+		if err != nil {
+			return nil, err
+		}
+	}
+	rc, err := store.Open(tenantID, uri)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
 }
 
 type Dispatcher struct {

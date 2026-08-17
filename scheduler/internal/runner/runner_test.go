@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -442,7 +443,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "ref-case",
 		Definition: model.JSON(`{"script_ref": "` + idStr(script.ID) + `", "entry": "run"}`),
 	}
-	pcase, _, err := r.materializeCase(&lc)
+	pcase, _, _, err := r.materializeCase(&lc)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -463,7 +464,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "missing",
 		Definition: model.JSON(`{"script_ref": "999999"}`),
 	}
-	if _, _, err := r.materializeCase(&missing); err == nil {
+	if _, _, _, err := r.materializeCase(&missing); err == nil {
 		t.Fatal("missing script should error")
 	}
 
@@ -479,7 +480,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Name:       "foreign-ref",
 		Definition: model.JSON(`{"script_ref": "` + idStr(foreign.ID) + `"}`),
 	}
-	if _, _, err := r.materializeCase(&foreignCase); err == nil {
+	if _, _, _, err := r.materializeCase(&foreignCase); err == nil {
 		t.Fatal("cross-tenant script_ref should error")
 	}
 
@@ -489,7 +490,7 @@ func TestMaterializeScriptRef(t *testing.T) {
 		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
 		Name: "decl", Definition: model.JSON(`{"steps": []}`),
 	}
-	if _, _, err := r.materializeCase(&decl); err != nil {
+	if _, _, _, err := r.materializeCase(&decl); err != nil {
 		t.Fatalf("declarative should pass through: %v", err)
 	}
 }
@@ -516,7 +517,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 				{"name": "nested", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `"}}]}}
 		]}`),
 	}
-	pcase, _, err := r.materializeCase(&decl)
+	pcase, _, _, err := r.materializeCase(&decl)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -549,7 +550,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "own", "type": 1, "api_call": {"api_id": "` + idStr(api.ID) + `", "inline": {"method": 2, "uri": "/mine"}}}
 		]}`),
 	}
-	p2, _, err := r.materializeCase(&own)
+	p2, _, _, err := r.materializeCase(&own)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -566,7 +567,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "999999"}}
 		]}`),
 	}
-	if _, _, err := r.materializeCase(&missing); err == nil {
+	if _, _, _, err := r.materializeCase(&missing); err == nil {
 		t.Fatal("missing api should error")
 	}
 	badID := model.TestCase{
@@ -577,7 +578,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "not-a-number"}}
 		]}`),
 	}
-	if _, _, err := r.materializeCase(&badID); err == nil {
+	if _, _, _, err := r.materializeCase(&badID); err == nil {
 		t.Fatal("invalid api_id should error")
 	}
 
@@ -595,7 +596,7 @@ func TestMaterializeAPIRefs(t *testing.T) {
 			{"name": "x", "type": 1, "api_call": {"api_id": "` + idStr(foreign.ID) + `"}}
 		]}`),
 	}
-	if _, _, err := r.materializeCase(&foreignCase); err == nil {
+	if _, _, _, err := r.materializeCase(&foreignCase); err == nil {
 		t.Fatal("cross-tenant api_id should error")
 	}
 }
@@ -621,7 +622,7 @@ func TestMaterializeGrpcRefs(t *testing.T) {
 				{"name": "nested", "grpc_call": {"grpc_api_id": "` + idStr(api.ID) + `"}}]}}
 		]}`),
 	}
-	pcase, grpcAPIs, err := r.materializeCase(&decl)
+	pcase, grpcAPIs, _, err := r.materializeCase(&decl)
 	if err != nil {
 		t.Fatalf("materialize: %v", err)
 	}
@@ -643,16 +644,16 @@ func TestMaterializeGrpcRefs(t *testing.T) {
 
 	// 缺失 / 非法 id / 跨租户 → 报错
 	for name, def := range map[string]string{
-		"missing":    `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "999999"}}]}`,
-		"bad-id":     `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "nope"}}]}`,
-		"cross-tn":   `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "` + idStr(api.ID+1) + `"}}]}`,
+		"missing":  `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "999999"}}]}`,
+		"bad-id":   `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "nope"}}]}`,
+		"cross-tn": `{"steps": [{"name": "x", "grpc_call": {"grpc_api_id": "` + idStr(api.ID+1) + `"}}]}`,
 	} {
 		tc := model.TestCase{
 			ID: model.NextID(), TenantID: 1, ProjectID: 1,
 			Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE),
 			Name: name, Definition: model.JSON(def),
 		}
-		if _, _, err := r.materializeCase(&tc); err == nil {
+		if _, _, _, err := r.materializeCase(&tc); err == nil {
 			t.Fatalf("%s: should error", name)
 		}
 	}
@@ -771,5 +772,60 @@ func TestBuildExecutionEnv(t *testing.T) {
 	ee = buildExecutionEnv(env, true, nil)
 	if len(ee.Variables) != 0 {
 		t.Fatalf("want no variables, got %+v", ee.Variables)
+	}
+}
+
+func TestArtifactIDFromRef(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+		err  bool
+	}{
+		{"artifact:123", 123, false},
+		{"123", 123, false},
+		{"base64:aGk=", 0, false},
+		{"artifact:", 0, true},
+		{"nope", 0, true},
+	}
+	for _, c := range cases {
+		got, err := artifactIDFromRef(c.in)
+		if got != c.want || (err != nil) != c.err {
+			t.Fatalf("artifactIDFromRef(%q)=%d,%v want %d,err=%v", c.in, got, err, c.want, c.err)
+		}
+	}
+}
+
+func TestResolveInlineFilesArtifactRef(t *testing.T) {
+	d := openTestDB(t)
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "body.bin"), []byte("artifact-hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	art := model.Artifact{ID: model.NextID(), TenantID: 1, RunID: 1, Kind: model.ArtifactKindCert, URI: "body.bin", Size: 14}
+	if err := d.Create(&art).Error; err != nil {
+		t.Fatal(err)
+	}
+	disp := dispatch.New(d)
+	disp.SetArtifactIngest(nil, root)
+	r := New(d, disp)
+
+	pcase := &commonv1.TestCase{
+		Definition: &commonv1.TestCase_Declarative{Declarative: &commonv1.DeclarativeCase{
+			Steps: []*commonv1.TestStep{{
+				Params: &commonv1.TestStep_ApiCall{ApiCall: &commonv1.ApiCallStep{
+					Inline: &commonv1.HttpApi{Body: &commonv1.BodySpec{
+						ContentType: commonv1.BodyContentType_BODY_CONTENT_TYPE_BINARY,
+						Content:     &commonv1.BodySpec_BinaryRef{BinaryRef: "artifact:" + fmt.Sprint(art.ID)},
+					}},
+				}},
+			}},
+		}},
+	}
+	files, err := r.resolveInlineFiles(1, pcase)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(files["artifact:"+fmt.Sprint(art.ID)]) != "artifact-hello" {
+		t.Fatalf("inline file mismatch: %q", files["artifact:"+fmt.Sprint(art.ID)])
 	}
 }
