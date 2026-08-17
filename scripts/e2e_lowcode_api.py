@@ -53,7 +53,10 @@ assert f"class Api{gid}(GrpcAPI):" in prev["source"], prev
 assert 'method: str = "POST"' in prev["source"], prev
 assert 'uri: str = "/echo"' in prev["source"], prev
 assert "CreateUser = Api" + str(hid) in prev["source"], prev
-print("✓ wrapper preview")
+stub = api.get(f"/api/v1/projects/{pid}/api-wrappers?http_ids={hid}&format=stub").json()
+assert "IDE completion stub" in stub["source"] and "async def run" in stub["source"]
+assert "testpilot_sdk" not in stub["source"]  # 自包含补全，不依赖 SDK 安装
+print("✓ wrapper preview（含 .pyi 补全 stub）")
 
 # 低代码用例：只写接口 ID（ctx.api 静态提取 + 显式 grpc ref 混合）
 src = f'''from tp_api_wrappers import Api{hid}

@@ -131,7 +131,9 @@ async def run(ctx: Context):
 ```
 
 接口改名后 `CreateUser` 别名可能变化，脚本应优先使用 `Api<ID>`。预览：
-`GET /api/v1/projects/:id/api-wrappers`（前端接口页「查看接口封装」）。
+`GET /api/v1/projects/:id/api-wrappers`（前端接口页「查看接口封装」）。预览弹窗可
+复制源码、下载 `tp_api_wrappers.py`（平台执行格式），或下载 `tp_api_wrappers.pyi`
+（自包含补全 stub；放到本地工程即可获得 Pylance/Pyright 代码补全，无需安装 SDK）。
 
 **Page 模型（v2 第三批）**：`ctx.page` 在沙箱内驱动浏览器（经能力桥转发 Playwright）：
 

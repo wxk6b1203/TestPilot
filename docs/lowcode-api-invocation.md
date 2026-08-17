@@ -132,12 +132,16 @@ Echo = Api456
 - 排序按 ID，输出确定性（测试可断言）；
 - 别名查找：优先 `http_apis.name` / gRPC 目录树节点名，兜底 `Api<ID>`。
 
-### 4.4 REST 预览
+### 4.4 REST 预览与本地补全
 
 `GET /api/v1/projects/:id/api-wrappers`（viewer）：
 - 默认返回项目全部 HTTP+gRPC 接口的封装源码；
 - 可选 `http_ids=1,2` / `grpc_ids=3` 只生成指定接口；
-- 响应：`{"source": "...", "count": n}`；前端“封装预览”复用同一生成器。
+- `format=py`（默认）：返回平台执行格式 `tp_api_wrappers.py`；
+- `format=stub`：返回自包含 `tp_api_wrappers.pyi` 补全 stub（不 import testpilot-sdk），
+  下载到本地工程即可获得 Pylance/Pyright 对 `Api<ID>().run(...)` 与响应字段的提示；
+- 响应：`{"source": "...", "count": n, "format": ...}`；前端“封装预览”弹窗提供
+  复制 / 下载 `.py` / 下载 `.pyi`。
 
 ### 4.5 前端
 

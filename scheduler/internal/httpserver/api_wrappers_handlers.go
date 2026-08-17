@@ -22,13 +22,28 @@ func (s *Server) projectAPIWrappers(ctx fiber.Ctx) error {
 	}
 	httpIDs := splitCSV(ctx.Query("http_ids"))
 	grpcIDs := splitCSV(ctx.Query("grpc_ids"))
-	source, count, err := s.run.PreviewAPIWrappers(c.TenantID, pid, httpIDs, grpcIDs)
+	format := strings.TrimSpace(ctx.Query("format"))
+	if format == "" {
+		format = "py"
+	}
+	var source string
+	var count int
+	var err error
+	if format == "stub" || format == "pyi" {
+		source, count, err = s.run.PreviewAPIWrappersStub(c.TenantID, pid, httpIDs, grpcIDs)
+	} else if format == "py" {
+		source, count, err = s.run.PreviewAPIWrappers(c.TenantID, pid, httpIDs, grpcIDs)
+	} else {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"format must be py or stub"))
+	}
 	if err != nil {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, err.Error()))
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{
 		"source": source,
 		"count":  count,
+		"format": format,
 	})
 }
 

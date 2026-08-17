@@ -326,3 +326,40 @@ func TestPreviewAPIWrappers(t *testing.T) {
 		t.Fatal("invalid preview id should error")
 	}
 }
+
+func TestGenerateAPIWrappersStub(t *testing.T) {
+	prep := newLowCodeAPIPrep()
+	prep.HTTPApis["123"] = &commonv1.HttpApi{
+		Id: "123", Method: commonv1.HttpMethod_HTTP_METHOD_POST, Uri: "/users",
+	}
+	prep.HTTPNames["123"] = "CreateUser"
+	prep.GrpcApis["456"] = &commonv1.GrpcApi{
+		Id: "456", FullService: "testpilot.echo.v1.EchoService", Method: "Echo",
+	}
+	prep.GrpcNames["456"] = "Echo"
+	src, err := GenerateAPIWrappersStub(prep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"IDE completion stub",
+		"from typing import Any",
+		"class Response:",
+		"class GrpcResponse:",
+		"class Api123:",
+		"async def run(self, *, body: Any = ..., headers: dict[str, str] | None = ...",
+		"-> Response: ...",
+		"class Api456:",
+		"async def run(self, *, request: dict[str, Any] | None = ...",
+		"-> GrpcResponse: ...",
+		"CreateUser = Api123",
+		"Echo = Api456",
+	} {
+		if !strings.Contains(src, want) {
+			t.Fatalf("stub missing %q:\n%s", want, src)
+		}
+	}
+	if got, _ := GenerateAPIWrappersStub(newLowCodeAPIPrep()); got != "" {
+		t.Fatalf("empty prep should generate empty stub, got %q", got)
+	}
+}
