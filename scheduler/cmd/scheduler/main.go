@@ -22,6 +22,7 @@ import (
 	"github.com/testpilot/testpilot/internal/grpcserver"
 	"github.com/testpilot/testpilot/internal/httpserver"
 	"github.com/testpilot/testpilot/internal/logging"
+	"github.com/testpilot/testpilot/internal/model"
 	"github.com/testpilot/testpilot/internal/retention"
 	"github.com/testpilot/testpilot/internal/runner"
 	"github.com/testpilot/testpilot/internal/tracing"
@@ -33,6 +34,9 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := model.SetSnowflakeNode(cfg.SnowflakeNode); err != nil {
+		logging.L.Fatalw("snowflake_node invalid", "node", cfg.SnowflakeNode, "err", err)
+	}
 	logging.Init(cfg.LogLevel, cfg.LogFormat)
 	defer logging.Sync()
 

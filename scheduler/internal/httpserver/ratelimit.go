@@ -8,6 +8,7 @@ import (
 // 登录限流：内存固定窗口（按来源 IP）。
 // 限制暴力破解频率；多副本部署时各实例独立计数（够用，反代层可做更强限制）。
 var loginLimit = newFixedWindowLimiter(10, time.Minute)
+var registerLimit = newFixedWindowLimiter(10, time.Hour) // 自助建租户比登录更重，小时级限流
 
 type fixedWindowLimiter struct {
 	mu     sync.Mutex
@@ -23,8 +24,8 @@ type windowEntry struct {
 
 func newFixedWindowLimiter(limit int, window time.Duration) *fixedWindowLimiter {
 	return &fixedWindowLimiter{
-		limit:  limit, window: window,
-		hits:   map[string]windowEntry{},
+		limit: limit, window: window,
+		hits: map[string]windowEntry{},
 	}
 }
 

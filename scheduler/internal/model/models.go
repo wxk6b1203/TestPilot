@@ -22,10 +22,25 @@ var (
 )
 
 // NextID 生成趋势递增的 int64 主键。
+// SetSnowflakeNode 配置雪花 ID 的 10bit 节点号（0-1023）。
+// 多 Scheduler 实例必须各不相同；默认 1（单实例/dev）。
+func SetSnowflakeNode(node int64) error {
+	if node < 0 || node > 1023 {
+		return fmt.Errorf("snowflake node out of range: %d", node)
+	}
+	idMu.Lock()
+	idNode = node
+	idMu.Unlock()
+	return nil
+}
+
 func NextID() int64 {
 	idMu.Lock()
 	defer idMu.Unlock()
 	now := time.Now().UnixMilli()
+	if now < idLastMs {
+		now = idLastMs // 时钟回拨保护：不生成负数 ID
+	}
 	if now == idLastMs {
 		idSeq = (idSeq + 1) & 0xFFF
 		if idSeq == 0 {
@@ -96,8 +111,8 @@ type User struct {
 	Status       int16     `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 	// OIDC 身份绑定（IdP sub 锚点）：优先于 email 联结，防账户接管
-	OIDCProviderID int64  `json:"-" gorm:"index"`
-	OIDCSub        string `json:"-" gorm:"index"`
+	OIDCProviderID int64  `json:"-" gorm:"column:oidc_provider_id;index:idx_users_oidc"`
+	OIDCSub        string `json:"-" gorm:"column:oidc_sub;index:idx_users_oidc"`
 }
 
 type TenantMember struct {

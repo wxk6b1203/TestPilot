@@ -85,12 +85,42 @@ func TestGetApi(t *testing.T) {
 		}
 	})
 
-	t.Run("grpc unimplemented", func(t *testing.T) {
+	t.Run("grpc payload", func(t *testing.T) {
+		g := &model.GrpcApi{
+			ID: model.NextID(), TenantID: 1, ProjectID: 100,
+			FullService: "svc.v1.Users", Method: "List",
+			RequestMessage: model.JSON(`{"page_size":10}`),
+			Metadata:       model.JSON(`[{"key":"x-tenant","value":"t1"}]`),
+		}
+		if err := d.Create(g).Error; err != nil {
+			t.Fatal(err)
+		}
+		resp, err := cli.GetApi(ctx, &copilotv1.GetApiRequest{
+			Ctx: copilotCtx(1, "u-1"), ApiId: strconv.FormatInt(g.ID, 10),
+			Kind: copilotv1.ApiKind_API_KIND_GRPC,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := resp.GetGrpc()
+		if got == nil {
+			t.Fatal("want grpc payload")
+		}
+		if got.GetFullService() != g.FullService || got.GetMethod() != g.Method ||
+			got.GetProjectId() != "100" || len(got.GetMetadata()) != 1 {
+			t.Fatalf("grpc payload mismatch: %v", got)
+		}
+		if got.GetRequestMessage() == nil || got.GetRequestMessage().Fields["page_size"].GetNumberValue() != 10 {
+			t.Fatalf("request_message mismatch: %v", got.GetRequestMessage())
+		}
+	})
+
+	t.Run("grpc missing from http id", func(t *testing.T) {
 		_, err := cli.GetApi(ctx, &copilotv1.GetApiRequest{
 			Ctx: copilotCtx(1, "u-1"), ApiId: apiID, Kind: copilotv1.ApiKind_API_KIND_GRPC,
 		})
-		if status.Code(err) != codes.Unimplemented {
-			t.Fatalf("want Unimplemented, got %v", err)
+		if status.Code(err) != codes.NotFound {
+			t.Fatalf("want NotFound, got %v", err)
 		}
 	})
 
@@ -537,4 +567,3 @@ func TestCreateApiCrossTenantProjectRejected(t *testing.T) {
 		t.Fatal("empty api id")
 	}
 }
-

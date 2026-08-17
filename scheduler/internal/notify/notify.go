@@ -7,6 +7,7 @@ package notify
 
 import (
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
@@ -33,7 +34,54 @@ func allowPrivateWebhook() bool {
 	return os.Getenv("TP_NOTIFY_ALLOW_PRIVATE") == "1"
 }
 
-var client = &http.Client{Timeout: 5 * time.Second}
+var client = newNotifyHTTPClient()
+
+func isPrivateIP(ip net.IP) bool {
+	return ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+}
+
+// newNotifyHTTPClient 为通知 webhook 构造绑定解析结果的 HTTP client：
+// DialContext 内解析 DNS → 校验私网 → 用同一解析出的 IP 拨号，消除
+// webhookTargetAllowed 预检与真实连接之间 DNS rebinding 的 TOCTOU 窗口。
+func newNotifyHTTPClient() *http.Client {
+	transport := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+			dialAddr := addr
+			if !allowPrivateWebhook() {
+				if ip := net.ParseIP(host); ip != nil {
+					if isPrivateIP(ip) {
+						return nil, fmt.Errorf("notify webhook host %s is private", host)
+					}
+				} else {
+					ips, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+					if err != nil {
+						return nil, err
+					}
+					chosen := ""
+					for _, a := range ips {
+						ip := a.IP
+						if !isPrivateIP(ip) {
+							chosen = ip.String()
+							break
+						}
+					}
+					if chosen == "" {
+						return nil, fmt.Errorf("notify webhook host %s resolves only to private addresses", host)
+					}
+					dialAddr = net.JoinHostPort(chosen, port)
+				}
+			}
+			d := net.Dialer{Timeout: 5 * time.Second}
+			return d.DialContext(ctx, network, dialAddr)
+		},
+	}
+	return &http.Client{Timeout: 5 * time.Second, Transport: transport}
+}
 
 const (
 	EventRunFinished    = "run_finished"
@@ -157,10 +205,8 @@ func deliver(ch *model.NotificationChannel, payload map[string]any, title, text 
 }
 
 // webhookTargetAllowed 校验通知目标 URL：仅 http/https，且（默认）非私网/环回/链路本地。
-// 已知残余风险：DNS rebinding TOCTOU——判定与连接是两次独立解析，受控域名可在
-// 其间切换（公网→内网）绕过私网拦截。缓解：allow 白名单语义由通知渠道配置者
-// 掌控（管理端可见），攻击面为"已配置任意 URL 的管理员"；彻底修复需连接阶段
-// 绑定已解析 IP（httpx/Go http 层无标准 hook，改动面大，暂留文档说明）。
+// 预检通过后，真实连接由 newNotifyHTTPClient 的 DialContext 用同一次解析结果绑定 IP，
+// 不再存在 DNS rebinding TOCTOU。
 func webhookTargetAllowed(rawURL string) bool {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Hostname() == "" {
@@ -174,7 +220,7 @@ func webhookTargetAllowed(rawURL string) bool {
 	}
 	ip := net.ParseIP(u.Hostname())
 	if ip != nil {
-		return !(ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsUnspecified())
+		return !isPrivateIP(ip)
 	}
 	// 主机名：解析后任一地址为私网即拒绝；解析失败不拦截（连接阶段自然报错）
 	addrs, err := net.LookupHost(u.Hostname())
@@ -182,8 +228,7 @@ func webhookTargetAllowed(rawURL string) bool {
 		return true
 	}
 	for _, a := range addrs {
-		if parsed := net.ParseIP(a); parsed != nil &&
-			(parsed.IsPrivate() || parsed.IsLoopback() || parsed.IsLinkLocalUnicast()) {
+		if parsed := net.ParseIP(a); parsed != nil && isPrivateIP(parsed) {
 			return false
 		}
 	}

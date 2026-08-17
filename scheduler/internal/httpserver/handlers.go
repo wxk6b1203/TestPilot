@@ -2,9 +2,11 @@ package httpserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
@@ -73,6 +75,10 @@ func (s *Server) register(ctx fiber.Ctx) error {
 		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeRegistrationDisabled,
 			"registration is disabled by config (registration_enabled)"))
 	}
+	if !registerLimit.Allow(ctx.IP()) {
+		return writeAppErr(ctx, apperr.TooMany(apperr.CodeQuotaExceeded, "too many registrations, retry later"))
+	}
+
 	var in registerReq
 	if !decode(ctx, &in) {
 		return nil
@@ -532,6 +538,67 @@ func (s *Server) runPlan(ctx fiber.Ctx) error {
 		return writeAppErr(ctx, err)
 	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"run_id": runID})
+}
+
+// cancelRun 取消一次运行：RUNNING→ABORTED、未决 case→SKIPPED，并向 Worker 广播 cancel。
+func (s *Server) cancelRun(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	runID, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var cancelled bool
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var run model.TestRun
+		err := tx.Where("id = ? AND tenant_id = ? AND status = ?",
+			runID, c.TenantID, int16(commonv1.RunStatus_RUN_STATUS_RUNNING)).First(&run).Error
+		if err != nil {
+			return err
+		}
+		// 先把 RUNNING case 置 SKIPPED，再汇总（迟到 Worker 回报受状态守卫拒绝）。
+		tx.Model(&model.TestCaseResult{}).
+			Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_RUNNING)).
+			Update("status", int16(commonv1.CaseStatus_CASE_STATUS_SKIPPED))
+
+		var total, passed, failed, skipped int64
+		tx.Model(&model.TestCaseResult{}).Where("run_id = ?", runID).Count(&total)
+		tx.Model(&model.TestCaseResult{}).
+			Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_PASSED)).
+			Count(&passed)
+		tx.Model(&model.TestCaseResult{}).
+			Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_FAILED)).
+			Count(&failed)
+		tx.Model(&model.TestCaseResult{}).
+			Where("run_id = ? AND status = ?", runID, int16(commonv1.CaseStatus_CASE_STATUS_SKIPPED)).
+			Count(&skipped)
+		now := time.Now()
+		summary := fmt.Sprintf(`{"total":%d,"passed":%d,"failed":%d,"skipped":%d,"error":"cancelled by user"}`,
+			total, passed, failed, skipped)
+		res := tx.Model(&model.TestRun{}).
+			Where("id = ? AND status = ?", runID, int16(commonv1.RunStatus_RUN_STATUS_RUNNING)).
+			Updates(map[string]any{
+				"status":      int16(commonv1.RunStatus_RUN_STATUS_ABORTED),
+				"finished_at": &now,
+				"summary":     summary,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		cancelled = res.RowsAffected > 0
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return writeErr(ctx, fiber.StatusNotFound, "run not found")
+		}
+		return writeInternalErr(ctx, err)
+	}
+	if !cancelled {
+		return writeAppErr(ctx, apperr.Conflict(apperr.CodeConflict, "run is not running"))
+	}
+	// 事务已保证不会再次收尾，再广播 Worker 取消在途任务（尽力而为）。
+	s.disp.CancelRun(runID, "cancelled by user")
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
 func (s *Server) listRuns(ctx fiber.Ctx) error {

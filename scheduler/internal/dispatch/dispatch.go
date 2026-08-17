@@ -97,6 +97,12 @@ type stressState struct {
 	failed    atomic.Bool
 }
 
+// runTaskSet 跟踪一个 run 已派发的任务（取消时按 task_id 广播）。
+type runTaskSet struct {
+	mu  sync.Mutex
+	ids map[string]struct{}
+}
+
 // Dispatcher 维护 Worker 池并做能力路由 + 负载均衡。
 // SetArtifactIngest 注入产物后端（s3 模式下上报产物时同步上传；local 为 no-op）。
 func (d *Dispatcher) SetArtifactIngest(store artifactstore.Backend, localRoot string) {
@@ -114,6 +120,9 @@ type Dispatcher struct {
 	artifactRoot  string                // Worker 共享产物目录（Ingest 源路径）
 
 	waiters sync.Map // taskID(string) → chan *workerv1.TaskResult（调试端点同步等待）
+
+	taskRuns sync.Map // taskID(string) → runID(int64)：结果回报后清理
+	runTasks sync.Map // runID(int64) → *runTaskSet：取消时遍历广播
 }
 
 // RegisterWaiter 注册调试等待器（必须在 Dispatch 之前调用，防结果先于等待到达）。
@@ -134,6 +143,68 @@ func (d *Dispatcher) TakeWaiter(taskID string) (chan *workerv1.TaskResult, bool)
 
 func New(db *gorm.DB) *Dispatcher {
 	return &Dispatcher{db: db, workers: map[string]*Worker{}}
+}
+
+// TrackTask 记录 task → run 归属（派发成功前调用；失败时调用 UntrackTask 回滚）。
+func (d *Dispatcher) TrackTask(taskID string, runID int64) {
+	if taskID == "" || runID <= 0 {
+		return
+	}
+	d.taskRuns.Store(taskID, runID)
+	v, _ := d.runTasks.LoadOrStore(runID, &runTaskSet{ids: map[string]struct{}{}})
+	set := v.(*runTaskSet)
+	set.mu.Lock()
+	set.ids[taskID] = struct{}{}
+	set.mu.Unlock()
+}
+
+// UntrackTask 移除任务追踪（任务回报/派发失败/取消收尾后）。
+func (d *Dispatcher) UntrackTask(taskID string) {
+	v, ok := d.taskRuns.LoadAndDelete(taskID)
+	if !ok {
+		return
+	}
+	runID := v.(int64)
+	if setV, ok := d.runTasks.Load(runID); ok {
+		set := setV.(*runTaskSet)
+		set.mu.Lock()
+		delete(set.ids, taskID)
+		empty := len(set.ids) == 0
+		set.mu.Unlock()
+		if empty {
+			d.runTasks.Delete(runID)
+		}
+	}
+}
+
+// CancelRun 向所有在线 Worker 广播取消该 run 尚未回报的任务。
+func (d *Dispatcher) CancelRun(runID int64, reason string) {
+	v, ok := d.runTasks.Load(runID)
+	if !ok {
+		return
+	}
+	set := v.(*runTaskSet)
+	set.mu.Lock()
+	taskIDs := make([]string, 0, len(set.ids))
+	for id := range set.ids {
+		taskIDs = append(taskIDs, id)
+	}
+	set.mu.Unlock()
+
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	for _, w := range d.workers {
+		for _, taskID := range taskIDs {
+			select {
+			case w.Send <- &workerv1.SchedulerCommand{
+				Command: &workerv1.SchedulerCommand_Cancel{
+					Cancel: &workerv1.CancelTask{TaskId: taskID, Reason: reason},
+				},
+			}:
+			default: // 队列满不阻塞派发面；Worker 断连/满时由 reaper 收尾
+			}
+		}
+	}
 }
 
 // Register 注册 Worker。worker_slots 配额超限（仅租户专属 Worker，共享 0 不计）拒绝注册。
@@ -281,10 +352,13 @@ func (d *Dispatcher) Dispatch(task *workerv1.TaskAssignment) error {
 		return ErrNoWorker
 	}
 	defer best.load.Add(-1)
+	// 先登记再发送：结果可能极快回报，晚登记会泄漏跟踪项。
+	d.TrackTask(task.GetTaskId(), mustInt64(task.GetRunId()))
 	// 发送前先检查关闭信号；select 同时监听 closed——worker 断连时放弃派发，
 	// Send 永不 close，杜绝 send-on-closed-channel panic。
 	select {
 	case <-best.Closed():
+		d.UntrackTask(task.GetTaskId())
 		metrics.DispatchTotal.WithLabelValues("worker_gone").Inc()
 		return errors.New("worker disconnected")
 	default:
@@ -296,9 +370,11 @@ func (d *Dispatcher) Dispatch(task *workerv1.TaskAssignment) error {
 		metrics.DispatchTotal.WithLabelValues("ok").Inc()
 		return nil
 	case <-best.Closed():
+		d.UntrackTask(task.GetTaskId())
 		metrics.DispatchTotal.WithLabelValues("worker_gone").Inc()
 		return errors.New("worker disconnected")
 	case <-time.After(5 * time.Second):
+		d.UntrackTask(task.GetTaskId())
 		metrics.DispatchTotal.WithLabelValues("send_timeout").Inc()
 		return errors.New("worker send timeout")
 	}
@@ -490,6 +566,7 @@ func (d *Dispatcher) handleStressResult(res *workerv1.TaskResult) error {
 
 // HandleTaskResult 落库任务结果并推进 run 状态。w 为上报的 Worker（压测任务用于解除独占）。
 func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error {
+	defer d.UntrackTask(res.GetTaskId())
 	// 调试等待器优先投递（在落库之前：即使入库失败调用方也能拿到响应）
 	if ch, ok := d.TakeWaiter(res.GetTaskId()); ok {
 		defer func() {
@@ -506,6 +583,7 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 		return d.handleStressResult(res)
 	}
 	return d.db.Transaction(func(tx *gorm.DB) error {
+		acceptedCR := map[int64]bool{}
 		for _, cr := range res.GetCaseResults() {
 			crID := mustInt64(cr.GetId())
 			if crID <= 0 {
@@ -513,17 +591,26 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 				// 落 id=0 会污染数据）；整个事务失败留日志。
 				return fmt.Errorf("invalid case result id %q", cr.GetId())
 			}
-			tx.Model(&model.TestCaseResult{}).
-				Where("id = ?", crID).
+			// 状态守卫：仅 RUNNING 可被 Worker 结果终结——取消/超时后迟到回报
+			// 不得覆盖 SKIPPED/FAILED，也不得为已终结 case 补插步骤结果。
+			upd := tx.Model(&model.TestCaseResult{}).
+				Where("id = ? AND status = ?", crID, int16(commonv1.CaseStatus_CASE_STATUS_RUNNING)).
 				Updates(map[string]any{
 					"status":      int16(cr.GetStatus()),
 					"duration_ms": int(cr.GetDuration().AsDuration().Milliseconds()),
 					"error":       cr.GetError(),
 				})
+			if upd.Error != nil {
+				return upd.Error
+			}
+			acceptedCR[crID] = upd.RowsAffected > 0
 		}
 		stepTenant := map[int64]int64{}
 		for _, sr := range res.GetStepResults() {
 			crID := mustInt64(sr.GetCaseResultId())
+			if !acceptedCR[crID] {
+				continue // 迟到回报：case 已被取消/超时终结，丢弃其步骤结果
+			}
 			tid, ok := stepTenant[crID]
 			if !ok {
 				var cr model.TestCaseResult

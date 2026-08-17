@@ -32,6 +32,10 @@ type Config struct {
 	JWTSecret      string `yaml:"jwt_secret"`       // HS256 密钥（生产必改）
 	JWTExpireHours int    `yaml:"jwt_expire_hours"` // token 有效期
 
+	// SnowflakeNode 雪花 ID 节点号（0-1023）；多 Scheduler 实例必须各不相同。
+	// 默认 1（单实例/dev）；生产部署逐实例设置 TP_SNOWFLAKE_NODE。
+	SnowflakeNode int64 `yaml:"snowflake_node"`
+
 	WorkerToken string `yaml:"worker_token"` // Worker 连接 gRPC 共享令牌（TP_WORKER_TOKEN；空=拒绝无令牌 Worker）
 
 	RegistrationEnabled bool `yaml:"registration_enabled"` // 公开注册（POST /auth/register）；默认关闭
@@ -82,6 +86,7 @@ func Defaults() Config {
 		DBPath:               "testpilot.db",
 		JWTSecret:            "dev-secret-change-me",
 		JWTExpireHours:       24,
+		SnowflakeNode:        1,
 		LogLevel:             "info",
 		LogFormat:            "text",
 		ArtifactDir:          ".data/artifacts",

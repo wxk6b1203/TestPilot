@@ -121,6 +121,12 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPut, "/variables/:id", auth.RoleMember, s.updateVariable)
 	h(fiber.MethodDelete, "/variables/:id", auth.RoleMember, s.deleteVariable)
 
+	h(fiber.MethodGet, "/certificates", auth.RoleViewer, s.listCertificates)
+	h(fiber.MethodPost, "/certificates", auth.RoleMember, s.createCertificate)
+	h(fiber.MethodGet, "/certificates/:id", auth.RoleViewer, s.getCertificate)
+	h(fiber.MethodPut, "/certificates/:id", auth.RoleMember, s.updateCertificate)
+	h(fiber.MethodDelete, "/certificates/:id", auth.RoleMember, s.deleteCertificate)
+
 	h(fiber.MethodGet, "/apis", auth.RoleViewer, s.listAPIs)
 	h(fiber.MethodPost, "/apis", auth.RoleMember, s.createAPI)
 	h(fiber.MethodPost, "/apis/debug", auth.RoleMember, s.debugAPI)
@@ -183,6 +189,7 @@ func (s *Server) App() *fiber.App {
 
 	// 运行
 	h(fiber.MethodPost, "/plans/:id/run", auth.RoleMember, s.runPlan)
+	h(fiber.MethodPost, "/runs/:id/cancel", auth.RoleMember, s.cancelRun)
 	h(fiber.MethodGet, "/runs", auth.RoleViewer, s.listRuns)
 	h(fiber.MethodGet, "/runs/:id", auth.RoleViewer, s.getRun)
 	h(fiber.MethodGet, "/artifacts/:id/content", auth.RoleViewer, s.getArtifactContent)

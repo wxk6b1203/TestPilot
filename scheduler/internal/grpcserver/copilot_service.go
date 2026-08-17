@@ -207,33 +207,56 @@ func (s *CopilotService) ListProjects(_ context.Context, req *copilotv1.ListProj
 
 func (s *CopilotService) ListApis(_ context.Context, req *copilotv1.ListApisRequest) (*copilotv1.ListApisResponse, error) {
 	page, size := pageOf(req.GetPage())
-	q := s.db.Model(&model.HttpApi{}).Where("tenant_id = ?", tid(req.GetCtx()))
-	if pid := mustID(req.GetProjectId()); pid != 0 {
-		q = q.Where("project_id = ?", pid)
+	tenant := tid(req.GetCtx())
+	pid := mustID(req.GetProjectId())
+	qstr := strings.TrimSpace(req.GetQuery())
+	out := &copilotv1.ListApisResponse{}
+
+	httpQ := s.db.Model(&model.HttpApi{}).Where("tenant_id = ?", tenant)
+	grpcQ := s.db.Model(&model.GrpcApi{}).Where("tenant_id = ?", tenant)
+	if pid != 0 {
+		httpQ = httpQ.Where("project_id = ?", pid)
+		grpcQ = grpcQ.Where("project_id = ?", pid)
 	}
-	if qstr := strings.TrimSpace(req.GetQuery()); qstr != "" {
-		q = q.Where("uri LIKE ?", "%"+qstr+"%")
+	if qstr != "" {
+		httpQ = httpQ.Where("uri LIKE ?", "%"+qstr+"%")
+		grpcQ = grpcQ.Where("(full_service LIKE ? OR method LIKE ?)", "%"+qstr+"%", "%"+qstr+"%")
 	}
-	var total int64
-	q.Count(&total)
+	var httpTotal, grpcTotal int64
+	httpQ.Count(&httpTotal)
+	grpcQ.Count(&grpcTotal)
+	out.Page = pageResp(int(httpTotal+grpcTotal), page, size)
+
 	var rows []model.HttpApi
-	q.Order("id desc").Offset((page - 1) * size).Limit(size).Find(&rows)
-	out := &copilotv1.ListApisResponse{Page: pageResp(int(total), page, size)}
+	httpQ.Order("id desc").Offset((page - 1) * size).Limit(size).Find(&rows)
 	for i := range rows {
 		out.HttpApis = append(out.HttpApis, runner.ToProtoHTTP(&rows[i]))
+	}
+	var grows []model.GrpcApi
+	grpcQ.Order("id desc").Offset((page - 1) * size).Limit(size).Find(&grows)
+	for i := range grows {
+		out.GrpcApis = append(out.GrpcApis, runner.ToProtoGrpc(&grows[i]))
 	}
 	return out, nil
 }
 
 func (s *CopilotService) GetApi(_ context.Context, req *copilotv1.GetApiRequest) (*copilotv1.GetApiResponse, error) {
-	if req.GetKind() == copilotv1.ApiKind_API_KIND_GRPC {
-		return nil, status.Error(codes.Unimplemented, "grpc api not supported yet")
+	tenant := tid(req.GetCtx())
+	apiID := mustID(req.GetApiId())
+	// kind 未指定时先按 HTTP 查，未命中再回退 gRPC（兼容旧调用方）。
+	if req.GetKind() != copilotv1.ApiKind_API_KIND_GRPC {
+		var m model.HttpApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err == nil {
+			return &copilotv1.GetApiResponse{Api: &copilotv1.GetApiResponse_Http{Http: runner.ToProtoHTTP(&m)}}, nil
+		} else if req.GetKind() == copilotv1.ApiKind_API_KIND_HTTP {
+			return nil, status.Error(codes.NotFound, "api not found")
+		}
 	}
-	var m model.HttpApi
-	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetApiId()), tid(req.GetCtx())).First(&m).Error; err != nil {
+	var m model.GrpcApi
+	if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err != nil {
 		return nil, status.Error(codes.NotFound, "api not found")
 	}
-	return &copilotv1.GetApiResponse{Api: &copilotv1.GetApiResponse_Http{Http: runner.ToProtoHTTP(&m)}}, nil
+	return &copilotv1.GetApiResponse{Api: &copilotv1.GetApiResponse_Grpc{Grpc: runner.ToProtoGrpc(&m)}}, nil
 }
 
 func (s *CopilotService) ListEnvironments(_ context.Context, req *copilotv1.ListEnvironmentsRequest) (*copilotv1.ListEnvironmentsResponse, error) {
@@ -467,28 +490,62 @@ func (s *CopilotService) UpdateApi(_ context.Context, req *copilotv1.UpdateApiRe
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err
 	}
-	h := req.GetHttp()
-	if h == nil {
-		return nil, status.Error(codes.InvalidArgument, "only http api supported")
-	}
-	var m model.HttpApi
-	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetApiId()), tid(req.GetCtx())).First(&m).Error; err != nil {
-		return nil, status.Error(codes.NotFound, "api not found")
-	}
-	m.Method = int16(h.GetMethod())
-	m.URI = h.GetUri()
-	m.Params = kvToJSON(h.GetParams())
-	m.Headers = kvToJSON(h.GetHeaders())
-	if b := h.GetBody(); b != nil {
-		if raw, err := protojson.Marshal(b); err == nil {
-			m.Body = model.JSON(raw)
+	tenant := tid(req.GetCtx())
+	apiID := mustID(req.GetApiId())
+	switch spec := req.GetApi().(type) {
+	case *copilotv1.UpdateApiRequest_Http:
+		h := spec.Http
+		var m model.HttpApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err != nil {
+			return nil, status.Error(codes.NotFound, "api not found")
 		}
+		m.Method = int16(h.GetMethod())
+		m.URI = h.GetUri()
+		m.Params = kvToJSON(h.GetParams())
+		m.Headers = kvToJSON(h.GetHeaders())
+		if b := h.GetBody(); b != nil {
+			if raw, err := protojson.Marshal(b); err == nil {
+				m.Body = model.JSON(raw)
+			}
+		}
+		if err := s.db.Save(&m).Error; err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		s.audit(req.GetCtx(), "update", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
+		return &copilotv1.UpdateApiResponse{ApiId: idStr(m.ID)}, nil
+
+	case *copilotv1.UpdateApiRequest_Grpc:
+		g := spec.Grpc
+		var m model.GrpcApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err != nil {
+			return nil, status.Error(codes.NotFound, "api not found")
+		}
+		m.FullService = g.GetFullService()
+		m.Method = g.GetMethod()
+		m.Metadata = kvToJSON(g.GetMetadata())
+		if g.GetRequestMessage() != nil {
+			if raw, err := protojson.Marshal(g.GetRequestMessage()); err == nil {
+				m.RequestMessage = model.JSON(raw)
+			}
+		}
+		if d := g.GetDeadline(); d != nil {
+			m.DeadlineMs = int(d.AsDuration().Milliseconds())
+		}
+		if t := g.GetTlsSettings(); t != nil {
+			if raw, err := protojson.Marshal(t); err == nil {
+				m.TlsSettings = model.JSON(raw)
+			}
+		}
+		if err := s.db.Save(&m).Error; err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		s.audit(req.GetCtx(), "update", "grpc_api", idStr(m.ID),
+			map[string]any{"service": m.FullService, "method": m.Method})
+		return &copilotv1.UpdateApiResponse{ApiId: idStr(m.ID)}, nil
+
+	default:
+		return nil, status.Error(codes.InvalidArgument, "http or grpc api payload required")
 	}
-	if err := s.db.Save(&m).Error; err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
-	}
-	s.audit(req.GetCtx(), "update", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
-	return &copilotv1.UpdateApiResponse{ApiId: idStr(m.ID)}, nil
 }
 
 func (s *CopilotService) CreateTestCase(_ context.Context, req *copilotv1.CreateTestCaseRequest) (*copilotv1.CreateTestCaseResponse, error) {
