@@ -13,7 +13,7 @@ import {
 } from 'antd'
 import type { MenuProps, TreeProps } from 'antd'
 import {
-  DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, FolderOutlined,
+  CodeOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOpenOutlined, FolderOutlined,
   MenuFoldOutlined,
   MoreOutlined, PlusOutlined,
   QuestionCircleOutlined,
@@ -40,9 +40,11 @@ interface Props {
   onNewApi: (parentId?: string) => void
   // 删除当前正在打开的接口时通知页面清掉 /apis/:id，避免右侧继续编辑已删除数据
   onDeleted?: (apiId: string) => void
+  // 接口封装预览（页面级 Modal；侧栏只放图标按钮）
+  onPreviewWrappers?: () => void
 }
 
-export default function ApiTreePanel({ projectId, projects, activeId, refresh, onPick, onNewApi, onDeleted }: Props) {
+export default function ApiTreePanel({ projectId, projects, activeId, refresh, onPick, onNewApi, onDeleted, onPreviewWrappers }: Props) {
   const { modal } = AntdApp.useApp()
   const [rows, setRows] = useState<HttpApi[]>([])
   const [tree, setTree] = useState<TreeNode[]>([])
@@ -672,16 +674,23 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
              <Tooltip title="往右拖一点可以拖入空目录"><QuestionCircleOutlined /></Tooltip>
           </Space>
           <Space size={4}>
-            <Button size="small" icon={<MenuFoldOutlined />}
-              onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
-            >
-              
-            </Button>
-            <Button
-              size="small" icon={<FolderAddOutlined />}
-              onClick={() => openFolderCreate()}
-            >
-            </Button>
+            <Tooltip title="全部展开/缩起">
+              <Button size="small" icon={<MenuFoldOutlined />}
+                onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
+              />
+            </Tooltip>
+            <Tooltip title="查看接口封装">
+              <Button
+                size="small" icon={<CodeOutlined />}
+                onClick={() => onPreviewWrappers?.()}
+              />
+            </Tooltip>
+            <Tooltip title="添加目录">
+              <Button
+                size="small" icon={<FolderAddOutlined />}
+                onClick={() => openFolderCreate()}
+              />
+            </Tooltip>
             <Button
               type="primary" 
               size="small" icon={<PlusOutlined />}

@@ -1,5 +1,5 @@
 import { Button } from 'antd'
-import { CodeOutlined, PlusOutlined } from '@ant-design/icons'
+import { PlusOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import IdeLayout from '../components/IdeLayout'
@@ -23,7 +23,6 @@ export default function Apis() {
   // 项目切换 / 当前接口被删除时锁定右侧工作区，显示提示而不是继续编辑失效数据
   const [workspaceNotice, setWorkspaceNotice] = useState<string>()
   const [wrappers, setWrappers] = useState('')
-  const [wrappersLoading, setWrappersLoading] = useState(false)
   const prevProjectRef = useRef(projectId)
 
   const previewWrappers = async () => {
@@ -31,14 +30,11 @@ export default function Apis() {
       message.warning('请先选择项目')
       return
     }
-    setWrappersLoading(true)
     try {
       const r = await get<{ source: string }>(`/api/v1/projects/${projectId}/api-wrappers`)
       setWrappers(r.source || '# （项目内暂无接口）')
     } catch (e: any) {
       message.error(e.message)
-    } finally {
-      setWrappersLoading(false)
     }
   }
 
@@ -93,9 +89,6 @@ export default function Apis() {
         {workspaceNotice ?? '从左侧选择接口，或直接输入 URL 调试'}
       </div>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewApi()}>新建接口</Button>
-      <Button size="small" icon={<CodeOutlined />} loading={wrappersLoading} onClick={previewWrappers}>
-        查看接口封装
-      </Button>
     </div>
   )
 
@@ -113,6 +106,7 @@ export default function Apis() {
             nav(`/apis/${a}`)
           }}
           onNewApi={openNewApi}
+          onPreviewWrappers={previewWrappers}
           onDeleted={(deletedId) => {
             if (deletedId === id) {
               setWorkspaceNotice('当前接口已删除，请重新选择接口')
