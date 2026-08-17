@@ -139,7 +139,7 @@ class ExecutionEnv(_message.Message):
     def __init__(self, environment: _Optional[_Union[_types_pb2.Environment, _Mapping]] = ..., variables: _Optional[_Iterable[_Union[_types_pb2.Variable, _Mapping]]] = ..., base_url: _Optional[str] = ...) -> None: ...
 
 class FunctionalTask(_message.Message):
-    __slots__ = ("case", "case_result_id", "grpc_apis", "inline_files")
+    __slots__ = ("case", "case_result_id", "grpc_apis", "inline_files", "http_apis", "api_wrappers_source")
     class GrpcApisEntry(_message.Message):
         __slots__ = ("key", "value")
         KEY_FIELD_NUMBER: _ClassVar[int]
@@ -154,18 +154,43 @@ class FunctionalTask(_message.Message):
         key: str
         value: bytes
         def __init__(self, key: _Optional[str] = ..., value: _Optional[bytes] = ...) -> None: ...
+    class HttpApisEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: _types_pb2.HttpApi
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ...) -> None: ...
     CASE_FIELD_NUMBER: _ClassVar[int]
     CASE_RESULT_ID_FIELD_NUMBER: _ClassVar[int]
     GRPC_APIS_FIELD_NUMBER: _ClassVar[int]
     INLINE_FILES_FIELD_NUMBER: _ClassVar[int]
+    HTTP_APIS_FIELD_NUMBER: _ClassVar[int]
+    API_WRAPPERS_SOURCE_FIELD_NUMBER: _ClassVar[int]
     case: _types_pb2.TestCase
     case_result_id: str
     grpc_apis: _containers.MessageMap[str, _types_pb2.GrpcApi]
     inline_files: _containers.ScalarMap[str, bytes]
-    def __init__(self, case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ..., case_result_id: _Optional[str] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ..., inline_files: _Optional[_Mapping[str, bytes]] = ...) -> None: ...
+    http_apis: _containers.MessageMap[str, _types_pb2.HttpApi]
+    api_wrappers_source: str
+    def __init__(self, case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ..., case_result_id: _Optional[str] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ..., inline_files: _Optional[_Mapping[str, bytes]] = ..., http_apis: _Optional[_Mapping[str, _types_pb2.HttpApi]] = ..., api_wrappers_source: _Optional[str] = ...) -> None: ...
 
 class StressTask(_message.Message):
-    __slots__ = ("plan", "worker_index", "assigned_concurrency", "metrics_label", "inline_api", "behavior_source", "behavior_entry")
+    __slots__ = ("plan", "worker_index", "assigned_concurrency", "metrics_label", "inline_api", "behavior_source", "behavior_entry", "http_apis", "grpc_apis", "api_wrappers_source")
+    class HttpApisEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: _types_pb2.HttpApi
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ...) -> None: ...
+    class GrpcApisEntry(_message.Message):
+        __slots__ = ("key", "value")
+        KEY_FIELD_NUMBER: _ClassVar[int]
+        VALUE_FIELD_NUMBER: _ClassVar[int]
+        key: str
+        value: _types_pb2.GrpcApi
+        def __init__(self, key: _Optional[str] = ..., value: _Optional[_Union[_types_pb2.GrpcApi, _Mapping]] = ...) -> None: ...
     PLAN_FIELD_NUMBER: _ClassVar[int]
     WORKER_INDEX_FIELD_NUMBER: _ClassVar[int]
     ASSIGNED_CONCURRENCY_FIELD_NUMBER: _ClassVar[int]
@@ -173,6 +198,9 @@ class StressTask(_message.Message):
     INLINE_API_FIELD_NUMBER: _ClassVar[int]
     BEHAVIOR_SOURCE_FIELD_NUMBER: _ClassVar[int]
     BEHAVIOR_ENTRY_FIELD_NUMBER: _ClassVar[int]
+    HTTP_APIS_FIELD_NUMBER: _ClassVar[int]
+    GRPC_APIS_FIELD_NUMBER: _ClassVar[int]
+    API_WRAPPERS_SOURCE_FIELD_NUMBER: _ClassVar[int]
     plan: _types_pb2.StressTestPlan
     worker_index: int
     assigned_concurrency: int
@@ -180,7 +208,10 @@ class StressTask(_message.Message):
     inline_api: _types_pb2.HttpApi
     behavior_source: str
     behavior_entry: str
-    def __init__(self, plan: _Optional[_Union[_types_pb2.StressTestPlan, _Mapping]] = ..., worker_index: _Optional[int] = ..., assigned_concurrency: _Optional[int] = ..., metrics_label: _Optional[str] = ..., inline_api: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ..., behavior_source: _Optional[str] = ..., behavior_entry: _Optional[str] = ...) -> None: ...
+    http_apis: _containers.MessageMap[str, _types_pb2.HttpApi]
+    grpc_apis: _containers.MessageMap[str, _types_pb2.GrpcApi]
+    api_wrappers_source: str
+    def __init__(self, plan: _Optional[_Union[_types_pb2.StressTestPlan, _Mapping]] = ..., worker_index: _Optional[int] = ..., assigned_concurrency: _Optional[int] = ..., metrics_label: _Optional[str] = ..., inline_api: _Optional[_Union[_types_pb2.HttpApi, _Mapping]] = ..., behavior_source: _Optional[str] = ..., behavior_entry: _Optional[str] = ..., http_apis: _Optional[_Mapping[str, _types_pb2.HttpApi]] = ..., grpc_apis: _Optional[_Mapping[str, _types_pb2.GrpcApi]] = ..., api_wrappers_source: _Optional[str] = ...) -> None: ...
 
 class TaskAssignment(_message.Message):
     __slots__ = ("task_id", "run_id", "tenant_id", "task_type", "timeout", "functional", "stress", "env", "traceparent")

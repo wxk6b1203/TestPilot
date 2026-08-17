@@ -113,6 +113,8 @@ message FunctionalTask {
   string case_result_id = 2;   // 预分配的结果 ID（幂等）
   map<string, testpilot.common.v1.GrpcApi> grpc_apis = 3;  // grpc_call 步骤引用的接口（Scheduler 派发前解析内联，Worker 无 DB）
   map<string, bytes> inline_files = 4;  // binary_ref 负载（Scheduler 派发前从 artifact 解析；键=ref 原文）
+  map<string, testpilot.common.v1.HttpApi> http_apis = 5;  // 低代码 http_api_refs 解析后的接口快照（键=api id）
+  string api_wrappers_source = 6;  // 低代码自动生成的 tp_api_wrappers.py 源文件（可空）
 }
 
 // 压测任务（Scheduler 为 master，拆分总负载到 N 个 Worker）
@@ -124,6 +126,9 @@ message StressTask {
   testpilot.common.v1.HttpApi inline_api = 5;  // target=api_id 时 Scheduler 解析内联（Worker 无 DB）
   string behavior_source = 6;       // target=behavior_case 时内联的脚本源（script_ref 已解析）
   string behavior_entry = 7;        // 入口函数，默认 run
+  map<string, testpilot.common.v1.HttpApi> http_apis = 8;   // 行为脚本 http_api_refs 解析后的快照
+  map<string, testpilot.common.v1.GrpcApi> grpc_apis = 9;   // 行为脚本 grpc_api_refs 解析后的快照
+  string api_wrappers_source = 10;  // 行为脚本自动生成的 tp_api_wrappers.py（可空）
 }
 
 message TaskAssignment {

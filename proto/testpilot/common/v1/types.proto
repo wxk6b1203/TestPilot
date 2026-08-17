@@ -492,6 +492,8 @@ message LowCodeCase {
   }
   string entry = 3;           // 入口函数，默认 run
   google.protobuf.Struct parameters = 4;
+  repeated string http_api_refs = 5;  // 接口依赖声明（HTTP api id；派发时解析为快照）
+  repeated string grpc_api_refs = 6;  // 接口依赖声明（gRPC api id；派发时解析为快照）
 }
 
 message TestCase {
