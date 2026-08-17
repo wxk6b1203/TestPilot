@@ -6,7 +6,7 @@
 
 from .assertions import assert_that
 from .context import Context
-from .models import HttpAPI, Response
+from .models import GrpcAPI, GrpcResponse, HttpAPI, Response
 
-__all__ = ["HttpAPI", "Response", "Context", "assert_that"]
+__all__ = ["HttpAPI", "GrpcAPI", "GrpcResponse", "Response", "Context", "assert_that"]
 __version__ = "0.1.0"

@@ -41,6 +41,9 @@ log = __import__("logging").getLogger("testpilot.sandbox")
 
 HttpHandler = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 OpHandler = HttpHandler  # 扩展桥操作处理器（args dict → result dict）
+# api_request 处理器需要 (args, merged_vars, payload)：接口快照执行时要运行
+# pre/post 脚本并把变量写回当前沙箱 ctx.vars。
+ApiHandler = Callable[[dict[str, Any], dict[str, Any], dict[str, Any]], Awaitable[dict[str, Any]]]
 
 # 能力桥通道上限
 _BRIDGE_RESP_LIMIT = 256 * 1024
@@ -220,10 +223,14 @@ def _net_deny_wrapper(cmd: list[str], scratch: str) -> tuple[list[str], bool]:
 
 class SubprocessBackend(ExecutionBackend):
     def __init__(self, http_handler: HttpHandler, limits: SandboxLimits | None = None,
-                 extra_ops: dict[str, OpHandler] | None = None):
+                 extra_ops: dict[str, OpHandler] | None = None,
+                 api_handler: ApiHandler | None = None,
+                 grpc_handler: HttpHandler | None = None):
         self.http_handler = http_handler
         self.limits = limits or SandboxLimits()
         self.extra_ops = extra_ops or {}  # 扩展桥操作（如 ui_action → bridge_ui_handler）
+        self.api_handler = api_handler   # op=api_request（按接口 ID 执行，见 lowcode_api）
+        self.grpc_handler = grpc_handler  # op=grpc_request（无 api_id 的 raw gRPC）
         # 循环模式（行为压测）：每个迭代结束的回调（可 async），在控制循环协程内直接调用
         self._loop_cb: Callable[[dict], Any] | None = None
 
@@ -232,7 +239,8 @@ class SubprocessBackend(ExecutionBackend):
         self._loop_cb = cb
 
     async def run(self, source: str, entry: str, payload: dict[str, Any],
-                  timeout_s: float, loop: bool = False) -> SandboxResult:
+                  timeout_s: float, loop: bool = False,
+                  extra_files: dict[str, str] | None = None) -> SandboxResult:
         started = time.perf_counter()
         result = SandboxResult(ok=False)
         scratch = tempfile.mkdtemp(prefix="tp-sandbox-")
@@ -241,6 +249,10 @@ class SubprocessBackend(ExecutionBackend):
         src_path = os.path.join(scratch, "user_case.py")
         payload_path = os.path.join(scratch, "payload.json")
         Path(src_path).write_text(source, encoding="utf-8")
+        for name, content in (extra_files or {}).items():
+            if "/" in name or "\\" in name or name.startswith("."):
+                raise ValueError(f"invalid extra file name: {name!r}")
+            Path(scratch, name).write_text(content, encoding="utf-8")
         if loop:
             payload["loop"] = True  # entry 循环模式：迭代门控 + iteration 事件流
         Path(payload_path).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
@@ -283,6 +295,9 @@ class SubprocessBackend(ExecutionBackend):
 
         def _append_log(line: str) -> None:
             nonlocal log_overflow
+            # gRPC C-core 在 fork 后继承 fd 的噪声（父进程已启用 grpc 时每个沙箱都打印）
+            if "ev_poll_posix.cc" in line and "FD from fork parent" in line:
+                return
             if len(result.logs) >= _MAX_LOG_LINES:
                 if not log_overflow:
                     log_overflow = True
@@ -437,6 +452,14 @@ class SubprocessBackend(ExecutionBackend):
                     value = merged_vars[key]
                 else:
                     value = (payload.get("vars") or {}).get(key)
+            elif op == "api_request":
+                if self.api_handler is None:
+                    raise ValueError("api_request not available in this sandbox context")
+                value = await self.api_handler(args, merged_vars, payload)
+            elif op == "grpc_request":
+                if self.grpc_handler is None:
+                    raise ValueError("grpc_request not available in this sandbox context")
+                value = await self.grpc_handler(args)
             elif op in self.extra_ops:
                 value = await self.extra_ops[op](args)
             else:

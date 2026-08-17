@@ -106,3 +106,21 @@ class Bridge:
             self._w.close()
         except OSError:
             pass
+
+
+# ---- 当前 Context（供 HttpAPI/GrpcAPI.run 获取变量快照并回写 pre/post 变更）----
+_current_ctx_var: contextvars.ContextVar["Any | None"] = contextvars.ContextVar(
+    "tp_current_ctx", default=None)
+
+
+def set_current_context(ctx: Any) -> None:
+    _current_ctx_var.set(ctx)
+
+
+def get_current_context() -> Any:
+    """返回当前 run(ctx) 上下文；不在沙箱入口中时为 None（如 SDK 单元测试）。"""
+    return _current_ctx_var.get()
+
+
+def clear_current_context() -> None:
+    _current_ctx_var.set(None)

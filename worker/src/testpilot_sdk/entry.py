@@ -65,7 +65,7 @@ def _load_module(path: str):
 async def _amain() -> int:
     _apply_rlimits_from_env()  # 先限额再加载用户代码
     from . import assertions as _assert_mod
-    from .bridge import Bridge, set_bridge
+    from .bridge import Bridge, set_bridge, set_current_context, clear_current_context
     from .context import Context
 
     source_path = sys.argv[1]
@@ -96,6 +96,7 @@ async def _amain() -> int:
         async def _iteration() -> tuple[bool, str]:
             _assert_mod.reset_records()
             it_ctx = Context(bridge, payload)
+            set_current_context(it_ctx)
             try:
                 result = fn(it_ctx)
                 if inspect.isawaitable(result):
@@ -106,6 +107,8 @@ async def _amain() -> int:
             except Exception:
                 tb = traceback.format_exc(limit=5)
                 return False, tb.strip().splitlines()[-1] if tb.strip() else "iteration failed"
+            finally:
+                clear_current_context()
 
         iteration = 0
         while True:
@@ -125,6 +128,7 @@ async def _amain() -> int:
         return 0
 
     ok, error = True, ""
+    set_current_context(ctx)
     try:
         fn = getattr(_load_module(source_path), entry_name, None)
         if fn is None:
@@ -136,6 +140,8 @@ async def _amain() -> int:
         ok, error = False, f"assertion failed: {e}"
     except Exception:
         ok, error = False, traceback.format_exc(limit=8)
+    finally:
+        clear_current_context()
 
     bridge.emit({
         "type": "result",

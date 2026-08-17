@@ -203,6 +203,7 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     - 迭代结果以 event 流回收，按 metrics_interval 采样 → StressMetricBatch
       （与 Locust 路径同协议，报告页/落库零改动）。
     """
+    from . import lowcode_api
     from .sandbox import SubprocessBackend, bridge_http_handler
 
     st = task.stress
@@ -219,6 +220,8 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     payload = {
         "vars": vars_init, "base_url": base_url, "parameters": {},
         "tenant_id": task.tenant_id,
+        "http_api_ids": sorted(st.http_apis),
+        "grpc_api_ids": sorted(st.grpc_apis),
     }
     if not st.behavior_source.strip():
         result.status = pb.RUN_STATUS_FAILED
@@ -309,23 +312,33 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     # 预起 K 个沙箱常驻进程（K = 本 Worker 分摊并发）
     auto_headers = {v.key: v.value for v in task.env.variables
                     if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
-    async with httpx.AsyncClient(verify=True) as client:
+    # 沙箱超时：任务级 timeout 兜底（调度器下发的总宽限），与 duration+60 取小
+    sandbox_timeout = duration + 60
+    if task.timeout.ToSeconds():
+        sandbox_timeout = min(sandbox_timeout, task.timeout.ToSeconds())
+    caller = lowcode_api.LowCodeApiCaller(
+        base_url=base_url, tenant_id=task.tenant_id, auto_headers=auto_headers,
+        http_apis=st.http_apis, grpc_apis=st.grpc_apis,
+        inline_files={}, parameters={}, timeout_s=sandbox_timeout)
+    extra_files: dict[str, str] | None = None
+    if st.api_wrappers_source:
+        extra_files = {"tp_api_wrappers.py": st.api_wrappers_source}
+    try:
         backends = [
             SubprocessBackend(
-                lambda args, _c=client: bridge_http_handler(_c, base_url, args, auto_headers),
-                extra_ops={"iteration_gate": gate})
+                lambda args: bridge_http_handler(caller.client, base_url, args, auto_headers),
+                extra_ops={"iteration_gate": gate}, api_handler=caller.handle,
+                grpc_handler=caller.raw_grpc)
             for _ in range(assigned)
         ]
         for b in backends:
             b.set_loop_callback(on_iteration)
-        # 沙箱超时：任务级 timeout 兜底（调度器下发的总宽限），与 duration+60 取小
-        sandbox_timeout = duration + 60
-        if task.timeout.ToSeconds():
-            sandbox_timeout = min(sandbox_timeout, task.timeout.ToSeconds())
         runs = [b.run(st.behavior_source, st.behavior_entry or "run", payload,
-                      timeout_s=sandbox_timeout, loop=True)
+                      timeout_s=sandbox_timeout, loop=True, extra_files=extra_files)
                 for b in backends]
         outcomes = await asyncio.gather(*runs, return_exceptions=True)
+    finally:
+        await caller.close()
 
     # 取消路径（worker 停机/断连）必须收尾采样与 pace 任务，否则它们成为孤儿
     # 协程继续向 outbox emit；finished.set() 也可能被跳过导致门控语义错乱

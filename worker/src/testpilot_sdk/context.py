@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .bridge import Bridge
-from .models import Response
+from .models import GrpcAPI, HttpAPI, Response
 from .page import Page
 
 
@@ -44,6 +44,9 @@ class Context:
         self.tenant_id: int = payload.get("tenant_id") or 0
         # post 脚本上下文：上一个 api_call 的响应快照（status/headers/json/text/elapsed_ms）
         self.response: dict[str, Any] | None = payload.get("response")
+        # 按 ID 调用的可用接口清单（ctx.api 判别 http/grpc；错误信息更友好）
+        self.http_api_ids: set[str] = set(payload.get("http_api_ids") or [])
+        self.grpc_api_ids: set[str] = set(payload.get("grpc_api_ids") or [])
         self._page: Page | None = None
 
     @property
@@ -68,6 +71,40 @@ class Context:
     async def set_var(self, key: str, value: Any) -> None:
         self.vars[key] = value
         await self._bridge.call("set_var", {"key": key, "value": value})
+
+    def merge_vars(self, changes: dict[str, Any]) -> None:
+        """把桥侧（pre/post 脚本）写回的变量合并进当前上下文并标记为变更。"""
+        for k, v in (changes or {}).items():
+            self.vars[k] = v
+
+    def http_api(self, api_id: str | int) -> HttpAPI:
+        """按 HTTP 接口 ID 获得可执行封装（接口快照由 Scheduler 派发时解析）。"""
+        sid = str(api_id)
+        if sid not in self.http_api_ids:
+            raise ValueError(f"http api {sid} not in this case's http_api_refs")
+        return HttpAPI(api_id=sid)
+
+    def grpc_api(self, api_id: str | int) -> GrpcAPI:
+        """按 gRPC 接口 ID 获得可执行封装。"""
+        sid = str(api_id)
+        if sid not in self.grpc_api_ids:
+            raise ValueError(f"grpc api {sid} not in this case's grpc_api_refs")
+        return GrpcAPI(api_id=sid)
+
+    def api(self, api_id: str | int) -> HttpAPI | GrpcAPI:
+        """按接口 ID 获得封装；HTTP/gRPC 自动判别，同 ID 双类型时报歧义。"""
+        sid = str(api_id)
+        is_http = sid in self.http_api_ids
+        is_grpc = sid in self.grpc_api_ids
+        if is_http and is_grpc:
+            raise ValueError(f"api {sid} is ambiguous: referenced as both http and grpc")
+        if is_http:
+            return HttpAPI(api_id=sid)
+        if is_grpc:
+            return GrpcAPI(api_id=sid)
+        raise ValueError(
+            f"api {sid} not in this case's api refs; declare it in "
+            "http_api_refs/grpc_api_refs (dynamic IDs must be declared explicitly)")
 
     def log(self, message: str) -> None:
         self._bridge.emit({"type": "log", "message": str(message)})

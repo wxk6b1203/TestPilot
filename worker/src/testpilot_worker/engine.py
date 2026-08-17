@@ -14,7 +14,7 @@ from google.protobuf import struct_pb2
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot.worker.v1 import worker_pb2 as wpb
 
-from . import grpc_exec, http_exec, ui
+from . import grpc_exec, http_exec, lowcode_api, ui
 from .assertions import evaluate
 from .expr import ExprError, eval_expr, render
 from .sandbox import ExecutionBackend, SubprocessBackend, bridge_http_handler
@@ -570,19 +570,21 @@ async def run_task(task: wpb.TaskAssignment,
 
 
 async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb.TestStepResult]]:
-    """低代码用例：整脚本进沙箱，经能力桥执行副作用（HTTP/变量/UI 操作）。"""
-    from google.protobuf import json_format
-
+    """低代码用例：整脚本进沙箱，经能力桥执行副作用（HTTP/变量/UI/按 ID 调用）。"""
     case = task.functional.case
     lc = case.lowcode
     started = time.perf_counter()
     base_url = task.env.base_url or task.env.environment.base_url
     vars_init = {v.key: v.value for v in task.env.variables if not v.sensitive}
+    auto_headers = {v.key: v.value for v in task.env.variables
+                    if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
     payload = {
         "vars": vars_init,
         "base_url": base_url,
-        "parameters": json_format.MessageToDict(lc.parameters) if lc.HasField("parameters") else {},
+        "parameters": lowcode_api.parameters_to_dict(lc),
         "tenant_id": task.tenant_id,
+        "http_api_ids": sorted(task.functional.http_apis),
+        "grpc_api_ids": sorted(task.functional.grpc_apis),
     }
 
     if lc.WhichOneof("script") != "source":
@@ -606,16 +608,25 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
             )
         return ui_session
 
+    timeout = min(task.timeout.ToSeconds() or 120, 300)
+    caller = lowcode_api.LowCodeApiCaller(
+        base_url=base_url, tenant_id=task.tenant_id, auto_headers=auto_headers,
+        http_apis=task.functional.http_apis, grpc_apis=task.functional.grpc_apis,
+        inline_files=task.functional.inline_files,
+        parameters=payload["parameters"], timeout_s=timeout)
+    extra_files: dict[str, str] | None = None
+    if task.functional.api_wrappers_source:
+        extra_files = {"tp_api_wrappers.py": task.functional.api_wrappers_source}
     try:
-        async with httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport()) as client:
-            auto_headers = {v.key: v.value for v in task.env.variables
-                            if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
-            backend: ExecutionBackend = SubprocessBackend(
-                lambda args: bridge_http_handler(client, base_url, args, auto_headers),
-                extra_ops={"ui_action": ui.bridge_ui_handler(get_session)})
-            timeout = min(task.timeout.ToSeconds() or 120, 300)
-            res = await backend.run(lc.source, lc.entry or "run", payload, timeout)
+        backend: ExecutionBackend = SubprocessBackend(
+            lambda args: bridge_http_handler(caller.client, base_url, args, auto_headers),
+            extra_ops={"ui_action": ui.bridge_ui_handler(get_session)},
+            api_handler=caller.handle,
+            grpc_handler=caller.raw_grpc)
+        res = await backend.run(lc.source, lc.entry or "run", payload, timeout,
+                                extra_files=extra_files)
     finally:
+        await caller.close()
         if ui_session is not None:
             try:
                 bridge_artifacts.extend(await ui_session.finish())
@@ -632,8 +643,11 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
         status=pb.STEP_STATUS_PASSED if res.ok else pb.STEP_STATUS_FAILED,
     )
     sr.duration.FromTimedelta(timedelta(milliseconds=res.duration_ms or elapsed))
-    if res.logs:
-        sr.logs.extend(res.logs[-200:])
+    logs = list(res.logs or [])
+    if caller.logs:
+        logs = list(caller.logs[-200:]) + logs
+    if logs:
+        sr.logs.extend(logs[-500:])
     sr.assertions.extend(_sdk_assertions(res.assertions))
     if bridge_artifacts:
         sr.artifacts.extend(_artifact_refs(bridge_artifacts))
