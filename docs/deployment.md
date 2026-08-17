@@ -112,6 +112,9 @@ TP_S3_PREFIX=testpilot/                                  # 可选；键 = {prefi
 ## 安全清单
 
 - `TP_JWT_SECRET` 生产必改；`PG_PASSWORD`、`TP_COPILOT_API_KEY` 只放 `.env`（不入库）。
-- Worker 出口控制：`.env` 配置 `TP_EGRESS_ALLOW`（host 白名单）与 `TP_EGRESS_BLOCK_PRIVATE=1`。
+- 多 Scheduler 实例必须为每个实例配置不同的 `TP_SNOWFLAKE_NODE`（0-1023），否则主键冲突。
+- Worker 出口控制：`.env` 默认 `TP_EGRESS_BLOCK_PRIVATE=1`（拦截私网/环回）；有内网测试目标时
+  显式用 `TP_EGRESS_ALLOW` 白名单，不要整体关私网阻断。
+- 通知 webhook 默认拒绝私网目标；仅当确有内网 webhook 需求时设置 `TP_NOTIFY_ALLOW_PRIVATE=1`。
 - `/metrics` 与 OIDC 回调为公开端点；对外暴露时由反向代理收敛。
 - 数据保留：`TP_RETENTION_RUN_DAYS`（如 90）开启每小时级联清理（含产物文件）。

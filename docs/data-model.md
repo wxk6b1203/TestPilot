@@ -23,9 +23,9 @@
 
 > 与 `docs/design.md` 第 3/4 章领域模型、第 9 章存储、`proto/testpilot/common/v1/types.proto` 对齐。
 > 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
-> 创建/演进**（`scheduler/internal/model`，当前 31 张——含 v2 落地的 test_suites /
+> 创建/演进**（`scheduler/internal/model`，当前 32 张——含 v2 落地的 test_suites /
 > test_suite_items / scripts / grpc_apis / proto_files）；`docs/sql/*.sql` 为生产 DDL 参考脚本
-> （33 表，含 1 张 v2 预留——api_tokens，尚未进 GORM 模型）。
+> （33 表 = GORM 32 张 + 1 张 v2 预留 api_tokens，后者尚未进 GORM 模型）。
 
 ## 0. 约定
 
@@ -102,6 +102,7 @@ erDiagram
 | password_hash | VARCHAR NULL | 本地账号；外部用户为空 |
 | display_name | VARCHAR | |
 | status | SMALLINT | active/disabled |
+| oidc_provider_id / oidc_sub | BIGINT/VARCHAR NULL | OIDC 身份绑定锚点（优先于 email 联结，防账户接管） |
 | created_at | TIMESTAMPTZ | |
 
 ### identity_providers（可插拔身份源，已落地 oidc/oauth2）

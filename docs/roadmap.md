@@ -24,9 +24,13 @@
 
 ---
 
-## 进度总览（2026-08-13 更新）
+## 进度总览（2026-08-17 更新）
 
-**Phase 0–9 全部完成并回归通过**（M1–M6 里程碑达成）。其后完成的工程化加固：
+**Phase 0–9 与 v2 第一批/第二批/第三批全部完成并回归通过**（M1–M6 里程碑达成）。当前无进行中的功能批次；后续工作集中在文档对账、生产安全加固与「明确不做/另议」项排期决策。
+
+v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto reflection）、低代码 Page 模型、压测 behavior_case。
+
+其后完成的工程化加固：
 
 | 项 | 状态 | 说明 |
 |---|---|---|
@@ -38,11 +42,12 @@
 | v2 第二批 | ✅ | suite 引用展开、ApplyOpenApiDiff、对象存储制品后端（local/S3）、loop parallel、lowcode script_ref（详述 `docs/v2-features.md`） |
 | v2 第二批补完 | ✅ | api_call 步骤 api_id 派发期解析、PlanItem param_overrides 应用（原遗留边界清零） |
 | 前端 IDE 化重构 | ✅ | 三栏布局 + 接口调试工作区（/apis/debug 后端支撑）+ 用例步骤树编辑器 + 全部缺失页面（gRPC/proto/套件/脚本/管理台/注册/SSO）+ 设计 token 体系 |
+| 2026-08-17 补齐轮 | ✅ | 证书 CRUD / 接口 pre-post 脚本 / Copilot gRPC 工具面 / 运行取消 / 雪花节点可配置 / DNS 解析绑定 / sandbox rlimits 移除 preexec_fn / 生产 egress 默认拦私网 / 通知 dialer 防 rebinding |
 
-**v2 待办**（按批次，详见本文件末尾「v2 范围」）：
-- 第一批（已完成）：curl 导出 / Copilot 反代 / OpenAPI URL 导入
-- 第二批（已完成）：suite 引用展开（ref_type=2）、ApplyOpenApiDiff、对象存储制品后端、loop parallel、lowcode script_ref
-- 第三批（需 Spike 前置）：gRPC 接口测试（proto reflection）、低代码 Page 模型 + 压测行为脚本、Postman 导入导出
+**v2 状态**（三批均已完成，详见本文件末尾「v2 范围」）：
+- 第一批：curl 导出 / Copilot 反代 / OpenAPI URL 导入
+- 第二批：suite 引用展开（ref_type=2）、ApplyOpenApiDiff、对象存储制品后端、loop parallel、lowcode script_ref
+- 第三批：gRPC 接口测试（proto reflection）、低代码 Page 模型 + 压测行为脚本、Postman 导入导出
 
 ---
 
@@ -301,7 +306,7 @@
 - **目录**：`scheduler/`(Go module)、`worker/`(Python)、`copilot/`(Python)、`frontend/`(Vite)、`proto/`、`deploy/`、`docs/`
 - **proto 治理**：`buf lint` + `buf breaking`（防破坏变更）；codegen 入 CI，产物不入库
 - **分支/提交**：trunk-based + 短生命周期 feature 分支；Conventional Commits
-- **CI**：proto lint/codegen、Go 单测、Python 单测、迁移校验、前端构建
+- **CI**：proto lint/codegen、Go 单测、Python 单测、迁移校验、前端构建（当前以本地命令验证，未启用 GitHub Actions；需要远程 CI 时另建）
 - **版本协调**：Worker 注册上报 `sdk_version`，Scheduler 校验兼容范围；Copilot grounding 随发布与 Scheduler 对齐
 - **多 DB**：开发期 SQLite/PG，迁移脚本以 PG 为准，CI 覆盖 PG
 
@@ -354,8 +359,25 @@
 | 低代码 Page 模型 | Spike B 能力桥扩展 UI 操作 | ✅ 已完成：SDK `ctx.page` + 桥 op=ui_action → Worker UiSession（run/case 目录隔离产物；断言失败随桥错误传播） |
 | 压测 behavior_case | 依赖低代码 Page 能力桥（已就绪） | ✅ 已完成：Worker 进程内 asyncio 负载环 + 沙箱常驻循环模式（迭代门控/全新 vars 快照/指标协议复用 Locust 路径，报告页零改动） |
 
+### 本轮补齐（2026-08-17）
+| 项 | 落地 |
+|---|---|
+| 证书管理 CRUD | `/certificates` REST + 前端证书页（pem/p12 引用）；Worker 加载 cert_ref 执行 TLS 仍另议 |
+| 接口 pre/post 脚本 | Worker 按 `run(ctx)` 沙箱执行；pre 写入 `ctx.vars` 参与请求渲染，post 可读 `ctx.response`；前端调试页标记 `enabled:true` |
+| Copilot gRPC 工具面 | `ListApis` 返回 `grpc_apis`；`GetApi(kind=GRPC)`/`UpdateApi(grpc)` 可用 |
+| 运行取消 | `POST /runs/:id/cancel`：RUNNING→ABORTED、未决 case→SKIPPED、广播 cancel；迟到结果被状态守卫拒绝 |
+
 ### 明确不做/另议
 - **OAuth2 授权码登录**：✅ 已落地（2026-08-14）——`type=oauth2` + userinfo 身份拉取 + 无 discovery 提供方显式端点接入；**client_credentials（机器凭证）**仍另议（属 api_tokens 场景）
 - **api_tokens 表（CI token）**：DDL 已预留；roadmap Phase 3 的「CI 集成 + CLI」整体待议（用户已明确不依赖 GitHub CI）
+- **邮件通知**：需引入 SMTP 配置/凭据与投递语义，另议；当前 webhook/钉钉/飞书可用
+- **计划级 notifications 规则**：与现有「租户渠道 + events 订阅」模型冲突，暂以租户渠道为准；规则字段仅存储
+- **项目 bundle 导出**：尚无导出格式/用例定义，另议；OpenAPI/curl/Postman 已可用
+- **WS/SSE 实时进度推送**：前端当前 3s 轮询已满足运行可见性；推送通道与 fiber 静态托管/负载均衡方案相关，另议
+- **plan.concurrency / retry_on_failure**：与 Worker 中心化并发模型（max_concurrency + 最少负载调度）冲突，当前仅存储；如需计划级并发上限需重构调度面
+- **证书客户端证书执行**：cert_ref/key_ref 实际解析与 TLS 绑定依赖 Vault/制品密钥后端，另议；CRUD 已落地
+- **沙箱容器/gVisor 后端**：当前为 subprocess + sandbox-exec/bwrap 尽力隔离；生产可开 `TP_SANDBOX_REQUIRE_ISOLATION=1` fail-closed，容器/gVisor 后端需部署层实现
+- **gRPC mTLS**：Worker token + Copilot JWT 已启用；mTLS 可选增强另议
+- **HTTP 契约预留字段**：cookies / tls_verify / comment_tolerant_json / binary_ref 当前仅存取不消费；补齐需逐项定义语义
 - **VictoriaMetrics**：压测时序当前落 `stress_metric_points` 表；设计文档保留 VictoriaMetrics 为大规模部署的可选替换，非排期项
 - **Vault**：密钥管理走敏感变量 + secret_ref 引用（沙箱零凭据设计）；Vault 对接非排期项

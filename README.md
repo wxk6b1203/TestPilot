@@ -199,6 +199,7 @@ testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key
 | `TP_DB_MAX_OPEN_CONNS` / `TP_DB_MAX_IDLE_CONNS` / `TP_DB_CONN_MAX_LIFETIME_MIN` | `0` | 连接池（0=驱动默认；PG 生产建议 20/5/30） |
 | `TP_JWT_SECRET` | `dev-secret-change-me` | JWT 签名密钥（生产必改） |
 | `TP_JWT_EXPIRE_HOURS` | `24` | 令牌有效期 |
+| `TP_SNOWFLAKE_NODE` | `1` | 雪花 ID 节点号（0-1023）；多 Scheduler 实例必须各不相同 |
 | `TP_REGISTRATION_ENABLED` | `false` | 公开注册开关（`POST /auth/register`：注册即自建租户，创建者为 owner） |
 | `TP_LOG_LEVEL` | `info` | debug/info/warn/error |
 | `TP_LOG_FORMAT` | `text` | `json` = 生产格式日志 |
@@ -290,4 +291,9 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- （无——全部计划能力已落地；client_credentials 机器凭证属 api_tokens 另议项）
+- client_credentials 机器凭证 / api_tokens（CI Token）：DDL 已预留，属另议项
+- CI 触发 CLI / JUnit XML：依赖 api_tokens，当前未排期
+- VictoriaMetrics：当前压测指标落 `stress_metric_points` 表，大规模部署可替换
+- Vault 密钥后端：当前使用敏感变量 + secret_ref + 审计脱敏替代
+- 证书管理已提供 CRUD，但 Worker 客户端证书执行（cert_ref 实际使用）与 Vault 绑定，另议
+- 接口 pre/post 脚本已执行，但 email 通知、计划级通知规则、项目 bundle 导出另议（详见 `docs/roadmap.md`）

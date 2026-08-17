@@ -255,3 +255,22 @@ NaN
 | M20 | bridge call 加 120s 超时 + pending 清理（防沙箱协程永久挂起） | testpilot_sdk/bridge.py |
 | M21 | 沙箱与 Locust 子进程 start_new_session + SIGKILL 进程组（防子进程孤儿化） | testpilot_worker/sandbox.py、stress.py |
 | M23 | Worker SIGTERM/SIGINT 优雅停机：停止取任务、取消在途任务、关闭连接 | testpilot_worker/main.py、client.py |
+
+---
+
+# 八、2026-08-17 技术债收尾（原“轻微问题与设计建议”遗留项）
+
+| 项 | 修复内容 | 位置 |
+|---|---|---|
+| M22 preexec_fn | 移除 asyncio subprocess 的 `preexec_fn`；rlimits 经 `TP_SANDBOX_LIMITS` env 下发，由 `testpilot_sdk.entry` 在加载用户代码前应用 | worker/src/testpilot_worker/sandbox.py、worker/src/testpilot_sdk/entry.py |
+| 雪花 ID | 节点号可配置 `TP_SNOWFLAKE_NODE`（0-1023，默认 1）；NextID 时钟回拨保护 | scheduler/internal/model/models.go、config.go、main.go |
+| DNS rebinding TOCTOU | Worker httpx 连接层 `EgressPinnedBackend` 解析+绑定同一 IP；Scheduler 通知 webhook 使用 `DialContext` 同解析同连接 | worker/src/testpilot_worker/egress.py、http_exec.py、scheduler/internal/notify/notify.go |
+| 生产 egress 默认 | compose/.env 默认 `TP_EGRESS_BLOCK_PRIVATE=1`；本地 dev 保持关闭，仅 dev.sh 放开通知私网目标 | deploy/* |
+| Locust controller 假 PASSED | `ctrl.get()` 重抛异常；0 请求判失败 | worker/src/testpilot_worker/stress_runner.py |
+| 注册限流 | `registerLimit` 10 次/小时/IP（默认关闭注册，影响有限） | scheduler/internal/httpserver/ratelimit.go |
+| 沙箱 loop_cb 异常 | 捕获并终止沙箱，不再杀死控制循环 | worker/src/testpilot_worker/sandbox.py |
+| trace_id 日志格式 | Formatter defaults 提供 `trace_id`/`span_id` 空值，避免 handler 无字段报错 | worker/src/testpilot_worker/main.py |
+| 前端 chunk | rolldown manualChunks 分包（antd/react/ai/vendor） | web/vite.config.ts |
+| pytest unraisable warning | 沙箱正常路径等待 stdout/stderr EOF 收尾；行为压测与隔离测试在 loop 关闭前 gc.collect | worker/src/testpilot_worker/sandbox.py、stress.py、tests/* |
+
+> 验证：Go `go test ./...` 全绿；Worker `pytest -W error::pytest.PytestUnraisableExceptionWarning` 168 passed；Copilot 71 passed；web build 通过；e2e / e2e_phase8 / e2e_phase9 全部通过。

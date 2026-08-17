@@ -26,6 +26,7 @@
 ```
 项目 Project ──┬── 环境 Environment（base_url + 变量解析）
                ├── 变量 Variable（项目级 environment_id=0 / 环境级；sensitive 落审计）
+               ├── 证书 Certificate（pem/p12 引用；CRUD 已落地）
                ├── 接口 HttpApi（OpenAPI/curl 导入或手建）
                ├── 用例 TestCase（declarative=步骤树 / lowcode=Python SDK / ui=Playwright）
                ├── 计划 TestPlan（有序 items，引用用例）── 触发 → TestRun
@@ -75,6 +76,11 @@ base_url（host[:port]），响应经 `$.字段` JSONPATH 断言。
 **api_id 引用与参数覆盖（v2 补完）**：步骤 `api_call` 可只写 `api_id`（含嵌套步骤），派发前
 自动解析为接口快照；计划条目 `param_overrides` 深合并进低代码 `parameters`（`ctx.parameters`），
 并追加为 `{{key}}` 模板变量（优先级最高）。详见 `docs/v2-features.md`。
+
+**接口级 pre/post 脚本**：`HttpApi.pre_scripts / post_scripts` 为 `{lang, source, enabled}` 列表。
+source 定义 `run(ctx)`（可 async），与 CODE_BLOCK 同一沙箱执行：pre 在请求前运行，写入
+`ctx.vars` 参与本次 URL/header/body 模板渲染；post 在响应后运行，可读 `ctx.response`
+（status/headers/json/text/elapsed_ms）并写入后续步骤变量。脚本失败则该 API_CALL 步骤失败。
 
 ## 低代码用例（Python SDK）
 

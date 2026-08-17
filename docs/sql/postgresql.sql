@@ -25,9 +25,12 @@ CREATE TABLE users (
     password_hash VARCHAR(255),                           -- 本地账号；外部用户为空
     display_name  VARCHAR(128) NOT NULL DEFAULT '',
     status        SMALLINT     NOT NULL DEFAULT 1,        -- active/disabled
+    oidc_provider_id BIGINT     NULL,                     -- OIDC 身份绑定锚点
+    oidc_sub         VARCHAR(255) NULL,
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_users_oidc ON users (oidc_provider_id, oidc_sub);
 
 CREATE TABLE identity_providers (
     id            BIGINT PRIMARY KEY,

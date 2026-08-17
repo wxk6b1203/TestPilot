@@ -23,9 +23,12 @@ CREATE TABLE users (
     password_hash VARCHAR(255) NULL COMMENT '本地账号；外部用户为空',
     display_name  VARCHAR(128) NOT NULL DEFAULT '',
     status        SMALLINT     NOT NULL DEFAULT 1,
+    oidc_provider_id BIGINT      NULL COMMENT 'OIDC 身份绑定锚点',
+    oidc_sub         VARCHAR(255) NULL,
     created_at    DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     UNIQUE KEY uq_users_username (username),
-    KEY idx_users_email (email)
+    KEY idx_users_email (email),
+    KEY idx_users_oidc (oidc_provider_id, oidc_sub)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE identity_providers (

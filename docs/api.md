@@ -37,15 +37,16 @@
 | GET | /auth/oidc/{id}/login | 公开 | 302 跳 IdP |
 | GET | /auth/oidc/{id}/callback | 公开 | 回调 → `{token,user,tenant_id,role}` |
 
-## 领域资源（projects/environments/variables/apis/cases/plans 同构）
+## 领域资源（projects/environments/variables/certificates/apis/cases/plans 同构）
 
 | 方法 | 路径 | 角色 | 说明 |
 |---|---|---|---|
-| GET | /projects · /environments · /variables · /apis · /cases · /plans | viewer | 分页列表；支持 `?project_id=` 过滤（variables 另有 `?environment_id=`） |
+| GET | /projects · /environments · /variables · /certificates · /apis · /cases · /plans | viewer | 分页列表；支持 `?project_id=` 过滤（variables 另有 `?environment_id=`） |
 | POST | 同上 | member | 创建（plans 体含 `items[]`，item 需 `ref_type:1` + `ref_id`） |
 | GET/PUT/DELETE | `/{资源}/{id}` | GET viewer / 写 member | 单资源操作 |
 
 - `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
+- `/certificates`：`{project_id,name,type(pem|p12),cert_ref,key_ref,password_secret_ref?}`；当前为资产 CRUD，Worker 客户端证书执行另议。
 - `POST /plans/{id}/run`（member）：触发运行 → `{run_id}`；配额超限 → 429。
 
 ## gRPC 接口 / proto 文件（v2 第三批）
@@ -78,6 +79,7 @@
 |---|---|---|---|
 | GET | /runs | viewer | `?plan_id=` 过滤 |
 | GET | /runs/{id} | viewer | run + cases + steps（含请求/响应快照/断言明细） |
+| POST | /runs/{id}/cancel | member | 取消 RUNNING 运行：run→ABORTED、未决 case→SKIPPED、广播 Worker cancel |
 | GET | /artifacts/{id}/content | viewer | 产物文件内容（截图/trace/har） |
 
 ## 压测

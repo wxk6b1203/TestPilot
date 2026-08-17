@@ -1,6 +1,6 @@
 # DDL 脚本
 
-按 `docs/data-model.md`（28 表）手工维护的生产级 DDL，用于 MySQL / PostgreSQL 部署。
+按 `docs/data-model.md`（33 表：GORM AutoMigrate 32 张 + 预留 api_tokens 1 张）手工维护的生产级 DDL，用于 MySQL / PostgreSQL 部署。
 
 | 文件 | 目标库 | 说明 |
 |---|---|---|
