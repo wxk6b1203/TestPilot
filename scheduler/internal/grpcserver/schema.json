@@ -98,7 +98,7 @@
    {
     "name": "binary_ref",
     "type": "string",
-    "doc": "artifact:<id>（Scheduler 解析）或 base64:<data>（Worker 内联）"
+    "doc": "artifact 引用"
    }
   ],
   "Assertion": [
@@ -318,7 +318,7 @@
    {
     "name": "script_ref",
     "type": "string",
-    "doc": "artifact:<id>（Scheduler 解析）或 base64:<data>（Worker 内联）"
+    "doc": "脚本资产引用（scripts 表；Scheduler 派发前内联为 source）"
    },
    {
     "name": "source",
@@ -333,6 +333,16 @@
    {
     "name": "parameters",
     "type": "google.protobuf.Struct"
+   },
+   {
+    "name": "http_api_refs",
+    "type": "repeated string",
+    "doc": "接口依赖声明（HTTP api id；派发时解析为快照）"
+   },
+   {
+    "name": "grpc_api_refs",
+    "type": "repeated string",
+    "doc": "接口依赖声明（gRPC api id；派发时解析为快照）"
    }
   ],
   "TestCase": [
