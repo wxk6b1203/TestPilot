@@ -73,7 +73,7 @@ export default function Layout() {
         }
       })
       .catch(() => {})
-  }, [projectId])
+  }, [projectId, envId])
 
   const visibleNav = useMemo(
     () => NAV.filter((n) => !n.admin || (me?.role ?? 9) <= 2),
@@ -93,7 +93,14 @@ export default function Layout() {
     envs,
     refreshEnvs: () =>
       get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
-        .then((r) => setEnvs(r.items)),
+        .then((r) => {
+          setEnvs(r.items)
+          // 当前环境被删除时同步清掉顶部选择与 localStorage
+          if (envId && !r.items.find((e) => e.id === envId)) {
+            setEid('')
+            setEnvId('')
+          }
+        }),
     me,
     tenants,
     switchTenant: async (tid) => {
