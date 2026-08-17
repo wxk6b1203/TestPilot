@@ -86,6 +86,8 @@ class CaseRunner:
         self.last_response: dict[str, Any] | None = None
         self.step_results: list[pb.TestStepResult] = []
         self.client = httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport())
+        # tls_verify=false 的接口需要独立 insecure client（httpx 不支持单请求级 verify）
+        self.insecure_client = httpx.AsyncClient(verify=False, transport=http_exec.pinned_transport())
         self._backend: ExecutionBackend | None = None
         self._ui: ui.UiSession | None = None
         self._last_ui_sr: pb.TestStepResult | None = None
@@ -128,6 +130,7 @@ class CaseRunner:
                 self._last_ui_sr.artifacts.extend(_artifact_refs(arts))
             self._ui = None
         await self.client.aclose()
+        await self.insecure_client.aclose()
 
     # ---- 结果记录 ----
 
@@ -277,6 +280,17 @@ class CaseRunner:
                 api.params.extend(merged.values())
         return api
 
+    def _inline_files(self) -> dict[str, bytes]:
+        """binary_ref 负载：Scheduler 派发前从 artifact 解析进 task.functional.inline_files。"""
+        return dict(self.task.functional.inline_files)
+
+    def _client_for(self, api: pb.HttpApi) -> httpx.AsyncClient:
+        """按 ApiSettings.tls_verify 选择 client；缺省=true（与历史行为一致）。"""
+        if (api.HasField("settings") and api.settings.HasField("tls_verify")
+                and not api.settings.tls_verify):
+            return self.insecure_client
+        return self.client
+
     def _script_payload(self, with_response: bool = False) -> dict[str, Any]:
         """pre/post 脚本与 code_block 共用的沙箱载荷。"""
         payload: dict[str, Any] = {
@@ -328,7 +342,7 @@ class CaseRunner:
             if k.lower() not in existing:
                 api.headers.add(key=k, value=v)
         req_snap, resp_snap, resp_scope = await http_exec.execute(
-            self.client, api, self.base_url, self.scope())
+            self._client_for(api), api, self.base_url, self.scope(), self._inline_files())
         self.last_response = resp_scope
         self.vars["response"] = resp_scope
         logs.append(f"{req_snap['method']} {req_snap['url']} -> {resp_snap['status']} ({resp_snap['elapsed_ms']}ms)")
