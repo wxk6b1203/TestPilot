@@ -1,4 +1,4 @@
-import { Button, Input, Modal, Select, Tabs, Tag, Typography } from 'antd'
+import { Button, Input, Select, Tabs, Tag, Typography } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -51,9 +51,6 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const [savedId, setSavedId] = useState('')
   const [env, setEnv] = useState(envId)
   const [loading, setLoading] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveOpen, setSaveOpen] = useState(false)
-  const [saveName, setSaveName] = useState('')
   const [debugResult, setDebugResult] = useState<DebugResult>()
   const [savedSnapshot, setSavedSnapshot] = useState(() => formOf('', 1, '', [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', ''))
   const sendingRef = useRef(false)
@@ -89,7 +86,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
 
   const currentSnapshot = formOf(name, method, uri, params, headers, body, preScript, postScript)
   const dirty = currentSnapshot !== savedSnapshot
-  const { guard } = useLeaveGuard(dirty)
+  const { guard, allowOnce } = useLeaveGuard(dirty)
 
   const clean = (rows: Kv[]) => rows.filter((r) => r.key.trim() !== '')
 
@@ -147,12 +144,11 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     post_scripts: postScript.trim() ? [{ lang: 'python', source: postScript, enabled: true }] : undefined,
   })
 
+  const defaultName = () => name.trim() || `${METHOD_COLORS[method]?.text ?? 'GET'} ${uri}`.trim()
+
   const save = () => {
     if (savedId) void doUpdate()
-    else {
-      setSaveName(name.trim() || `${METHOD_COLORS[method]?.text ?? 'GET'} ${uri}`.trim())
-      setSaveOpen(true)
-    }
+    else void doCreate(defaultName()) // 新建时直接保存，不再弹确认 Modal
   }
   useSaveShortcut(save)
 
@@ -167,25 +163,26 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     }
   }
 
-  const doCreate = async () => {
-    if (!saveName.trim()) {
+  const doCreate = async (finalName?: string) => {
+    const saveName = (finalName ?? defaultName()).trim()
+    if (!saveName) {
       message.warning('请输入接口名称')
       return
     }
-    setSaving(true)
     try {
       const r = await post<HttpApi>('/api/v1/apis', {
         ...payload(),
-        name: saveName.trim(), // 弹窗确认的名称作为最终名称
+        name: saveName, // 直接使用默认/当前名称
         parent_id: createParentId || undefined, // 右键目录新建：落到目标目录（0 省略 = 挂根）
       })
       message.success('已保存')
-      setName(saveName.trim())
+      setName(saveName)
+      setSavedSnapshot(formOf(saveName, method, uri, params, headers, body, preScript, postScript))
+      allowOnce() // 新建成功后直接放行跳转，避免触发未保存确认
       onSaved?.()
       nav(`/apis/${r.id}`)
     } catch (e: any) {
       message.error(e.message)
-      setSaving(false)
     }
   }
 
@@ -312,23 +309,6 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         </SplitPane>
       </div>
 
-      {/* 新建保存（后端 create 无 name 列，此处仅作显示确认） */}
-      <Modal
-        title="保存接口"
-        open={saveOpen}
-        onCancel={() => setSaveOpen(false)}
-        onOk={doCreate}
-        okText="保存"
-        confirmLoading={saving}
-        destroyOnHidden
-      >
-        <Input
-          value={saveName}
-          onChange={(e) => setSaveName(e.target.value)}
-          placeholder="接口名称"
-          onPressEnter={doCreate}
-        />
-      </Modal>
       {guard}
     </div>
   )
