@@ -15,6 +15,44 @@ import sys
 import traceback
 
 
+def _apply_rlimits_from_env() -> None:
+    """子进程入口应用 Worker 下发的资源限额（替代 preexec_fn，线程安全）。
+
+    TP_SANDBOX_LIMITS 为 JSON：cpu_seconds/mem_mb/max_procs/max_fds/max_fsize_mb。
+    必须在本模块 import 任何用户代码前调用；平台不支持/容器已限制时逐项忽略。
+    """
+    import resource
+
+    raw = os.environ.get("TP_SANDBOX_LIMITS", "")
+    if not raw:
+        return
+    try:
+        limits = json.loads(raw)
+    except ValueError:
+        return
+
+    def _try(what: int, soft: int, hard: int | None = None):
+        try:
+            resource.setrlimit(what, (soft, hard if hard is not None else soft))
+        except (ValueError, OSError):
+            pass
+
+    try:
+        cpu = max(int(limits.get("cpu_seconds") or 30), 1)
+        mem_mb = max(int(limits.get("mem_mb") or 1024), 32)
+        procs = max(int(limits.get("max_procs") or 128), 1)
+        fds = max(int(limits.get("max_fds") or 128), 16)
+        fsize_mb = max(int(limits.get("max_fsize_mb") or 32), 1)
+    except (TypeError, ValueError):
+        return
+    _try(resource.RLIMIT_CPU, cpu, cpu + 5)
+    _try(resource.RLIMIT_AS, mem_mb * 1024 * 1024)
+    if hasattr(resource, "RLIMIT_NPROC"):
+        _try(resource.RLIMIT_NPROC, procs)
+    _try(resource.RLIMIT_NOFILE, fds)
+    _try(resource.RLIMIT_FSIZE, fsize_mb * 1024 * 1024)
+
+
 def _load_module(path: str):
     spec = importlib.util.spec_from_file_location("tp_user_case", path)
     if spec is None or spec.loader is None:
@@ -25,6 +63,7 @@ def _load_module(path: str):
 
 
 async def _amain() -> int:
+    _apply_rlimits_from_env()  # 先限额再加载用户代码
     from . import assertions as _assert_mod
     from .bridge import Bridge, set_bridge
     from .context import Context

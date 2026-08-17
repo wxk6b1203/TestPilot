@@ -89,6 +89,37 @@ def test_scope_merges_roots():
     assert scope["base_url"] == "http://b"
 
 
+# ---- 接口级 pre/post 脚本（沙箱执行，纯本地变量，无网络）----
+
+def test_pre_script_merges_vars():
+    r = _runner()
+    script = pb.Script(
+        lang="python", enabled=True,
+        source="async def run(ctx):\n    ctx.vars['pre_token'] = 'from-pre'\n")
+    logs = []
+    asyncio.run(r._run_script(script, "pre", logs))
+    assert r.vars["pre_token"] == "from-pre"
+    assert any("pre script vars updated" in l for l in logs)
+
+
+def test_post_script_sees_last_response():
+    r = _runner()
+    r.last_response = {"status": 201, "headers": {}, "json": None, "text": "ok", "elapsed_ms": 5}
+    script = pb.Script(
+        lang="python", enabled=True,
+        source="async def run(ctx):\n"
+               "    assert ctx.response['status'] == 201\n"
+               "    ctx.vars['post_ok'] = True\n")
+    asyncio.run(r._run_script(script, "post", []))
+    assert r.vars["post_ok"] is True
+
+
+def test_disabled_script_is_skipped():
+    r = _runner()
+    script = pb.Script(lang="python", enabled=False, source="raise RuntimeError('x')")
+    asyncio.run(r._run_script(script, "pre", []))
+
+
 # ---- _do_set_var ----
 
 def test_set_var_plain_expr():

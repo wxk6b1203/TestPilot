@@ -94,26 +94,23 @@ class ExecutionBackend(ABC):
                   timeout_s: float, loop: bool = False) -> SandboxResult: ...
 
 
-def _apply_rlimits(limits: SandboxLimits) -> None:
-    """子进程 preexec：资源约束（逐项尽力而为，平台不支持的跳过）。"""
-    import resource
+def limits_env_json(limits: SandboxLimits) -> str:
+    """沙箱限额序列化为子进程 env；由 testpilot_sdk.entry 在用户代码加载前应用。
 
-    def _try(what: int, soft: int, hard: int | None = None):
-        try:
-            resource.setrlimit(what, (soft, hard if hard is not None else soft))
-        except (ValueError, OSError):
-            pass
-
-    _try(resource.RLIMIT_CPU, limits.cpu_seconds, limits.cpu_seconds + 5)
-    _try(resource.RLIMIT_AS, limits.mem_mb * 1024 * 1024)
-    if hasattr(resource, "RLIMIT_NPROC"):
-        _try(resource.RLIMIT_NPROC, limits.max_procs)
-    _try(resource.RLIMIT_NOFILE, limits.max_fds)
-    _try(resource.RLIMIT_FSIZE, limits.max_fsize_mb * 1024 * 1024)
+    不再使用 preexec_fn：Worker 进程含 grpc aio 线程，Python 文档明确
+    多线程进程中的 preexec_fn 存在 fork 死锁风险（M22）。
+    """
+    return json.dumps({
+        "cpu_seconds": limits.cpu_seconds,
+        "mem_mb": limits.mem_mb,
+        "max_procs": limits.max_procs,
+        "max_fds": limits.max_fds,
+        "max_fsize_mb": limits.max_fsize_mb,
+    }, ensure_ascii=False)
 
 
-def _scrub_env(scratch: str, sdk_root: str, payload_path: str) -> dict[str, str]:
-    """环境白名单：不继承 Worker 的任何变量/凭据。"""
+def _scrub_env(scratch: str, sdk_root: str, payload_path: str, limits_json: str) -> dict[str, str]:
+    """环境白名单：不继承 Worker 的任何变量/凭据；rlimits 经 env 传给子进程入口。"""
     return {
         "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
         "HOME": scratch,
@@ -123,6 +120,7 @@ def _scrub_env(scratch: str, sdk_root: str, payload_path: str) -> dict[str, str]
         "PYTHONNOUSERSITE": "1",
         "PYTHONHASHSEED": "0",
         "TP_PAYLOAD": payload_path,
+        "TP_SANDBOX_LIMITS": limits_json,
     }
 
 
@@ -263,9 +261,6 @@ class SubprocessBackend(ExecutionBackend):
                 shutil.rmtree(scratch, ignore_errors=True)
                 return result
 
-        def _preexec():
-            _apply_rlimits(self.limits)
-
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
@@ -273,8 +268,7 @@ class SubprocessBackend(ExecutionBackend):
                 stdout=asyncio.subprocess.PIPE,  # 沙箱 → Worker：桥请求/事件
                 stderr=asyncio.subprocess.PIPE,  # 用户日志（print 已重定向到这里）
                 cwd=scratch,
-                env=_scrub_env(scratch, sdk_root, payload_path),
-                preexec_fn=_preexec,
+                env=_scrub_env(scratch, sdk_root, payload_path, limits_env_json(self.limits)),
                 start_new_session=True,  # 独立进程组：kill 时可连子孙一起杀（M21）
             )
         except Exception as e:
@@ -342,9 +336,17 @@ class SubprocessBackend(ExecutionBackend):
                     task = asyncio.create_task(self._handle_op(msg, _respond, payload, merged_vars))
                     task.add_done_callback(lambda _t: op_decrement())
                 elif mtype == "event" and msg.get("name") == "iteration" and self._loop_cb:
-                    res = self._loop_cb(msg)
-                    if inspect.isawaitable(res):
-                        await res
+                    # 回调异常不再杀死整个控制循环（那样后续 op/event 无人处理）；
+                    # 记错误并终止沙箱，由父层按失败收尾。
+                    try:
+                        res = self._loop_cb(msg)
+                        if inspect.isawaitable(res):
+                            await res
+                    except Exception as e:
+                        _append_log(f"loop callback failed: {type(e).__name__}: {e}")
+                        result.error = f"loop callback failed: {e}"
+                        _kill_process_group(proc)
+                        break
 
         def op_decrement():
             nonlocal op_inflight
@@ -393,9 +395,23 @@ class SubprocessBackend(ExecutionBackend):
                     await asyncio.wait_for(proc.wait(), timeout=3)
                 except (TimeoutError, ProcessLookupError):
                     pass
+            # 正常路径先给读取任务一个收尾窗口：stdout/stderr EOF 会自然结束，
+            # asyncio subprocess transport 随之关闭（避免 loop 关闭后 __del__ 告警）。
             for t in (pump_err, ctrl):
-                t.cancel()
+                try:
+                    await asyncio.wait_for(asyncio.shield(t), timeout=1.0)
+                except (TimeoutError, asyncio.CancelledError):
+                    t.cancel()
             await asyncio.gather(pump_err, ctrl, return_exceptions=True)
+            if proc.stdin is not None:
+                try:
+                    proc.stdin.close()
+                    await proc.stdin.wait_closed()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+            # 给 asyncio 子进程 transport 一个事件循环周期完成管道收尾，
+            # 避免测试线程在 loop 关闭后由 __del__ 触发 unraisable warning。
+            await asyncio.sleep(0)
             shutil.rmtree(scratch, ignore_errors=True)
 
         result.vars = {**merged_vars, **result.vars}

@@ -42,6 +42,8 @@ class Context:
         self.base_url: str = payload.get("base_url") or ""
         self.parameters: dict[str, Any] = payload.get("parameters") or {}
         self.tenant_id: int = payload.get("tenant_id") or 0
+        # post 脚本上下文：上一个 api_call 的响应快照（status/headers/json/text/elapsed_ms）
+        self.response: dict[str, Any] | None = payload.get("response")
         self._page: Page | None = None
 
     @property

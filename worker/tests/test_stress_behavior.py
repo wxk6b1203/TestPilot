@@ -1,6 +1,7 @@
 """行为压测（target_type=2）：沙箱循环模式 + 并发门控 + 指标采样（本地 HTTP，无浏览器）。"""
 
 import asyncio
+import gc
 import json
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -40,6 +41,16 @@ class _Handler(BaseHTTPRequestHandler):
         pass
 
 
+def run_coro(coro):
+    """在 loop 关闭前回收 subprocess transport，避免 __del__ 触发 unraisable。"""
+    async def _wrapper():
+        out = await coro
+        gc.collect()
+        return out
+
+    return asyncio.run(_wrapper())
+
+
 @pytest.fixture(scope="module")
 def http_addr():
     srv = HTTPServer(("127.0.0.1", 0), _Handler)
@@ -71,7 +82,7 @@ def test_behavior_stress_passes_and_emits_metrics(http_addr):
     async def emit(b):
         batches.append(b)
 
-    result = asyncio.run(asyncio.wait_for(run_stress(task, emit), timeout=90))
+    result = run_coro(asyncio.wait_for(run_stress(task, emit), timeout=90))
     assert result.status == 2, result.error  # PASSED
     assert len(batches) >= 2, f"batches={len(batches)}"
     points = [p for b in batches for p in b.points]
@@ -89,7 +100,7 @@ def test_behavior_stress_records_script_errors(http_addr):
     async def emit(b):
         batches.append(b)
 
-    result = asyncio.run(asyncio.wait_for(run_stress(task, emit), timeout=90))
+    result = run_coro(asyncio.wait_for(run_stress(task, emit), timeout=90))
     # 负载环本身正常收尾（PASSED），错误体现在 error_rate 指标
     assert result.status == 2, result.error
     points = [p for b in batches for p in b.points]
@@ -102,7 +113,7 @@ def test_behavior_stress_empty_source_fails():
     task.run_id = "r-empty"
     task.stress.behavior_source = ""
     task.stress.plan.behavior_case_id = "case-1"
-    result = asyncio.run(run_stress(task, lambda b: None))
+    result = run_coro(run_stress(task, lambda b: None))
     assert result.status == 3  # FAILED
     assert "behavior_source" in result.error
 

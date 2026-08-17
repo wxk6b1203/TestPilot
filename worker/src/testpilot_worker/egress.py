@@ -22,6 +22,8 @@ import os
 import socket
 from urllib.parse import urlparse
 
+from httpcore._backends.auto import AutoBackend
+
 # 模块级（测试 monkeypatch 目标；运行时以 env 为准——见 _effective_*）
 _ALLOW: list[str] = []
 _BLOCK_PRIVATE = False
@@ -107,3 +109,57 @@ async def acheck_url(url: str) -> None:
         raise EgressDenied(f"egress: host {host!r} not in TP_EGRESS_ALLOW")
     if _effective_block_private() and await _is_private_async(host):
         raise EgressDenied(f"egress: host {host!r} resolves to private/loopback address")
+
+
+def _private_ip(raw: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(raw)
+    except ValueError:
+        return True  # 解析出非 IP 视为不可信
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved or ip.is_multicast
+
+
+async def resolve_host_for_connect(host: str) -> str | None:
+    """连接前解析 host 并挑一个通过出口策略的 IP。
+
+    返回 None 表示当前无白名单/私网阻断策略，调用方可按原始 host 连接（保留
+    happy-eyeballs/多 A 记录回退）。有策略时返回首个允许 IP——httpcore 连接层
+    用该 IP 建连，TLS SNI/Host 仍为原始 host，消除 check_url 与 connect 两次
+    DNS 解析之间的 rebinding 窗口（TOCTOU）。
+    """
+    if not _effective_allow() and not _effective_block_private():
+        return None
+    if not _allowed(host):
+        raise EgressDenied(f"egress: host {host!r} not in TP_EGRESS_ALLOW")
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await asyncio.wait_for(loop.getaddrinfo(host, None), timeout=3.0)
+    except (socket.gaierror, asyncio.TimeoutError):
+        return None  # 解析失败交给连接阶段报错
+    if not infos:
+        return None
+    if _effective_block_private():
+        allowed = [i for i in infos if not _private_ip(i[4][0])]
+        if not allowed:
+            raise EgressDenied(f"egress: host {host!r} resolves only to private/loopback address")
+        infos = allowed
+    return infos[0][4][0]
+
+
+class EgressPinnedBackend(AutoBackend):
+    """httpcore 网络后端：连接前解析并绑定允许的 IP（见 resolve_host_for_connect）。"""
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options=None,
+    ):
+        await self._init_backend()
+        target = await resolve_host_for_connect(host)
+        return await self._backend.connect_tcp(
+            target or host, port,
+            timeout=timeout, local_address=local_address, socket_options=socket_options,
+        )

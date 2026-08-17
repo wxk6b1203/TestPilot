@@ -103,16 +103,26 @@ def _run(spec: dict) -> None:
 
     ctrl = gevent.spawn(controller)
     samp = gevent.spawn(sampler)
-    ctrl.join()  # duration 结束后返回
+    ctrl_exc: BaseException | None = None
+    try:
+        ctrl.get()  # 与 join 不同：controller 异常会被重新抛出，不静默吞掉
+    except BaseException as e:  # noqa: BLE001 - 子进程边界必须转成 done 帧上报
+        ctrl_exc = e
     runner.stop()
     samp.kill(block=False)
     gevent.sleep(0.2)  # 让在途请求统计落账
 
     total = env.stats.total
+    ok = ctrl_exc is None and total.num_requests > 0  # 0 请求 = 发压器未真正工作
+    error = ""
+    if ctrl_exc is not None:
+        error = f"controller failed: {type(ctrl_exc).__name__}: {ctrl_exc}"
+    elif total.num_requests == 0:
+        error = "stress runner made 0 requests"
     done = {
         "type": "done",
-        "ok": True,
-        "error": "",
+        "ok": ok,
+        "error": error,
         "total": {
             "requests": total.num_requests,
             "failures": total.num_failures,

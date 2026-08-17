@@ -28,11 +28,16 @@ _CAP_MAP = {
 def entry(argv: list[str] | None = None):
     s = config.load(argv)
     config.apply_environ(s)  # 回写 env：沙箱子进程/egress/tracing/ui 沿用原约定
+    log_format = "%(asctime)s %(levelname)s %(name)s [%(trace_id)s] %(message)s"
     logging.basicConfig(
         level=s.log_level.upper(),
-        format="%(asctime)s %(levelname)s %(name)s [%(trace_id)s] %(message)s",
+        format=log_format,
         stream=sys.stdout,
     )
+    # trace_id 是运行时注入字段：给 formatter 提供默认值，避免任何使用该格式的
+    # handler（含后续库新增/复制的 handler）在无 span 时抛 KeyError。
+    for _h in logging.getLogger().handlers:
+        _h.setFormatter(logging.Formatter(log_format, defaults={"trace_id": "", "span_id": ""}))
     from . import tracing
 
     tracing.init()  # otel_exporter（env 已回写）控制；默认关闭

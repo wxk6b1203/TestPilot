@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import gc
 import json
 import logging
 import os
@@ -353,4 +354,7 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     result.duration.FromTimedelta(timedelta(seconds=max(time.perf_counter() - started, 0.001)))
     log.info("behavior stress task %s done: concurrency=%d duration=%ss status=%s",
              task.task_id, assigned, duration, result.status)
+    # 沙箱 subprocess transport 此时应已无引用；在事件循环还活着时回收，避免
+    # 循环关闭后 BaseSubprocessTransport.__del__ 调 call_soon 触发 unraisable。
+    gc.collect()
     return result

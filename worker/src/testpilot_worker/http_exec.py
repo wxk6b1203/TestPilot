@@ -12,6 +12,7 @@ import json
 import time
 from typing import Any, Mapping
 
+import httpcore
 import httpx
 
 from testpilot.common.v1 import types_pb2 as pb
@@ -32,6 +33,31 @@ _METHODS = {
 _BODY_SNAPSHOT_LIMIT = 64 * 1024
 _REDIRECT_CODES = {301, 302, 303, 307, 308}
 _MAX_REDIRECTS = 10
+
+
+class PinnedAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    """httpx 0.28 的 AsyncHTTPTransport 不暴露 network_backend 注入点。
+
+    复用其请求/响应协议，仅替换底层连接池的 network_backend 为出口策略后端
+    （egress.EgressPinnedBackend），实现 DNS 解析与连接同一次完成。
+    """
+
+    def __init__(self, verify: bool = True):
+        super().__init__(verify=verify)
+        limits = httpx.Limits()
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=httpx.create_ssl_context(verify=verify),
+            max_connections=limits.max_connections,
+            max_keepalive_connections=limits.max_keepalive_connections,
+            keepalive_expiry=limits.keepalive_expiry,
+            network_backend=egress.EgressPinnedBackend(),
+        )
+
+
+def pinned_transport() -> httpx.AsyncHTTPTransport:
+    """声明式/低代码共用出口：连接层解析并绑定允许 IP（防 DNS rebinding TOCTOU）。"""
+    return PinnedAsyncHTTPTransport()
+
 
 
 def _render_body(body: pb.BodySpec, scope: Mapping[str, Any]) -> dict[str, Any]:

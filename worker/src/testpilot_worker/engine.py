@@ -85,7 +85,7 @@ class CaseRunner:
         self.base_url = self.env.base_url or self.env.environment.base_url
         self.last_response: dict[str, Any] | None = None
         self.step_results: list[pb.TestStepResult] = []
-        self.client = httpx.AsyncClient(verify=True)
+        self.client = httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport())
         self._backend: ExecutionBackend | None = None
         self._ui: ui.UiSession | None = None
         self._last_ui_sr: pb.TestStepResult | None = None
@@ -93,9 +93,24 @@ class CaseRunner:
     @property
     def backend(self) -> ExecutionBackend:
         if self._backend is None:
+            # M9 修复：code_block / pre/post 脚本与低代码后端能力对齐——
+            # 能力桥 HTTP 注入 HEADER 类环境变量，并支持 ui_action（Page 模型）。
             self._backend = SubprocessBackend(
-                lambda args: bridge_http_handler(self.client, self.base_url, args))
+                lambda args: bridge_http_handler(self.client, self.base_url, args, self.auto_headers),
+                extra_ops={"ui_action": ui.bridge_ui_handler(lambda: self._ensure_ui())})
         return self._backend
+
+    def _ensure_ui(self) -> ui.UiSession:
+        """惰性创建本用例的 UiSession（声明式 UI 步骤与脚本 Page 模型共用）。"""
+        if self._ui is None:
+            case_rel = f"{self.task.run_id}/{self.task.functional.case_result_id}{self._case_rel_suffix}"
+            self._ui = ui.UiSession(
+                base_url=self.base_url,
+                case_dir=ui.artifact_root() / case_rel,
+                case_rel=case_rel,
+                render=lambda s: render(s, self.scope()) if "{{" in s else s,
+            )
+        return self._ui
 
     def scope(self) -> dict[str, Any]:
         return {
@@ -262,8 +277,50 @@ class CaseRunner:
                 api.params.extend(merged.values())
         return api
 
+    def _script_payload(self, with_response: bool = False) -> dict[str, Any]:
+        """pre/post 脚本与 code_block 共用的沙箱载荷。"""
+        payload: dict[str, Any] = {
+            "vars": {k: v for k, v in self.vars.items() if k != "response"},
+            "base_url": self.base_url,
+            "parameters": {},
+            "tenant_id": self.task.tenant_id,
+        }
+        if with_response:
+            payload["response"] = self.last_response
+        return payload
+
+    async def _run_script(self, script: pb.Script, phase: str, logs: list[str]) -> None:
+        """执行一个接口级脚本片段（source 定义 run(ctx)，可 async）。
+
+        语义与 code_block 一致：沙箱内零凭据、HTTP 经能力桥；res.vars 合并回用例
+        上下文（pre 影响本次请求渲染，post 可影响后续步骤）。
+        """
+        if not script.source.strip():
+            return
+        if not script.enabled:
+            return
+        res = await self.backend.run(
+            source=script.source,
+            entry="run",
+            payload=self._script_payload(with_response=phase == "post"),
+            timeout_s=min(self.task.timeout.ToSeconds() or 120, 300),
+        )
+        logs.extend(res.logs[-50:])
+        if res.vars:
+            self.vars.update(res.vars)
+            logs.append(f"{phase} script vars updated: {sorted(res.vars)}")
+        if not res.ok:
+            tail = res.error.strip().splitlines()
+            raise StepFailure(f"{phase} script failed: {tail[-1] if tail else 'unknown'}")
+
+    async def _run_scripts(self, scripts, phase: str, logs: list[str]) -> None:
+        for sc in scripts:
+            await self._run_script(sc, phase, logs)
+
     async def _do_api_call(self, spec: pb.ApiCallStep, logs: list[str]):
         api = self._resolve_api(spec)
+        # 接口级前置脚本：先跑（可写入 ctx.vars），再渲染/发起请求
+        await self._run_scripts(api.pre_scripts, "pre", logs)
         # 默认 auth 注入：HEADER 类环境变量并入（值可含 {{var}} 模板，http_exec 统一渲染；
         # 接口显式配置的同名头优先，忽略大小写）
         existing = {kv.key.lower() for kv in api.headers}
@@ -275,6 +332,8 @@ class CaseRunner:
         self.last_response = resp_scope
         self.vars["response"] = resp_scope
         logs.append(f"{req_snap['method']} {req_snap['url']} -> {resp_snap['status']} ({resp_snap['elapsed_ms']}ms)")
+        # 接口级后置脚本：拿到 response 后可断言/改写变量
+        await self._run_scripts(api.post_scripts, "post", logs)
         return req_snap, resp_snap
 
     def _do_assertions(self, spec: pb.AssertionStep) -> list[pb.AssertionResult]:
@@ -330,15 +389,7 @@ class CaseRunner:
             self._last_ui_sr = self.step_results[-1]
 
     async def _do_ui_action(self, spec: pb.UiActionStep, logs: list[str]) -> list[ui.UiArtifact]:
-        if self._ui is None:
-            case_rel = f"{self.task.run_id}/{self.task.functional.case_result_id}{self._case_rel_suffix}"
-            self._ui = ui.UiSession(
-                base_url=self.base_url,
-                case_dir=ui.artifact_root() / case_rel,
-                case_rel=case_rel,
-                render=lambda s: render(s, self.scope()) if "{{" in s else s,
-            )
-        arts = await self._ui.execute(spec.action, spec.target, spec.value, logs)
+        arts = await self._ensure_ui().execute(spec.action, spec.target, spec.value, logs)
         return arts
 
     async def _do_if(self, spec: pb.IfStep, path: str):
@@ -542,7 +593,7 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
         return ui_session
 
     try:
-        async with httpx.AsyncClient(verify=True) as client:
+        async with httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport()) as client:
             auto_headers = {v.key: v.value for v in task.env.variables
                             if not v.sensitive and v.category == pb.VARIABLE_CATEGORY_HEADER}
             backend: ExecutionBackend = SubprocessBackend(
