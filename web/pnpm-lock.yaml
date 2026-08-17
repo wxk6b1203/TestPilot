@@ -20,6 +20,9 @@ importers:
       antd:
         specifier: ^6.6.0
         version: 6.6.0(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      hotkeys-js:
+        specifier: 4.0.5
+        version: 4.0.5
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -839,6 +842,9 @@ packages:
     resolution: {integrity: sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw==}
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
+
+  hotkeys-js@4.0.5:
+    resolution: {integrity: sha512-Os0VaEH8gvOSzwZnEDU2yn7G868OfFiLydUHIe2uln7Fi9Ii1xhOCoPGu27RkZYWYqM93gC4xoyONCZE9iiwLw==}
 
   is-mobile@5.0.0:
     resolution: {integrity: sha512-Tz/yndySvLAEXh+Uk8liFCxOwVH6YutuR74utvOcu7I9Di+DwM0mtdPVZNaVvvBUM2OXxne/NhOs1zAO7riusQ==}
@@ -1804,6 +1810,8 @@ snapshots:
 
   fsevents@2.3.3:
     optional: true
+
+  hotkeys-js@4.0.5: {}
 
   is-mobile@5.0.0: {}
 

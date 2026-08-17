@@ -3,7 +3,9 @@ import { SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useSaveShortcut from '../hooks/useSaveShortcut'
+import { useShortcut } from '../hooks/useShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
+import { SHORTCUTS } from '../shortcuts'
 import { get, post, put } from '../api'
 import type { DebugResult, HttpApi } from '../api'
 import BodyEditor from '../components/BodyEditor'
@@ -118,19 +120,8 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     }
   }
 
-  // Ctrl/Cmd + Enter 发送（latest-ref：固定挂载一次，回调取最新 send）
-  const sendRef = useRef(send)
-  sendRef.current = send
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        e.preventDefault()
-        sendRef.current()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [])
+  // Ctrl/Cmd + Enter 发送（按键定义集中在 src/shortcuts.ts）
+  useShortcut(SHORTCUTS.send, send)
 
   const payload = () => ({
     project_id: projectId,
