@@ -140,50 +140,93 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	return run.ID, nil
 }
 
-// materializeCase 转换用例为 proto，并完成四类派发期解析（Worker 无 DB，只接受内联形态）：
+// materializedCase 是 materializeCaseEx 的产物：Worker 无 DB，一切派发期解析结果
+// 都随任务内联下发。
+type materializedCase struct {
+	Case              *commonv1.TestCase
+	HTTPApis          map[string]*commonv1.HttpApi
+	GrpcApis          map[string]*commonv1.GrpcApi
+	InlineFiles       map[string][]byte
+	APIWrappersSource string
+}
+
+// materializeCase 转换用例为 proto，并完成派发期解析（Worker 无 DB，只接受内联形态）：
 //  1. 低代码 script_ref → 内联 source（脚本按租户从 scripts 资产库读取）；
 //  2. 声明式 api_call 步骤的 api_id 引用 → inline 快照（保留 api_id 与 override）；
 //  3. grpc_call 步骤的 grpc_api_id 引用 → 收集进任务级 grpc_apis 映射（按 id 字符串键控）；
-//  4. api_call body.binary_ref → FunctionalTask.inline_files 负载（artifact 引用）。
+//  4. api_call body.binary_ref → FunctionalTask.inline_files 负载（artifact 引用）；
+//  5. 低代码接口依赖（http_api_refs/grpc_api_refs/静态提取）→ http_apis/grpc_apis 快照
+//     + 自动生成 tp_api_wrappers.py（docs/lowcode-api-invocation.md）。
 //
 // 解析失败即报错——dispatchCase 把该 case_result 置 FAILED，不派发残缺任务。
+// 保留旧签名供既有调用方（测试/压测仅取前三项）使用；新代码应使用 materializeCaseEx。
 func (r *Runner) materializeCase(tc *model.TestCase) (*commonv1.TestCase, map[string]*commonv1.GrpcApi, map[string][]byte, error) {
-	grpcAPIs := map[string]*commonv1.GrpcApi{}
-	pcase := ToProtoCase(tc)
-	if lc := pcase.GetLowcode(); lc != nil && lc.GetScriptRef() != "" {
-		scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
-		}
-		var script model.Script
-		if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
-			First(&script).Error; err != nil {
-			return nil, nil, nil, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
-		}
-		lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
-	}
-	if dc := pcase.GetDeclarative(); dc != nil {
-		if err := r.resolveAPIRefs(tc.TenantID, dc.GetSteps()); err != nil {
-			return nil, nil, nil, err
-		}
-		var err error
-		grpcAPIs, err = r.resolveGrpcRefs(tc.TenantID, dc.GetSteps())
-		if err != nil {
-			return nil, nil, nil, err
-		}
-	}
-	files, err := r.resolveInlineFiles(tc.TenantID, pcase)
+	m, err := r.materializeCaseEx(tc)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	return pcase, grpcAPIs, files, nil
+	return m.Case, m.GrpcApis, m.InlineFiles, nil
+}
+
+func (r *Runner) materializeCaseEx(tc *model.TestCase) (materializedCase, error) {
+	out := materializedCase{
+		Case:     ToProtoCase(tc),
+		HTTPApis: map[string]*commonv1.HttpApi{},
+		GrpcApis: map[string]*commonv1.GrpcApi{},
+	}
+	pcase := out.Case
+	if lc := pcase.GetLowcode(); lc != nil {
+		if lc.GetScriptRef() != "" {
+			scriptID, err := strconv.ParseInt(lc.GetScriptRef(), 10, 64)
+			if err != nil {
+				return out, fmt.Errorf("invalid script_ref %q: %v", lc.GetScriptRef(), err)
+			}
+			var script model.Script
+			if err := r.db.Where("id = ? AND tenant_id = ?", scriptID, tc.TenantID).
+				First(&script).Error; err != nil {
+				return out, fmt.Errorf("script %d not found in tenant: %v", scriptID, err)
+			}
+			lc.Script = &commonv1.LowCodeCase_Source{Source: script.Content}
+		}
+		refs, err := collectLowCodeRefs(lc)
+		if err != nil {
+			return out, err
+		}
+		prep, err := r.resolveLowCodeAPIs(tc.TenantID, tc.ProjectID, refs)
+		if err != nil {
+			return out, err
+		}
+		out.HTTPApis = prep.HTTPApis
+		out.GrpcApis = prep.GrpcApis
+		out.APIWrappersSource, err = GenerateAPIWrappersSource(prep)
+		if err != nil {
+			return out, err
+		}
+	}
+	if dc := pcase.GetDeclarative(); dc != nil {
+		if err := r.resolveAPIRefs(tc.TenantID, dc.GetSteps()); err != nil {
+			return out, err
+		}
+		var err error
+		out.GrpcApis, err = r.resolveGrpcRefs(tc.TenantID, dc.GetSteps())
+		if err != nil {
+			return out, err
+		}
+	}
+	files, err := r.resolveInlineFiles(tc.TenantID, pcase, out.HTTPApis)
+	if err != nil {
+		return out, err
+	}
+	out.InlineFiles = files
+	return out, nil
 }
 
 const maxInlineFileBytes = 8 << 20 // 8 MiB：binary_ref 内联负载上限
 
-// resolveInlineFiles 扫描声明式步骤树中的 binary_ref，并把 artifact 内容读入任务级映射。
-// 键为 ref 原文；base64: 前缀由 Worker 直接解码，不走 DB。
-func (r *Runner) resolveInlineFiles(tenantID int64, pcase *commonv1.TestCase) (map[string][]byte, error) {
+// resolveInlineFiles 扫描声明式步骤树与低代码引用的接口快照中的 binary_ref，
+// 并把 artifact 内容读入任务级映射。键为 ref 原文；base64: 前缀由 Worker 解码。
+func (r *Runner) resolveInlineFiles(tenantID int64, pcase *commonv1.TestCase,
+	extraHTTPApis ...map[string]*commonv1.HttpApi) (map[string][]byte, error) {
 	refs := map[string]bool{}
 	var collect func([]*commonv1.TestStep)
 	collect = func(list []*commonv1.TestStep) {
@@ -207,6 +250,13 @@ func (r *Runner) resolveInlineFiles(tenantID int64, pcase *commonv1.TestCase) (m
 	}
 	if dc := pcase.GetDeclarative(); dc != nil {
 		collect(dc.GetSteps())
+	}
+	for _, apis := range extraHTTPApis {
+		for _, api := range apis {
+			if b := api.GetBody(); b != nil && b.GetBinaryRef() != "" {
+				refs[b.GetBinaryRef()] = true
+			}
+		}
 	}
 	if len(refs) == 0 {
 		return map[string][]byte{}, nil
@@ -425,8 +475,9 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 	}
 	r.db.Create(cr)
 
-	// 派发期解析：script_ref → source；api_id → inline；grpc_api_id → 任务级映射。
-	pcase, grpcAPIs, inlineFiles, failErr := r.materializeCase(&tc)
+	// 派发期解析：script_ref → source；api_id → inline；grpc_api_id → 任务级映射；
+	// 低代码接口依赖 → http_apis/grpc_apis 快照 + tp_api_wrappers.py。
+	m, failErr := r.materializeCaseEx(&tc)
 	if failErr != nil {
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
@@ -434,7 +485,7 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 		})
 		return 0
 	}
-	taskEnv, failErr := applyOverrides(overrides, pcase, execEnv)
+	taskEnv, failErr := applyOverrides(overrides, m.Case, execEnv)
 	if failErr != nil {
 		r.db.Model(cr).Updates(map[string]any{
 			"status": int16(commonv1.CaseStatus_CASE_STATUS_FAILED),
@@ -451,10 +502,12 @@ func (r *Runner) dispatchCase(run *model.TestRun, tenantID, caseID int64, overri
 		Timeout:  durationpb.New(timeout),
 		Payload: &workerv1.TaskAssignment_Functional{
 			Functional: &workerv1.FunctionalTask{
-				Case:         pcase,
-				CaseResultId: idStr(cr.ID),
-				GrpcApis:     grpcAPIs,
-				InlineFiles:  inlineFiles,
+				Case:              m.Case,
+				CaseResultId:      idStr(cr.ID),
+				GrpcApis:          m.GrpcApis,
+				InlineFiles:       m.InlineFiles,
+				HttpApis:          m.HTTPApis,
+				ApiWrappersSource: m.APIWrappersSource,
 			},
 		},
 		Env:         taskEnv,

@@ -110,6 +110,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/projects/:id", auth.RoleViewer, s.getProject)
 	h(fiber.MethodPut, "/projects/:id", auth.RoleMember, s.updateProject)
 	h(fiber.MethodDelete, "/projects/:id", auth.RoleMember, s.deleteProject)
+	h(fiber.MethodGet, "/projects/:id/api-wrappers", auth.RoleViewer, s.projectAPIWrappers)
 
 	h(fiber.MethodGet, "/environments", auth.RoleViewer, s.listEnvironments)
 	h(fiber.MethodPost, "/environments", auth.RoleMember, s.createEnvironment)

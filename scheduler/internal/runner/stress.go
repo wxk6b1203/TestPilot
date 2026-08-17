@@ -41,7 +41,9 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 	// 目标解析：1=单接口（inline_api 下发）；2=低代码行为用例（script_ref 解析后下发源码，
 	// Worker 沙箱常驻循环模式执行）
 	var api model.HttpApi
-	var behaviorSource, behaviorEntry string
+	var behaviorSource, behaviorEntry, behaviorWrappers string
+	var behaviorHTTPApis map[string]*commonv1.HttpApi
+	var behaviorGrpcApis map[string]*commonv1.GrpcApi
 	switch plan.TargetType {
 	case 1:
 		if err := r.db.Where("id = ? AND tenant_id = ?", plan.TargetID, tenantID).First(&api).Error; err != nil {
@@ -55,12 +57,15 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 		if tc.Type != int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE) {
 			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "stress behavior target must be a lowcode case")
 		}
-		pcase, _, _, err := r.materializeCase(&tc)
+		m, err := r.materializeCaseEx(&tc)
 		if err != nil {
 			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "behavior case materialize: "+err.Error())
 		}
-		behaviorSource = pcase.GetLowcode().GetSource()
-		behaviorEntry = pcase.GetLowcode().GetEntry()
+		behaviorSource = m.Case.GetLowcode().GetSource()
+		behaviorEntry = m.Case.GetLowcode().GetEntry()
+		behaviorWrappers = m.APIWrappersSource
+		behaviorHTTPApis = m.HTTPApis
+		behaviorGrpcApis = m.GrpcApis
 		if behaviorSource == "" {
 			return 0, apperr.BadRequest(apperr.CodeInvalidParam, "behavior case has no script source")
 		}
@@ -157,6 +162,9 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 					InlineApi:           ToProtoHTTP(&api),
 					BehaviorSource:      behaviorSource,
 					BehaviorEntry:       behaviorEntry,
+					HttpApis:            behaviorHTTPApis,
+					GrpcApis:            behaviorGrpcApis,
+					ApiWrappersSource:   behaviorWrappers,
 				},
 			},
 			Env:         execEnv,
