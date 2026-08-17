@@ -103,11 +103,20 @@ from testpilot_sdk import GrpcAPI, HttpAPI
 
 class Api123(HttpAPI):
     """创建用户 · POST /users"""
-    api_id = "123"
+    api_id: str = "123"
+    method: str = "POST"
+    uri: str = "/users"
+    params: dict = {"page": 1}
+    headers: dict = {"X-Trace": "{{trace}}"}
+    cookies: dict = {}
 
 class Api456(GrpcAPI):
     """echo · testpilot.echo.v1.EchoService/Echo"""
-    api_id = "456"
+    api_id: str = "456"
+    full_service: str = "testpilot.echo.v1.EchoService"
+    method: str = "Echo"
+    request: dict = {"message": "hi"}
+    metadata: dict = {}
 
 CreateUser = Api123
 Echo = Api456
@@ -117,8 +126,9 @@ Echo = Api456
 
 - 每个接口都有稳定类名 `Api<ID>`，永不因改名/换目录变化；
 - 可读别名由接口名派生（PascalCase、非法字符清理、保留字避让、重名追加 `_2`）；
-- **不把 method/uri/headers 写成类字段默认值**——避免固化旧快照覆盖新定义；
-  请求形状只写在 docstring 中；执行永远以派发时接口快照为准；
+- method/uri/headers 等**生成在类字段默认值中，仅作文档/补全**；SDK `run()` 只发送
+  显式设置字段（Pydantic `model_fields_set`），类默认值不会成为 override，因此接口
+  变更后旧默认值也不会覆盖新快照——执行永远以派发时接口快照为准；
 - 排序按 ID，输出确定性（测试可断言）；
 - 别名查找：优先 `http_apis.name` / gRPC 目录树节点名，兜底 `Api<ID>`。
 

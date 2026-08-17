@@ -118,14 +118,16 @@ async def run(ctx: Context):
 
 ### 自动生成接口封装
 
-每次派发时 Scheduler 按接口目录最新定义生成 `tp_api_wrappers.py`：
+每次派发时 Scheduler 按接口目录最新定义生成 `tp_api_wrappers.py`（类字段
+method/uri/params/headers 为可读文档，执行仍以派发时接口快照为准）：
 
 ```python
 from tp_api_wrappers import Api123, CreateUser   # Api123 稳定；CreateUser 可读别名
 
 
 async def run(ctx: Context):
-    resp = await Api123().run(body={"name": "neo"})  # 类里只存 api_id，不固化 URI
+    # 类里 method/uri 只是默认展示值；不显式传参就不会覆盖接口目录最新定义
+    resp = await Api123().run(body={"name": "neo"})
 ```
 
 接口改名后 `CreateUser` 别名可能变化，脚本应优先使用 `Api<ID>`。预览：

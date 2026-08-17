@@ -50,6 +50,8 @@ print(f"✓ project={pid} http_api={hid} grpc_api={gid}")
 prev = api.get(f"/api/v1/projects/{pid}/api-wrappers?http_ids={hid}&grpc_ids={gid}").json()
 assert f"class Api{hid}(HttpAPI):" in prev["source"], prev
 assert f"class Api{gid}(GrpcAPI):" in prev["source"], prev
+assert 'method: str = "POST"' in prev["source"], prev
+assert 'uri: str = "/echo"' in prev["source"], prev
 assert "CreateUser = Api" + str(hid) in prev["source"], prev
 print("✓ wrapper preview")
 

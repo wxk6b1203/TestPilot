@@ -64,6 +64,29 @@ def test_http_api_by_id_sends_only_explicit_overrides(monkeypatch):
     assert ov == {"params": {"page": 2}, "headers": {"X-T": "1"}}
 
 
+def test_generated_class_defaults_do_not_override_snapshot(monkeypatch):
+    """生成类上的 method/uri/headers 只是文档默认值：未显式设置就不下发 override。"""
+
+    class Api123(HttpAPI):
+        api_id: str = "123"
+        method: str = "DELETE"
+        uri: str = "/stale"
+        headers: dict = {"X-Stale": "1"}
+
+    fake = FakeBridge({"response": {"status": 200, "headers": {}, "body": {},
+                                    "text": "{}", "elapsed_ms": 1, "api_id": "123"},
+                      "vars": {}})
+    monkeypatch.setattr(sdk_bridge, "current_bridge", lambda: fake)
+    run_coro(Api123().run())
+    op, args = fake.calls[0]
+    assert op == "api_request"
+    assert args["overrides"] == {}, args["overrides"]  # 类默认值绝不覆盖接口快照
+    # 显式传参才会成为 override
+    fake.calls.clear()
+    run_coro(Api123().run(body={"fresh": True}))
+    assert fake.calls[0][1]["overrides"] == {"body": {"fresh": True}}
+
+
 def test_http_api_raw_fallback(monkeypatch):
     fake = FakeBridge({"status": 200, "headers": {}, "body": None, "text": "ok",
                        "elapsed_ms": 1})
@@ -195,13 +218,18 @@ def _low_task(addr: str, source: str, *, http_apis: dict[str, pb.HttpApi] | None
     return task
 
 
-WRAP_HTTP = '''# auto-generated
+WRAP_HTTP = '''# auto-generated（类字段是可读文档，执行以派发时接口快照为准）
 from testpilot_sdk import HttpAPI
 
 
 class Api123(HttpAPI):
     """Create User · POST /users"""
     api_id: str = "123"
+    method: str = "DELETE"
+    uri: str = "/stale-uri"
+    params: dict = {"stale": "1"}
+    headers: dict = {"X-Stale": "1"}
+    cookies: dict = {}
 '''
 
 WRAP_GRPC = '''# auto-generated

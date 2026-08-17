@@ -487,7 +487,8 @@ async def run(ctx):
     # 等价：await ctx.http_api("123").run(body=...)
 ```
 - 入口 `run(ctx)` 由 Worker 调用；`ctx` 注入环境、变量、断言工具、租户上下文；
-- 生成类只固化 `api_id`，不固化 method/uri/headers——执行永远以派发时接口快照为准。
+- 生成类字段默认值（method/uri/params/headers/cookies 等）仅作文档/补全；SDK 只发送
+  显式设置字段，类默认值不会覆盖接口快照——执行永远以派发时接口快照为准。
 
 ### 6.3 运行时与隔离（沙箱）
 采用**分层隔离后端 + 能力桥**模型：隔离强度可按租户/阶段升级，而无需改动 SDK 与执行引擎。

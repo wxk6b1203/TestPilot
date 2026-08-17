@@ -88,6 +88,12 @@ func TestGenerateAPIWrappersSource(t *testing.T) {
 		"class Api123(HttpAPI):",
 		"class Api456(GrpcAPI):",
 		`api_id: str = "123"`,
+		`method: str = "POST"`,
+		`uri: str = "/users"`,
+		`params: dict = {}`,
+		`headers: dict = {}`,
+		`full_service: str = "testpilot.echo.v1.EchoService"`,
+		`request: dict = {}`,
 		"CreateUser = Api123",
 		"Class = Api7", // 关键字经 PascalCase 后成为合法标识符
 		"echo = Api456",
@@ -176,9 +182,10 @@ async def run(ctx):
 		!strings.Contains(got, "CreateUser = Api"+fmt.Sprint(httpAPI.ID)) {
 		t.Fatalf("wrappers source:\n%s", got)
 	}
-	if !strings.Contains(m.APIWrappersSource, "X-A") == false {
-		// 生成源码只应含 api_id 与 docstring，不应把 headers 固化进类字段
-		t.Fatalf("wrappers must not embed headers:\n%s", m.APIWrappersSource)
+	// 类字段默认值用于可读性/补全；SDK 按 model_fields_set 只发显式字段，
+	// 因此接口快照仍优先（Worker 测试 test_lowcode_api 验证此语义）。
+	if !strings.Contains(m.APIWrappersSource, `headers: dict = {"X-A": "1"}`) {
+		t.Fatalf("wrappers should embed header defaults:\n%s", m.APIWrappersSource)
 	}
 
 	// 纯 ctx.api 无显式 refs：按静态提取解析

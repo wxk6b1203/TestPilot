@@ -359,11 +359,12 @@ func (r *Runner) treeNames(tenantID int64, nodeType int16, ids []int64) (map[int
 // ---- tp_api_wrappers.py 生成 ----
 
 type apiWrapperSpec struct {
-	ID    string
-	Kind  string // "Http" | "Grpc"
-	Class string // Api<ID>（稳定别名）
-	Alias string // 可读别名（可为空）
-	Doc   string
+	ID            string
+	Kind          string // "Http" | "Grpc"
+	Class         string // Api<ID>（稳定别名）
+	Alias         string // 可读别名（可为空）
+	Doc           string
+	ClassDefaults []string // 类字段默认值（只作文档/补全；SDK 不把未显式设置字段当 override）
 }
 
 var pyKeywords = map[string]bool{
@@ -476,6 +477,104 @@ func httpMethodNameForWrapper(m commonv1.HttpMethod) string {
 	}
 }
 
+func kvMap(list []*commonv1.KeyValue) map[string]string {
+	out := map[string]string{}
+	for _, kv := range list {
+		if kv.GetKey() != "" {
+			out[kv.GetKey()] = kv.GetValue()
+		}
+	}
+	return out
+}
+
+func cookieMap(list []*commonv1.CookieParam) map[string]string {
+	out := map[string]string{}
+	for _, c := range list {
+		if c.GetName() != "" {
+			out[c.GetName()] = c.GetValue()
+		}
+	}
+	return out
+}
+
+// pythonLiteral 把常见 JSON/proto 结构转成合法 Python 字面量（True/False/None）。
+func pythonLiteral(v any) string {
+	switch x := v.(type) {
+	case nil:
+		return "None"
+	case bool:
+		if x {
+			return "True"
+		}
+		return "False"
+	case int:
+		return strconv.Itoa(x)
+	case int32:
+		return strconv.FormatInt(int64(x), 10)
+	case int64:
+		return strconv.FormatInt(x, 10)
+	case float64:
+		return strconv.FormatFloat(x, 'g', -1, 64)
+	case string:
+		return strconv.Quote(x)
+	case map[string]string:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, strconv.Quote(k)+": "+strconv.Quote(x[k]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case map[string]any:
+		keys := make([]string, 0, len(x))
+		for k := range x {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		parts := make([]string, 0, len(keys))
+		for _, k := range keys {
+			parts = append(parts, strconv.Quote(k)+": "+pythonLiteral(x[k]))
+		}
+		return "{" + strings.Join(parts, ", ") + "}"
+	case []any:
+		parts := make([]string, 0, len(x))
+		for _, item := range x {
+			parts = append(parts, pythonLiteral(item))
+		}
+		return "[" + strings.Join(parts, ", ") + "]"
+	default:
+		return strconv.Quote(fmt.Sprintf("%v", x))
+	}
+}
+
+func httpWrapperDefaults(id string, api *commonv1.HttpApi) []string {
+	return []string{
+		"    api_id: str = " + strconv.Quote(id),
+		"    method: str = " + strconv.Quote(httpMethodNameForWrapper(api.GetMethod())),
+		"    uri: str = " + strconv.Quote(api.GetUri()),
+		"    params: dict = " + pythonLiteral(kvMap(api.GetParams())),
+		"    headers: dict = " + pythonLiteral(kvMap(api.GetHeaders())),
+		"    cookies: dict = " + pythonLiteral(cookieMap(api.GetCookies())),
+	}
+}
+
+func grpcWrapperDefaults(id string, api *commonv1.GrpcApi) []string {
+	request := any(map[string]any{})
+	if api.GetRequestMessage() != nil {
+		request = api.GetRequestMessage().AsMap()
+	}
+	return []string{
+		"    api_id: str = " + strconv.Quote(id),
+		"    full_service: str = " + strconv.Quote(api.GetFullService()),
+		"    method: str = " + strconv.Quote(api.GetMethod()),
+		"    request: dict = " + pythonLiteral(request),
+		"    metadata: dict = " + pythonLiteral(kvMap(api.GetMetadata())),
+	}
+}
+
 func buildWrapperSpecs(prep *lowCodeAPIPrep) ([]apiWrapperSpec, error) {
 	specs := make([]apiWrapperSpec, 0, len(prep.HTTPApis)+len(prep.GrpcApis))
 	add := func(id string, kind string, name string) {
@@ -485,16 +584,22 @@ func buildWrapperSpecs(prep *lowCodeAPIPrep) ([]apiWrapperSpec, error) {
 			alias = ""
 		}
 		var doc string
+		var defaults []string
 		if kind == "Http" {
 			api := prep.HTTPApis[id]
 			doc = fmt.Sprintf("%s · %s %s (api_id=%s)", name,
 				httpMethodNameForWrapper(api.GetMethod()), api.GetUri(), id)
+			defaults = httpWrapperDefaults(id, api)
 		} else {
 			api := prep.GrpcApis[id]
 			doc = fmt.Sprintf("%s · %s/%s (api_id=%s)", name,
 				api.GetFullService(), api.GetMethod(), id)
+			defaults = grpcWrapperDefaults(id, api)
 		}
-		specs = append(specs, apiWrapperSpec{ID: id, Kind: kind, Class: class, Alias: alias, Doc: doc})
+		specs = append(specs, apiWrapperSpec{
+			ID: id, Kind: kind, Class: class, Alias: alias, Doc: doc,
+			ClassDefaults: defaults,
+		})
 	}
 	for _, id := range sortedMapKeys(prep.HTTPApis) {
 		add(id, "Http", prep.HTTPNames[id])
@@ -549,7 +654,9 @@ func GenerateAPIWrappersSource(prep *lowCodeAPIPrep) (string, error) {
 	for _, s := range specs {
 		fmt.Fprintf(&b, "\n\nclass %s(%sAPI):\n", s.Class, s.Kind)
 		fmt.Fprintf(&b, "    %s\n", strconv.Quote(s.Doc))
-		fmt.Fprintf(&b, "    api_id: str = %s\n", strconv.Quote(s.ID))
+		for _, line := range s.ClassDefaults {
+			fmt.Fprintf(&b, "%s\n", line)
+		}
 		if s.Alias != "" {
 			fmt.Fprintf(&b, "\n%s = %s\n", s.Alias, s.Class)
 		}
