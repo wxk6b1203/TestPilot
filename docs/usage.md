@@ -91,14 +91,45 @@ source 定义 `run(ctx)`（可 async），与 CODE_BLOCK 同一沙箱执行：pr
 ## 低代码用例（Python SDK）
 
 ```python
-def case(sdk):
-    r = sdk.http.get("/json")
-    sdk.assert_that(r.status).eq(200)
-    sdk.assert_that(r.json()["user"]["name"]).eq("neo")
+from testpilot_sdk import Context, assert_that
+
+
+async def run(ctx: Context):
+    resp = await ctx.http("GET", "/json")          # 目录外/临时请求（逃生通道）
+    assert_that(resp.status).eq(200)
 ```
 
 沙箱内运行：setrlimit 限额、环境白名单、无网络出口（macOS sandbox-exec / Linux bwrap），
 HTTP/变量等副作用经能力桥由 Worker 代执行。
+
+### 按接口 ID 调用（推荐）
+
+```python
+async def run(ctx: Context):
+    # 只需要接口 ID，不需要知道 method/URI；接口定义改动后下次运行自动生效
+    resp = await ctx.http_api("123").run(body={"name": "neo"})
+    gresp = await ctx.grpc_api("456").run(request={"message": "hi"})
+    resp = await ctx.api("123").run(...)           # 自动判别 HTTP/gRPC
+```
+
+依赖声明（`definition.http_api_refs` / `grpc_api_refs`）；脚本中的字面量 ID
+（`ctx.http_api("123")`、`HttpAPI(api_id="123")`、`Api123`）在派发时自动提取。
+动态拼接 ID 必须显式声明，否则运行时报错。
+
+### 自动生成接口封装
+
+每次派发时 Scheduler 按接口目录最新定义生成 `tp_api_wrappers.py`：
+
+```python
+from tp_api_wrappers import Api123, CreateUser   # Api123 稳定；CreateUser 可读别名
+
+
+async def run(ctx: Context):
+    resp = await Api123().run(body={"name": "neo"})  # 类里只存 api_id，不固化 URI
+```
+
+接口改名后 `CreateUser` 别名可能变化，脚本应优先使用 `Api<ID>`。预览：
+`GET /api/v1/projects/:id/api-wrappers`（前端接口页「查看接口封装」）。
 
 **Page 模型（v2 第三批）**：`ctx.page` 在沙箱内驱动浏览器（经能力桥转发 Playwright）：
 

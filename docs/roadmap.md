@@ -44,6 +44,7 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 | 前端 IDE 化重构 | ✅ | 三栏布局 + 接口调试工作区（/apis/debug 后端支撑）+ 用例步骤树编辑器 + 全部缺失页面（gRPC/proto/套件/脚本/管理台/注册/SSO）+ 设计 token 体系 |
 | 2026-08-17 补齐轮 | ✅ | 证书 CRUD / 接口 pre-post 脚本 / Copilot gRPC 工具面 / 运行取消 / 雪花节点可配置 / DNS 解析绑定 / sandbox rlimits 移除 preexec_fn / 生产 egress 默认拦私网 / 通知 dialer 防 rebinding |
 | 2026-08-17 HTTP 契约补齐 | ✅ | cookies / tls_verify(optional) / comment_tolerant_json / binary_ref（artifact 解析 + base64 内联）| Copilot 新增 create_project / query_api_directory / check_variable_refs |
+| 低代码按接口 ID 调用与自动封装 | ✅ | `ctx.api/http_api/grpc_api` + 派发时自动生成 `tp_api_wrappers.py`（`Api<ID>` 稳定别名）；HTTP 快照继承 pre/post/cookies/TLS/JSONC/binary_ref，gRPC 快照走 reflection；行为压测同步支持；REST 封装预览；完整设计见 `docs/lowcode-api-invocation.md` |
 
 **v2 状态**（三批均已完成，详见本文件末尾「v2 范围」）：
 - 第一批：curl 导出 / Copilot 反代 / OpenAPI URL 导入

@@ -44,6 +44,7 @@
 | GET | /projects · /environments · /variables · /certificates · /apis · /cases · /plans | viewer | 分页列表；支持 `?project_id=` 过滤（variables 另有 `?environment_id=`） |
 | POST | 同上 | member | 创建（plans 体含 `items[]`，item 需 `ref_type:1` + `ref_id`） |
 | GET/PUT/DELETE | `/{资源}/{id}` | GET viewer / 写 member | 单资源操作 |
+| GET | `/projects/{id}/api-wrappers` | viewer | 低代码接口封装预览；`?http_ids=1,2&grpc_ids=3` 过滤，缺省=项目全部接口 |
 
 - `GET /variables` 命中 sensitive 行时落 `secret_read` 审计。
 - `/certificates`：`{project_id,name,type(pem|p12),cert_ref,key_ref,password_secret_ref?}`；当前为资产 CRUD，Worker 客户端证书执行另议。

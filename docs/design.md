@@ -445,47 +445,49 @@ Triggered -> Queued -> Dispatched -> Running -> Collecting -> Completed
 
 ### 6.1 testpilot-sdk
 独立 Python 包，Pydantic 模型由共享 proto 生成，与 Scheduler 领域模型一致。
+**按接口 ID 调用与自动封装的完整设计见 `docs/lowcode-api-invocation.md`。**
+
 ```python
 class Response(BaseModel):
     status: int
     headers: dict[str, str]
     body: Any
     elapsed_ms: int
+    api_id: str | None
+    request: dict | None
 
-class HttpAPI(BaseModel, ABC):
-    method: str
-    uri: str
-    headers: dict[str, str] = {}
-    # ...其余字段
-    @abstractmethod
-    async def run(self) -> Response: ...
+class HttpAPI(BaseModel):
+    api_id: str | None          # 存在 → 按接口目录快照执行（推荐）
+    method: str | None
+    uri: str | None
+    headers/params/cookies/body/binary_ref/timeout  # 仅显式字段作为 override
+    async def run(self, **overrides) -> Response: ...
 
-class GrpcAPI(BaseModel, ABC):
-    service: str
-    method: str
-    request: dict
-    @abstractmethod
-    async def run(self) -> Response: ...
+class GrpcAPI(BaseModel):
+    api_id: str | None
+    full_service/method/request/metadata
+    async def run(self, **overrides) -> GrpcResponse: ...
 ```
-- Pydantic + ABC 实现"字段验证 + 方法契约"双重约束。
-- 内置 `CreateUser(HttpAPI)` 等可由 Copilot 生成或由接口定义自动派生。
+- `api_id` 由 Scheduler 派发前解析为快照并随任务下发，Worker 复用声明式执行语义；
+- 每次派发自动生成 `tp_api_wrappers.py`（稳定类 `Api<ID>` + 可读别名），接口变更后
+  脚本零改动自动生效；
+- 无 `api_id` 时 `HttpAPI` 退回 `ctx.http` raw 桥路径（兼容旧脚本/临时请求）。
 
 ### 6.2 用户用例形态
 ```python
-from testpilot_sdk import HttpAPI, Response, assert_that
-
-class CreateUser(HttpAPI):
-    """对应 CreateUser 接口"""
-    method = "POST"
-    uri = "/users"
+from tp_api_wrappers import Api123, CreateUser   # 派发时自动生成
+from testpilot_sdk import assert_that
 
 async def run(ctx):
     req = CreateUser(body={"name": ctx.vars["user_name"]})
-    result: Response = await req.run()
+    result = await req.run()
     assert_that(result.status).eq(201)
     ctx.set_var("userId", result.body["id"])
+
+    # 等价：await ctx.http_api("123").run(body=...)
 ```
-- 入口 `run(ctx)` 由 Worker 调用；`ctx` 注入环境、变量、断言工具、租户上下文。
+- 入口 `run(ctx)` 由 Worker 调用；`ctx` 注入环境、变量、断言工具、租户上下文；
+- 生成类只固化 `api_id`，不固化 method/uri/headers——执行永远以派发时接口快照为准。
 
 ### 6.3 运行时与隔离（沙箱）
 采用**分层隔离后端 + 能力桥**模型：隔离强度可按租户/阶段升级，而无需改动 SDK 与执行引擎。
