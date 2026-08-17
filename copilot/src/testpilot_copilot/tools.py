@@ -34,6 +34,15 @@ def _redact_headers(headers: Any) -> None:
             h["value"] = "***"
 
 
+def _redact_cookies(cookies: Any) -> None:
+    """cookie 值一律掩码：接口定义中的会话凭据不得进入外部 LLM 上下文。"""
+    if not isinstance(cookies, list):
+        return
+    for c in cookies:
+        if isinstance(c, dict):
+            c["value"] = "***"
+
+
 @dataclass
 class CopilotDeps:
     sched: SchedulerClient
@@ -71,6 +80,7 @@ async def list_apis(ctx: RunContext[CopilotDeps], project_id: str, query: str = 
     apis = to_dict(r).get("httpApis", [])
     for a in apis:
         _redact_headers(a.get("headers"))
+        _redact_cookies(a.get("cookies"))
     return apis
 
 
@@ -81,6 +91,7 @@ async def get_api(ctx: RunContext[CopilotDeps], api_id: str) -> dict:
         cpb.GetApiRequest(ctx=ctx.deps.ctx(), api_id=api_id, kind=cpb.API_KIND_HTTP))
     d = to_dict(r)
     _redact_headers(d.get("http", {}).get("headers"))
+    _redact_cookies(d.get("http", {}).get("cookies"))
     return d
 
 
@@ -144,11 +155,44 @@ async def query_coverage(ctx: RunContext[CopilotDeps], project_id: str) -> dict:
     return to_dict(r)
 
 
+@readonly.tool
+async def query_api_directory(ctx: RunContext[CopilotDeps], project_id: str,
+                              query: str = "", parent_node_id: str = "") -> dict:
+    """查询接口目录树（目录/HTTP/gRPC 接口条目，含人读路径）。
+    用于回答“某目录下有哪些接口 / 接口挂在哪”等问题；query 可按名称/uri 过滤。"""
+    r = await ctx.deps.sched.stub.QueryApiDirectory(
+        cpb.QueryApiDirectoryRequest(ctx=ctx.deps.ctx(), project_id=project_id,
+                                     query=query, parent_node_id=parent_node_id))
+    return to_dict(r)
+
+
+@readonly.tool
+async def check_variable_refs(ctx: RunContext[CopilotDeps], project_id: str,
+                              environment_id: str = "") -> dict:
+    """检查项目接口/用例中的 {{expr}} 模板引用的变量是否都已定义。
+    返回 defined_variables 与未定义根变量 issues；生成接口/用例后可用它自查。"""
+    r = await ctx.deps.sched.stub.CheckVariableRefs(
+        cpb.CheckVariableRefsRequest(ctx=ctx.deps.ctx(), project_id=project_id,
+                                     environment_id=environment_id))
+    return to_dict(r)
+
+
 # ---------------------------------------------------------------------------
 # 写/触发工具（requires_approval → 前端 HITL 审批后执行，Scheduler 落审计）
 # ---------------------------------------------------------------------------
 
 writes = FunctionToolset()
+
+
+@writes.tool(requires_approval=True)
+async def create_project(ctx: RunContext[CopilotDeps], name: str,
+                         description: str = "", config: dict | None = None) -> dict:
+    """创建项目。config 可选项目级配置（普通 JSON 对象）。"""
+    req = cpb.CreateProjectRequest(ctx=ctx.deps.ctx(), name=name, description=description)
+    if config:
+        req.config.update(config)
+    r = await ctx.deps.sched.stub.CreateProject(req)
+    return to_dict(r)
 
 _METHODS = {"GET": pb.HTTP_METHOD_GET, "POST": pb.HTTP_METHOD_POST, "PUT": pb.HTTP_METHOD_PUT,
             "DELETE": pb.HTTP_METHOD_DELETE, "PATCH": pb.HTTP_METHOD_PATCH,

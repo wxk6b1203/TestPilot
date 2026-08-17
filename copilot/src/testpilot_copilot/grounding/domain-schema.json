@@ -98,7 +98,7 @@
    {
     "name": "binary_ref",
     "type": "string",
-    "doc": "artifact 引用"
+    "doc": "artifact:<id> 或 base64:<data>"
    }
   ],
   "Assertion": [
