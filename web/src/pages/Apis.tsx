@@ -1,8 +1,9 @@
-import { Button } from 'antd'
-import { PlusOutlined } from '@ant-design/icons'
+import { Button, Modal, message } from 'antd'
+import { CodeOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import IdeLayout from '../components/IdeLayout'
+import { get } from '../api'
 import ApiTreePanel from '../components/ApiTreePanel'
 import ApiDebug from './ApiDebug'
 import { useLayout } from '../hooks/useLayout'
@@ -19,7 +20,25 @@ export default function Apis() {
   const [refresh, setRefresh] = useState(0)
   // 项目切换 / 当前接口被删除时锁定右侧工作区，显示提示而不是继续编辑失效数据
   const [workspaceNotice, setWorkspaceNotice] = useState<string>()
+  const [wrappers, setWrappers] = useState('')
+  const [wrappersLoading, setWrappersLoading] = useState(false)
   const prevProjectRef = useRef(projectId)
+
+  const previewWrappers = async () => {
+    if (!projectId) {
+      message.warning('请先选择项目')
+      return
+    }
+    setWrappersLoading(true)
+    try {
+      const r = await get<{ source: string }>(`/api/v1/projects/${projectId}/api-wrappers`)
+      setWrappers(r.source || '# （项目内暂无接口）')
+    } catch (e: any) {
+      message.error(e.message)
+    } finally {
+      setWrappersLoading(false)
+    }
+  }
 
   // 新建模式放进路由 state：导航被未保存离开守卫拦截时，不会留下“newMode 已置位但路由没变”的脏状态
   const locationState = location.state as { newApi?: boolean; parentId?: string } | null
@@ -72,10 +91,14 @@ export default function Apis() {
         {workspaceNotice ?? '从左侧选择接口，或直接输入 URL 调试'}
       </div>
       <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewApi()}>新建接口</Button>
+      <Button size="small" icon={<CodeOutlined />} loading={wrappersLoading} onClick={previewWrappers}>
+        查看接口封装
+      </Button>
     </div>
   )
 
   return (
+    <>
     <IdeLayout
       panel={
         <ApiTreePanel
@@ -99,5 +122,19 @@ export default function Apis() {
     >
       {workspace}
     </IdeLayout>
+    <Modal
+      open={!!wrappers}
+      onCancel={() => setWrappers('')}
+      footer={null}
+      width={720}
+      title="tp_api_wrappers.py（派发时自动生成，项目全部接口）"
+    >
+      <pre style={{
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontSize: 12, maxHeight: 480, overflow: 'auto', background: '#0f172a',
+        color: '#dbeafe', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap',
+      }}>{wrappers}</pre>
+    </Modal>
+    </>
   )
 }

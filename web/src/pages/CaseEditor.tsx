@@ -9,6 +9,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Segmented,
   Select,
@@ -132,6 +133,24 @@ async def run(ctx):
     resp = await ctx.http("GET", "/json")
     assert resp.status == 200
 `
+
+// 从脚本源码提取字面量接口依赖（与 Scheduler 派发期静态提取规则一致）；
+// 动态拼接 ID 仍需要手动在「接口依赖」中选择。
+function extractApiRefs(src: string): { http: string[]; grpc: string[] } {
+  const ids = (re: RegExp) =>
+    Array.from(src.matchAll(re), (m) => m[1])
+      .filter((v, i, a) => !!v && a.indexOf(v) === i) as string[]
+  return {
+    http: [
+      ...ids(/ctx\.http_api\(\s*["'](\d+)["']/g),
+      ...ids(/HttpAPI\(\s*api_id\s*=\s*["'](\d+)["']/g),
+    ],
+    grpc: [
+      ...ids(/ctx\.grpc_api\(\s*["'](\d+)["']/g),
+      ...ids(/GrpcAPI\(\s*api_id\s*=\s*["'](\d+)["']/g),
+    ],
+  }
+}
 
 // ---------------------------------------------------------------------------
 // 树操作（在 structuredClone 副本上可变操作，再整体 setState）
@@ -999,11 +1018,15 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const [lowSource, setLowSource] = useState('')
   const [lowEntry, setLowEntry] = useState('run')
   const [lowParamsText, setLowParamsText] = useState('')
+  const [httpRefs, setHttpRefs] = useState<string[]>([])
+  const [grpcRefs, setGrpcRefs] = useState<string[]>([])
+  const [wrapperPreview, setWrapperPreview] = useState('')
+  const [wrapperLoading, setWrapperLoading] = useState(false)
   const [apis, setApis] = useState<HttpApi[]>([])
   const [grpcApis, setGrpcApis] = useState<GrpcApi[]>([])
   const [saving, setSaving] = useState(false)
   // 已保存快照（dirty 判定 + 离开守卫）
-  const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', t: 1, s: [], src: '', e: 'run', p: '' }))
+  const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', t: 1, s: [], src: '', e: 'run', p: '', hr: [], gr: [] }))
 
   // 声明式表单所需的接口引用
   useEffect(() => {
@@ -1033,7 +1056,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
         setName(c.name)
         setDescription(c.description)
         setCaseType(t)
-        let snap = { n: c.name, d: c.description, t, s: [] as StepNode[], src: '', e: 'run', p: '' }
+        let snap = { n: c.name, d: c.description, t, s: [] as StepNode[], src: '', e: 'run', p: '', hr: [], gr: [] }
         if (def && typeof def === 'object') {
           if (t === 2) {
             const src = typeof def.source === 'string' ? def.source : ''
@@ -1041,10 +1064,14 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
             const params = def.parameters && typeof def.parameters === 'object'
               ? JSON.stringify(def.parameters, null, 2)
               : ''
+            const hr = Array.isArray(def.httpApiRefs) ? def.httpApiRefs.map(String) : []
+            const gr = Array.isArray(def.grpcApiRefs) ? def.grpcApiRefs.map(String) : []
             setLowSource(src)
             setLowEntry(entry)
             setLowParamsText(params)
-            snap = { ...snap, src, e: entry, p: params }
+            setHttpRefs(hr)
+            setGrpcRefs(gr)
+            snap = { ...snap, src, e: entry, p: params, hr, gr }
           } else {
             const steps = Array.isArray(def.steps) ? def.steps : []
             setSteps(steps)
@@ -1059,7 +1086,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   }, [id])
 
   const snapshot = () =>
-    JSON.stringify({ n: name, d: description, t: caseType, s: steps, src: lowSource, e: lowEntry, p: lowParamsText })
+    JSON.stringify({ n: name, d: description, t: caseType, s: steps, src: lowSource, e: lowEntry, p: lowParamsText, hr: httpRefs, gr: grpcRefs })
   const dirty = snapshot() !== savedSnap
   const { guard, allowOnce } = useLeaveGuard(dirty)
 
@@ -1074,7 +1101,12 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     }
     let definition: any
     if (caseType === 2) {
-      definition = { source: lowSource, entry: lowEntry.trim() || 'run' }
+      definition = {
+        source: lowSource,
+        entry: lowEntry.trim() || 'run',
+        httpApiRefs: httpRefs,
+        grpcApiRefs: grpcRefs,
+      }
       if (lowParamsText.trim()) {
         try {
           const p = JSON.parse(lowParamsText)
@@ -1111,6 +1143,35 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     }
   }
   useSaveShortcut(() => { void save() })
+
+  const previewWrappers = async () => {
+    if (!projectId) return
+    setWrapperLoading(true)
+    try {
+      const params = [
+        httpRefs.length ? `http_ids=${httpRefs.join(',')}` : '',
+        grpcRefs.length ? `grpc_ids=${grpcRefs.join(',')}` : '',
+      ].filter(Boolean)
+      const qs = params.length ? `?${params.join('&')}` : ''
+      const r = await get<{ source: string; count: number }>(
+        `/api/v1/projects/${projectId}/api-wrappers${qs}`)
+      setWrapperPreview(r.source || '# （项目内暂无接口）')
+    } catch (e: any) {
+      message.error(e.message)
+    } finally {
+      setWrapperLoading(false)
+    }
+  }
+
+  const extractRefs = () => {
+    const found = extractApiRefs(lowSource)
+    if (!found.http.length && !found.grpc.length) {
+      message.info('未从脚本中提取到字面量接口 ID')
+      return
+    }
+    setHttpRefs((prev) => Array.from(new Set([...prev, ...found.http])))
+    setGrpcRefs((prev) => Array.from(new Set([...prev, ...found.grpc])))
+  }
 
   // 树操作：structuredClone 副本上可变操作后整体 setState
   const mutate = (fn: (nodes: StepNode[]) => void) => {
@@ -1262,6 +1323,39 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
                   onChange={(e) => setLowSource(e.target.value)}
                 />
               </Form.Item>
+              <Form.Item style={FORM_ITEM_STYLE} label="接口依赖（按 ID 调用）"
+                extra="保存为 definition.httpApiRefs/grpcApiRefs；脚本中的字面量 ID 派发时也会自动解析。动态拼接 ID 必须在此显式声明。">
+                <Space wrap style={{ width: '100%' }}>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="HTTP 接口依赖"
+                    style={{ minWidth: 340 }}
+                    value={httpRefs}
+                    onChange={(v) => setHttpRefs(v)}
+                    options={apis.map((a) => ({
+                      value: String(a.id),
+                      label: `[HTTP] ${a.name || `${HTTP_METHODS[a.method]?.text || 'GET'} ${a.uri}`} (${a.id})`,
+                    }))}
+                  />
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="gRPC 接口依赖"
+                    style={{ minWidth: 340 }}
+                    value={grpcRefs}
+                    onChange={(v) => setGrpcRefs(v)}
+                    options={grpcApis.map((a) => ({
+                      value: String(a.id),
+                      label: `[gRPC] ${a.full_service}/${a.method} (${a.id})`,
+                    }))}
+                  />
+                  <Button size="small" onClick={extractRefs}>从脚本提取</Button>
+                  <Button size="small" loading={wrapperLoading} onClick={previewWrappers}>
+                    预览封装
+                  </Button>
+                </Space>
+              </Form.Item>
               <Form.Item style={FORM_ITEM_STYLE} label="parameters（JSON 对象，可选）">
                 <Input.TextArea
                   rows={4}
@@ -1276,6 +1370,19 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
         </div>
       )}
     </IdeLayout>
+    <Modal
+      open={!!wrapperPreview}
+      onCancel={() => setWrapperPreview('')}
+      footer={null}
+      width={720}
+      title="tp_api_wrappers.py（派发时自动生成）"
+    >
+      <pre style={{
+        fontFamily: MONO, fontSize: 12, maxHeight: 480, overflow: 'auto',
+        background: '#0f172a', color: '#dbeafe', padding: 12, borderRadius: 6,
+        whiteSpace: 'pre-wrap',
+      }}>{wrapperPreview}</pre>
+    </Modal>
     {guard}
     </>
   )
