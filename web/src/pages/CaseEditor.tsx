@@ -9,7 +9,6 @@ import {
   Form,
   Input,
   InputNumber,
-  Modal,
   Popconfirm,
   Segmented,
   Select,
@@ -25,6 +24,7 @@ import {
 import { get, post, put, HTTP_METHODS } from '../api'
 import type { GrpcApi, HttpApi, ListResp, TestCase } from '../api'
 import BodyEditor from '../components/BodyEditor'
+import WrapperPreviewModal from '../components/WrapperPreviewModal'
 import type { BodyValue } from '../components/BodyEditor'
 import IdeLayout from '../components/IdeLayout'
 import KvEditor from '../components/KvEditor'
@@ -1144,17 +1144,20 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   }
   useSaveShortcut(() => { void save() })
 
+  const wrappersBaseUrl = () => {
+    const params = [
+      httpRefs.length ? `http_ids=${httpRefs.join(',')}` : '',
+      grpcRefs.length ? `grpc_ids=${grpcRefs.join(',')}` : '',
+    ].filter(Boolean)
+    const qs = params.length ? `?${params.join('&')}` : ''
+    return `/api/v1/projects/${projectId}/api-wrappers${qs}`
+  }
+
   const previewWrappers = async () => {
     if (!projectId) return
     setWrapperLoading(true)
     try {
-      const params = [
-        httpRefs.length ? `http_ids=${httpRefs.join(',')}` : '',
-        grpcRefs.length ? `grpc_ids=${grpcRefs.join(',')}` : '',
-      ].filter(Boolean)
-      const qs = params.length ? `?${params.join('&')}` : ''
-      const r = await get<{ source: string; count: number }>(
-        `/api/v1/projects/${projectId}/api-wrappers${qs}`)
+      const r = await get<{ source: string; count: number }>(wrappersBaseUrl())
       setWrapperPreview(r.source || '# （项目内暂无接口）')
     } catch (e: any) {
       message.error(e.message)
@@ -1370,19 +1373,13 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
         </div>
       )}
     </IdeLayout>
-    <Modal
+    <WrapperPreviewModal
       open={!!wrapperPreview}
-      onCancel={() => setWrapperPreview('')}
-      footer={null}
-      width={720}
-      title="tp_api_wrappers.py（派发时自动生成）"
-    >
-      <pre style={{
-        fontFamily: MONO, fontSize: 12, maxHeight: 480, overflow: 'auto',
-        background: '#0f172a', color: '#dbeafe', padding: 12, borderRadius: 6,
-        whiteSpace: 'pre-wrap',
-      }}>{wrapperPreview}</pre>
-    </Modal>
+      source={wrapperPreview}
+      baseUrl={wrappersBaseUrl()}
+      title="tp_api_wrappers.py（当前依赖）"
+      onClose={() => setWrapperPreview('')}
+    />
     {guard}
     </>
   )

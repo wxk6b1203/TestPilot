@@ -1,9 +1,11 @@
-import { Button, Modal, message } from 'antd'
+import { Button } from 'antd'
 import { CodeOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import IdeLayout from '../components/IdeLayout'
 import { get } from '../api'
+import WrapperPreviewModal from '../components/WrapperPreviewModal'
+import { message } from '../messageBridge'
 import ApiTreePanel from '../components/ApiTreePanel'
 import ApiDebug from './ApiDebug'
 import { useLayout } from '../hooks/useLayout'
@@ -122,19 +124,13 @@ export default function Apis() {
     >
       {workspace}
     </IdeLayout>
-    <Modal
+    <WrapperPreviewModal
       open={!!wrappers}
-      onCancel={() => setWrappers('')}
-      footer={null}
-      width={720}
-      title="tp_api_wrappers.py（派发时自动生成，项目全部接口）"
-    >
-      <pre style={{
-        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-        fontSize: 12, maxHeight: 480, overflow: 'auto', background: '#0f172a',
-        color: '#dbeafe', padding: 12, borderRadius: 6, whiteSpace: 'pre-wrap',
-      }}>{wrappers}</pre>
-    </Modal>
+      source={wrappers}
+      baseUrl={`/api/v1/projects/${projectId}/api-wrappers`}
+      title="tp_api_wrappers.py（项目全部接口）"
+      onClose={() => setWrappers('')}
+    />
     </>
   )
 }
