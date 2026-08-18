@@ -19,7 +19,7 @@ import {
 import {
   AimOutlined, ApiOutlined, ArrowLeftOutlined, BranchesOutlined, CheckSquareOutlined,
   ClockCircleOutlined, CloudServerOutlined, CodeOutlined, CopyOutlined, DeleteOutlined,
-  PlusOutlined, RedoOutlined, SyncOutlined, TagsOutlined,
+  PlayCircleOutlined, PlusOutlined, RedoOutlined, SyncOutlined, TagsOutlined,
 } from '@ant-design/icons'
 import { get, post, put, HTTP_METHODS } from '../api'
 import type { GrpcApi, HttpApi, ListResp, TestCase } from '../api'
@@ -1008,7 +1008,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const { id } = useParams()
   const isNew = !id
   const nav = useNavigate()
-  const { projectId } = useLayout()
+  const { projectId, envId } = useLayout()
 
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
@@ -1025,6 +1025,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const [apis, setApis] = useState<HttpApi[]>([])
   const [grpcApis, setGrpcApis] = useState<GrpcApi[]>([])
   const [saving, setSaving] = useState(false)
+  const [runningCase, setRunningCase] = useState(false)
   // 已保存快照（dirty 判定 + 离开守卫）
   const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', t: 1, s: [], src: '', e: 'run', p: '', hr: [], gr: [] }))
 
@@ -1090,7 +1091,8 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const dirty = snapshot() !== savedSnap
   const { guard, allowOnce } = useLeaveGuard(dirty)
 
-  const save = async () => {
+  // persist：校验并保存当前编辑器内容，返回用例 ID（不负责导航）。
+  const persist = async (): Promise<string | undefined> => {
     if (!projectId) {
       message.warning('请先在顶部选择项目')
       return
@@ -1131,15 +1133,44 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
       const resp = isNew
         ? await post<TestCase>('/api/v1/cases', payload)
         : await put<TestCase>(`/api/v1/cases/${id}`, payload)
-      message.success('已保存')
       setSavedSnap(snapshot())
       onSaved?.(resp.id)
-      allowOnce() // setSavedSnap 提交晚于同步 nav，显式放行一次
-      nav(`/cases/${resp.id}/edit`)
+      return resp.id
     } catch (e: any) {
       message.error(e.message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  const save = async () => {
+    const cid = await persist()
+    if (!cid) return
+    message.success('已保存')
+    allowOnce() // setSavedSnap 提交晚于同步 nav，显式放行一次
+    nav(`/cases/${cid}/edit`)
+  }
+
+  // 运行当前用例：未保存/有改动时先持久化，再触发单用例运行。
+  const runNow = async () => {
+    const needPersist = isNew || dirty
+    const cid = needPersist ? await persist() : id
+    if (!cid) return
+    if (needPersist) {
+      message.success('已保存，正在触发运行')
+      if (isNew) {
+        allowOnce()
+        nav(`/cases/${cid}/edit`)
+      }
+    }
+    setRunningCase(true)
+    try {
+      const r = await post<{ run_id: string }>(`/api/v1/cases/${cid}/run`, { env_id: envId || undefined })
+      message.success(`已触发运行 ${r.run_id}`)
+    } catch (e: any) {
+      message.error(e.message)
+    } finally {
+      setRunningCase(false)
     }
   }
   useSaveShortcut(() => { void save() })
@@ -1256,6 +1287,9 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
             ]}
           />
           <span style={{ flex: 1 }} />
+          <Button size="small" icon={<PlayCircleOutlined />} loading={runningCase} onClick={runNow}>
+            运行
+          </Button>
           <Button type="primary" size="small" loading={saving} onClick={save}>
             保存
           </Button>
@@ -1311,7 +1345,8 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
               requiredMark={false}
               styles={{ label: FORM_LABEL_STYLE, extra: FORM_EXTRA_STYLE }}
             >
-              <Form.Item style={FORM_ITEM_STYLE} label="入口函数">
+              <Form.Item style={FORM_ITEM_STYLE} label="入口函数（可选，默认 run）"
+                extra="脚本内可定义多个流程函数，通过入口函数切换；留空等价于 run">
                 <Input
                   style={{ width: 220 }} value={lowEntry} placeholder="run"
                   onChange={(e) => setLowEntry(e.target.value)}

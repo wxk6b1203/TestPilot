@@ -152,6 +152,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/cases/:id", auth.RoleViewer, s.getCase)
 	h(fiber.MethodPut, "/cases/:id", auth.RoleMember, s.updateCase)
 	h(fiber.MethodDelete, "/cases/:id", auth.RoleMember, s.deleteCase)
+	h(fiber.MethodPost, "/cases/:id/run", auth.RoleMember, s.runCase)
 
 	h(fiber.MethodGet, "/plans", auth.RoleViewer, s.listPlans)
 	h(fiber.MethodPost, "/plans", auth.RoleMember, s.createPlan)

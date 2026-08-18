@@ -520,6 +520,26 @@ type runReq struct {
 	EnvID int64 `json:"env_id"`
 }
 
+// runCase 直接运行单个用例（用例编辑器「运行」按钮）；env_id 可选，缺省取项目第一个环境。
+func (s *Server) runCase(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	caseID, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var in runReq
+	if len(ctx.Body()) > 0 {
+		if !decode(ctx, &in) {
+			return nil
+		}
+	}
+	runID, err := s.run.RunCase(ctx.Context(), c.TenantID, caseID, in.EnvID, fmt.Sprint(c.UserID))
+	if err != nil {
+		return writeAppErr(ctx, err)
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"run_id": runID})
+}
+
 func (s *Server) runPlan(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	planID, ok := pathID(ctx, "id")

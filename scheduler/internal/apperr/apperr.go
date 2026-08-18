@@ -29,13 +29,14 @@ const (
 	CodeConflict     = "CONFLICT"      // 409 冲突（如重复导入）
 
 	// 认证
-	CodeInvalidCredentials = "AUTH_INVALID_CREDENTIALS" // 401 用户名或密码错误
-	CodeNoMembership       = "AUTH_NO_MEMBERSHIP"       // 403 用户不属于任何租户
-	CodeRegistrationDisabled = "REGISTRATION_DISABLED" // 403 注册未开放（配置开关）
-	CodeUsernameTaken        = "USERNAME_TAKEN"         // 409 用户名已存在
+	CodeInvalidCredentials   = "AUTH_INVALID_CREDENTIALS" // 401 用户名或密码错误
+	CodeNoMembership         = "AUTH_NO_MEMBERSHIP"       // 403 用户不属于任何租户
+	CodeRegistrationDisabled = "REGISTRATION_DISABLED"    // 403 注册未开放（配置开关）
+	CodeUsernameTaken        = "USERNAME_TAKEN"           // 409 用户名已存在
 
 	// 运行
 	CodePlanNotFound = "PLAN_NOT_FOUND"      // 404 计划不存在
+	CodeCaseNotFound = "CASE_NOT_FOUND"      // 404 用例不存在
 	CodePlanNoItems  = "PLAN_NO_ITEMS"       // 400 计划无启用项
 	CodeNoWorker     = "NO_WORKER_AVAILABLE" // 503 无匹配能力的在线 Worker
 

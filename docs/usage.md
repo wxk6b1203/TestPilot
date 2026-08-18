@@ -102,6 +102,9 @@ async def run(ctx: Context):
 沙箱内运行：setrlimit 限额、环境白名单、无网络出口（macOS sandbox-exec / Linux bwrap），
 HTTP/变量等副作用经能力桥由 Worker 代执行。
 
+用例编辑器支持「保存」与「运行」：运行会把未保存/有改动的用例先保存，再经
+`POST /cases/{id}/run` 触发单用例运行；入口函数留空等价于默认 `run`。
+
 ### 按接口 ID 调用（推荐）
 
 ```python
