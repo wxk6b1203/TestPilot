@@ -22,9 +22,10 @@ import {
   PlayCircleOutlined, PlusOutlined, RedoOutlined, SyncOutlined, TagsOutlined,
 } from '@ant-design/icons'
 import { get, post, put, HTTP_METHODS } from '../api'
-import type { GrpcApi, HttpApi, ListResp, TestCase } from '../api'
+import type { GrpcApi, HttpApi, ListResp, TestCase, TestRun } from '../api'
 import BodyEditor from '../components/BodyEditor'
 import WrapperPreviewModal from '../components/WrapperPreviewModal'
+import RunDetailDrawer from '../components/RunDetailDrawer'
 import type { BodyValue } from '../components/BodyEditor'
 import IdeLayout from '../components/IdeLayout'
 import KvEditor from '../components/KvEditor'
@@ -1026,6 +1027,8 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const [grpcApis, setGrpcApis] = useState<GrpcApi[]>([])
   const [saving, setSaving] = useState(false)
   const [runningCase, setRunningCase] = useState(false)
+  const [runDetail, setRunDetail] = useState<TestRun | null>(null)
+  const [runDrawerOpen, setRunDrawerOpen] = useState(false)
   // 已保存快照（dirty 判定 + 离开守卫）
   const [savedSnap, setSavedSnap] = useState(() => JSON.stringify({ n: '', d: '', t: 1, s: [], src: '', e: 'run', p: '', hr: [], gr: [] }))
 
@@ -1167,6 +1170,9 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     try {
       const r = await post<{ run_id: string }>(`/api/v1/cases/${cid}/run`, { env_id: envId || undefined })
       message.success(`已触发运行 ${r.run_id}`)
+      const first = await get<TestRun>(`/api/v1/runs/${r.run_id}`)
+      setRunDetail(first)
+      setRunDrawerOpen(true)
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -1174,6 +1180,19 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     }
   }
   useSaveShortcut(() => { void save() })
+
+  // 运行结果抽屉打开且运行中 → 轮询刷新，结束自动停
+  useEffect(() => {
+    if (!runDetail || !runDrawerOpen || (runDetail.status !== 0 && runDetail.status !== 1)) return
+    const t = setInterval(async () => {
+      try {
+        setRunDetail(await get<TestRun>(`/api/v1/runs/${runDetail.id}`))
+      } catch {
+        // 瞬时错误忽略，下个周期重试
+      }
+    }, 2000)
+    return () => clearInterval(t)
+  }, [runDetail?.id, runDetail?.status, runDrawerOpen])
 
   const wrappersBaseUrl = () => {
     const params = [
@@ -1408,6 +1427,11 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
         </div>
       )}
     </IdeLayout>
+    <RunDetailDrawer
+      run={runDetail}
+      open={runDrawerOpen}
+      onClose={() => setRunDrawerOpen(false)}
+    />
     <WrapperPreviewModal
       open={!!wrapperPreview}
       source={wrapperPreview}
