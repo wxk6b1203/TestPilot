@@ -1,5 +1,5 @@
-import { Button, Checkbox, Input, Select, Tabs, Tag, Typography } from 'antd'
-import { SaveOutlined, SendOutlined } from '@ant-design/icons'
+import { Button, Checkbox, Input, Select, Tabs, Tag, Tooltip, Typography } from 'antd'
+import { CodeOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import useSaveShortcut from '../hooks/useSaveShortcut'
@@ -13,6 +13,7 @@ import type { BodyValue } from '../components/BodyEditor'
 import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import ResponsePane from '../components/ResponsePane'
+import WrapperPreviewModal from '../components/WrapperPreviewModal'
 import SplitPane from '../components/SplitPane'
 import { METHOD_COLORS, PALETTE } from '../theme'
 import { useLayout } from '../hooks/useLayout'
@@ -58,8 +59,30 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const [env, setEnv] = useState(envId)
   const [loading, setLoading] = useState(false)
   const [debugResult, setDebugResult] = useState<DebugResult>()
+  const [wrapperSource, setWrapperSource] = useState('')
+  const [wrapperLoading, setWrapperLoading] = useState(false)
   const [savedSnapshot, setSavedSnapshot] = useState(() => formOf('', 1, '', [EMPTY_ROW], [EMPTY_ROW], [EMPTY_ROW], EMPTY_BODY, '', '', { tls_verify: true, follow_redirects: true, comment_tolerant_json: false }))
   const sendingRef = useRef(false)
+  const apiId = id || savedId
+
+  // 当前接口封装预览（只导出当前接口；保存后可用）
+  const previewWrapper = async () => {
+    if (!projectId || !apiId) {
+      message.warning('当前接口保存后即可查看封装')
+      return
+    }
+    setWrapperLoading(true)
+    try {
+      const r = await get<{ source: string }>(
+        `/api/v1/projects/${projectId}/api-wrappers?http_ids=${apiId}`)
+      setWrapperSource(r.source || '# （当前接口暂未生成封装）')
+    } catch (e: any) {
+      message.error(e.message)
+    } finally {
+      setWrapperLoading(false)
+    }
+  }
+
 
   // 回填已有接口
   useEffect(() => {
@@ -267,6 +290,18 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
           <div style={{ height: '100%', overflow: 'auto', padding: '8px 16px' }}>
             <Tabs
           size="small"
+          tabBarExtraContent={
+            <Tooltip title="查看当前接口封装">
+              <Button
+                size="small"
+                type="text"
+                icon={<CodeOutlined />}
+                loading={wrapperLoading}
+                disabled={!apiId}
+                onClick={previewWrapper}
+              />
+            </Tooltip>
+          }
           items={[
             {
               key: 'params',
@@ -350,6 +385,13 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         </SplitPane>
       </div>
 
+      <WrapperPreviewModal
+        open={!!wrapperSource}
+        source={wrapperSource}
+        baseUrl={`/api/v1/projects/${projectId}/api-wrappers?http_ids=${apiId}`}
+        title={`当前接口封装 · ${name || apiId}`}
+        onClose={() => setWrapperSource('')}
+      />
       {guard}
     </div>
   )
