@@ -39,8 +39,20 @@ log = logging.getLogger("testpilot.copilot")
 # chat 请求体上限（SSE 消息体通常 <100KB；防大 body 占用内存）
 _MAX_CHAT_BODY = 1 << 20
 
-# chat 请求体上限（SSE 消息体通常 <100KB；防大 body 占用内存）
-_MAX_CHAT_BODY = 1 << 20
+
+def _context_id_header(value: str | None) -> str:
+    """规范化前端页面上下文头（X-TP-Project-Id / X-TP-Env-Id）。
+
+    只接受数字 ID（平台 ID 均为 snowflake 数值）；非法值直接忽略，
+    避免把任意字符串带进 gRPC 请求构造。
+    """
+    v = (value or "").strip()
+    if not v:
+        return ""
+    if not v.isdigit() or len(v) > 32:
+        log.warning("ignore invalid copilot context header value: %r", v[:64])
+        return ""
+    return v
 
 
 @asynccontextmanager
@@ -141,7 +153,14 @@ async def _chat_inner(request: Request):
         session_id = str(r.json()["id"])
 
     deps = CopilotDeps(sched=app.state.sched, tenant_id=tenant_id, user_id=user_id,
-                       http=http, token=token)
+                       http=http, token=token,
+                       ui_project_id=_context_id_header(
+                           request.headers.get("x-tp-project-id")),
+                       ui_env_id=_context_id_header(
+                           request.headers.get("x-tp-env-id")))
+    # 校验页面上下文并加载权威详情：失效的项目/环境 ID 会被清空，
+    # 工具缺省参数不会拿着失效 ID 反复调用 Scheduler。
+    await deps.hydrate_ui_context()
 
     await _persist_incoming_user(app, session_id, token, body)
 

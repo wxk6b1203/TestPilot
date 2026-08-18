@@ -2,13 +2,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Popconfirm, Space, Tag, Typography } from 'antd'
 import {
-  ArrowLeftOutlined, DeleteOutlined, PlusOutlined, RobotOutlined, SendOutlined, StopOutlined,
+  ArrowLeftOutlined, DeleteOutlined, EnvironmentOutlined, PlusOutlined,
+  ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
 } from '@ant-design/icons'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai'
 import type { UIMessage } from 'ai'
 import { del, get, getToken } from '../api'
 import type { ListResp } from '../api'
+import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
 
@@ -65,6 +67,16 @@ const sanitizeMessages = (msgs: any[]) =>
   msgs.map((m) => ({ id: m.id, role: m.role, parts: (m.parts || []).map(sanitizePart) }))
 
 export default function Copilot() {
+  // 页面左上角全局选择的项目/环境：随每次 chat 请求经 X-TP-Project-Id /
+  // X-TP-Env-Id 头带给 Copilot，工具参数省略时默认作用于该上下文。
+  const { projectId, envId, projects, envs } = useLayout()
+  const projectIdRef = useRef(projectId)
+  const envIdRef = useRef(envId)
+  useEffect(() => { projectIdRef.current = projectId }, [projectId])
+  useEffect(() => { envIdRef.current = envId }, [envId])
+  const projectName = projects.find((p) => p.id === projectId)?.name
+  const envName = envs.find((e) => e.id === envId)?.name
+
   const [sessionId, setSessionId] = useState('')
   const sessionIdRef = useRef('') // 供 transport 回调读取最新会话（不回环依赖 state）
   const [sessions, setSessions] = useState<Session[]>([])
@@ -120,6 +132,8 @@ export default function Copilot() {
         headers: () => ({
           Authorization: `Bearer ${getToken()}`,
           ...(sessionIdRef.current ? { 'X-Session-Id': sessionIdRef.current } : {}),
+          ...(projectIdRef.current ? { 'X-TP-Project-Id': projectIdRef.current } : {}),
+          ...(envIdRef.current ? { 'X-TP-Env-Id': envIdRef.current } : {}),
         }),
         body: () => ({ trigger: 'submit-message' }), // 后端要求 trigger=submit-message
         // 裁剪 parts 为后端 schema 允许的字段（SDK 序列化多出的 id 等会被 extra=forbid 拒绝）
@@ -326,11 +340,25 @@ export default function Copilot() {
         </div>
       ) : (
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF' }}>
+          <div style={{
+            flexShrink: 0, padding: '6px 16px', borderBottom: `1px solid ${PALETTE.border}`,
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <Tag color={projectId ? 'blue' : 'default'} style={{ margin: 0 }}>
+              <ProjectOutlined /> {projectName || '未选择项目'}
+            </Tag>
+            <Tag color={envId ? 'green' : 'default'} style={{ margin: 0 }}>
+              <EnvironmentOutlined /> {envName || '未选择环境'}
+            </Tag>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              Copilot 把以上选择作为「当前项目/环境」，相关工具缺省参数自动生效
+            </Typography.Text>
+          </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px' }}>
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', color: PALETTE.textTertiary, marginTop: 40 }}>
                 <RobotOutlined style={{ fontSize: 28 }} />
-                <div style={{ marginTop: 8 }}>向 Copilot 描述任务，例如「创建一个接口 GET /ping」</div>
+                <div style={{ marginTop: 8 }}>向 Copilot 描述任务，例如「当前项目有哪些接口」「创建一个接口 GET /ping」</div>
               </div>
             )}
             {messages.map((m) => (

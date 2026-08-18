@@ -116,3 +116,21 @@ def test_redact_sensitive_headers():
     assert hs[1]["value"] == "***"
     assert hs[2]["value"] == "bob"
 
+
+
+def test_context_id_header_accepts_numeric_ids():
+    from testpilot_copilot.main import _context_id_header
+
+    assert _context_id_header("123") == "123"
+    assert _context_id_header(" 456 ") == "456"
+    assert _context_id_header("") == ""
+    assert _context_id_header(None) == ""
+
+
+def test_context_id_header_rejects_non_numeric_or_oversized():
+    from testpilot_copilot.main import _context_id_header
+
+    assert _context_id_header("abc") == ""
+    assert _context_id_header("12; drop") == ""
+    assert _context_id_header("9" * 33) == ""
+

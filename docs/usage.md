@@ -196,6 +196,10 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 ## Copilot
 
 对话页（`/copilot`）自然语言生成项目/接口/用例/压测计划、触发运行、查询结果。
+页面左上角当前选择的项目/环境会随每次请求传给 Copilot（`X-TP-Project-Id` /
+`X-TP-Env-Id` 头），`get_current_context` 工具可获取其权威详情；涉及
+`project_id`/`environment_id` 的工具参数省略时默认作用于该选择，Copilot 页顶部
+有当前上下文提示条。
 新增工具：`create_project`（创建项目）、`query_api_directory`（接口目录问答）、
 `check_variable_refs`（检查接口/用例中的 `{{var}}` 引用是否已定义）。
 写操作需 HITL 审批（前端按钮）；全部工具调用经 Scheduler gRPC 落审计（actor=copilot）。

@@ -142,4 +142,5 @@
 
 - `GET /healthz`：存活探针。
 - `GET /metrics`：Prometheus 指标（公开，生产收敛到内网）。
-- Copilot 服务（:8100）：`POST /api/chat`（Vercel AI SSE；头 `X-Session-Id` 续会话）、`GET /api/healthz`。
+- Copilot 服务（:8100）：`POST /api/chat`（Vercel AI SSE；头 `X-Session-Id` 续会话，
+  `X-TP-Project-Id` / `X-TP-Env-Id` 携带页面左上角当前项目/环境选择）、`GET /api/healthz`。

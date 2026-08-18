@@ -28,8 +28,12 @@ from testpilot_copilot.main import _render_rows, _short
 from testpilot_copilot.tools import (
     CopilotDeps,
     _METHODS,
+    check_variable_refs,
     create_api,
+    create_test_plan,
+    get_current_context,
     json_format_parse,
+    list_apis,
     list_runs,
 )
 
@@ -166,9 +170,13 @@ def test_render_empty_input():
 # ---------------------------------------------------------------------------
 
 
-def _fake_deps(stub) -> CopilotDeps:
+def _fake_deps(stub, ui_project_id: str = "", ui_env_id: str = "",
+               ui_project: dict | None = None,
+               ui_environment: dict | None = None) -> CopilotDeps:
     return CopilotDeps(sched=SimpleNamespace(stub=stub), tenant_id=7,
-                       user_id="u1", http=None, token="")
+                       user_id="u1", http=None, token="",
+                       ui_project_id=ui_project_id, ui_env_id=ui_env_id,
+                       ui_project=ui_project, ui_environment=ui_environment)
 
 
 def test_deps_ctx_builds_request_context():
@@ -278,3 +286,167 @@ def test_list_runs_invalid_status_raises_before_rpc():
     with pytest.raises(ValueError):
         asyncio.run(list_runs(SimpleNamespace(deps=_fake_deps(stub)), status="BOGUS"))
     assert stub.requests == []  # 未发起 RPC
+
+
+# ---------------------------------------------------------------------------
+# 页面上下文（左上角项目/环境选择）：缺省参数解析 + get_current_context
+# ---------------------------------------------------------------------------
+
+
+def test_create_api_defaults_to_ui_project_and_explicit_wins():
+    stub = _RecordingStub(cpb.CreateApiResponse())
+    deps = _fake_deps(stub, ui_project_id="p9", ui_env_id="e9")
+    asyncio.run(create_api(SimpleNamespace(deps=deps), method="GET", uri="/x"))
+    assert stub.requests[0][1].project_id == "p9"
+
+    asyncio.run(create_api(SimpleNamespace(deps=deps), method="GET", uri="/y",
+                           project_id="p2"))
+    assert stub.requests[1][1].project_id == "p2"
+
+
+def test_create_api_without_any_project_fails_before_rpc():
+    stub = _RecordingStub(cpb.CreateApiResponse())
+    with pytest.raises(ValueError, match="未选择项目"):
+        asyncio.run(create_api(SimpleNamespace(deps=_fake_deps(stub)),
+                               method="GET", uri="/x"))
+    assert stub.requests == []
+
+
+def test_list_apis_uses_ui_project_when_omitted():
+    stub = _RecordingStub(cpb.ListApisResponse())
+    asyncio.run(list_apis(SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p3"))))
+    assert stub.requests[0][0] == "ListApis"
+    assert stub.requests[0][1].project_id == "p3"
+
+
+def test_check_variable_refs_uses_ui_project_and_env():
+    stub = _RecordingStub(cpb.CheckVariableRefsResponse())
+    deps = _fake_deps(stub, ui_project_id="p4", ui_env_id="e4")
+    asyncio.run(check_variable_refs(SimpleNamespace(deps=deps)))
+    assert stub.requests[0][1].project_id == "p4"
+    assert stub.requests[0][1].environment_id == "e4"
+
+
+def test_create_test_plan_requires_env_from_ui():
+    stub = _RecordingStub(cpb.CreateTestPlanResponse())
+    deps = _fake_deps(stub, ui_project_id="p5", ui_env_id="e5")
+    asyncio.run(create_test_plan(SimpleNamespace(deps=deps), name="plan",
+                                 case_ids=["c1"]))
+    req = stub.requests[0][1]
+    assert req.project_id == "p5"
+    assert req.plan.env_id == "e5"
+
+    with pytest.raises(ValueError, match="未选择环境"):
+        asyncio.run(create_test_plan(
+            SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p5")),
+            name="plan", case_ids=["c1"]))
+
+
+def test_list_runs_defaults_to_ui_project_but_empty_means_all():
+    stub = _RecordingStub(cpb.ListRunsResponse())
+    asyncio.run(list_runs(SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p6"))))
+    assert stub.requests[0][1].project_id == "p6"
+
+    asyncio.run(list_runs(SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p6")),
+                          project_id=""))
+    assert stub.requests[1][1].project_id == ""
+
+
+class _FakeHTTP:
+    """最小 httpx.AsyncClient 替身：path → (status, json) 映射。"""
+
+    def __init__(self, responses: dict[str, tuple[int, dict]]):
+        self.responses = responses
+        self.calls: list[str] = []
+
+    async def get(self, path, headers=None):
+        self.calls.append(path)
+        status, payload = self.responses[path]
+        return SimpleNamespace(status_code=status, json=lambda: payload)
+
+
+def _ctx_deps(stub=SimpleNamespace(), project_id="", env_id="",
+              project=None, environment=None, http=None):
+    return CopilotDeps(sched=SimpleNamespace(stub=stub), tenant_id=7,
+                       user_id="u1", http=http, token="jwt-ctx",
+                       ui_project_id=project_id, ui_env_id=env_id,
+                       ui_project=project, ui_environment=environment)
+
+
+def test_hydrate_ui_context_keeps_valid_project_and_env():
+    http = _FakeHTTP({
+        "/api/v1/projects/p1": (200, {"id": "p1", "name": "Demo",
+                                      "tenant_id": 7}),
+        "/api/v1/environments?project_id=p1&page_size=200": (
+            200, {"items": [
+                {"id": "e1", "project_id": "p1", "name": "测试环境",
+                 "base_url": "http://echo:18080"},
+                {"id": "e2", "project_id": "p1", "name": "其他环境"},
+            ]}),
+    })
+    deps = _ctx_deps(project_id="p1", env_id="e1", http=http)
+    asyncio.run(deps.hydrate_ui_context())
+    assert deps.ui_project_id == "p1"
+    assert deps.ui_project["name"] == "Demo"
+    assert deps.ui_env_id == "e1"
+    assert deps.ui_environment["base_url"] == "http://echo:18080"
+    assert len(http.calls) == 2
+
+
+def test_hydrate_ui_context_clears_stale_or_mismatched_ids():
+    # 项目失效 → 项目和环境下发 ID 都清空，且不再请求环境列表
+    http = _FakeHTTP({"/api/v1/projects/p-gone": (404, {})})
+    deps = _ctx_deps(project_id="p-gone", env_id="e1", http=http)
+    asyncio.run(deps.hydrate_ui_context())
+    assert deps.ui_project_id == "" and deps.ui_project is None
+    assert deps.ui_env_id == "" and deps.ui_environment is None
+    assert http.calls == ["/api/v1/projects/p-gone"]
+
+    # 项目有效但环境不属于该项目 → 仅清环境
+    http = _FakeHTTP({
+        "/api/v1/projects/p1": (200, {"id": "p1", "name": "Demo"}),
+        "/api/v1/environments?project_id=p1&page_size=200": (
+            200, {"items": [{"id": "e-other", "project_id": "p1"}]}),
+    })
+    deps = _ctx_deps(project_id="p1", env_id="e1", http=http)
+    asyncio.run(deps.hydrate_ui_context())
+    assert deps.ui_project_id == "p1" and deps.ui_project is not None
+    assert deps.ui_env_id == "" and deps.ui_environment is None
+
+
+def test_get_current_context_no_selection():
+    out = asyncio.run(get_current_context(SimpleNamespace(deps=_ctx_deps())))
+    assert out["project_selected"] is False
+    assert out["project"] is None
+    assert out["environment_selected"] is False
+    assert out["environment"] is None
+    assert "未选择项目" in out["hint"]
+
+
+def test_get_current_context_returns_authoritative_details():
+    deps = _ctx_deps(
+        project_id="p1", env_id="e1",
+        project={"id": "p1", "tenant_id": 7, "name": "Demo",
+                 "created_at": "2026-08-18T00:00:00Z"},
+        environment={"id": "e1", "project_id": "p1", "name": "测试环境",
+                     "base_url": "http://echo:18080"})
+    out = asyncio.run(get_current_context(SimpleNamespace(deps=deps)))
+    assert out["project_selected"] is True
+    assert out["project"]["name"] == "Demo"
+    assert out["project"]["tenantId"] == 7
+    assert out["environment_selected"] is True
+    assert out["environment"]["baseUrl"] == "http://echo:18080"
+
+
+def test_get_current_context_hydrates_when_details_missing():
+    http = _FakeHTTP({
+        "/api/v1/projects/p1": (200, {"id": "p1", "name": "Demo"}),
+        "/api/v1/environments?project_id=p1&page_size=200": (
+            200, {"items": [{"id": "e1", "project_id": "p1",
+                             "name": "测试环境", "base_url": "http://echo:18080"}]}),
+    })
+    deps = _ctx_deps(project_id="p1", env_id="e1", http=http)
+    out = asyncio.run(get_current_context(SimpleNamespace(deps=deps)))
+    assert out["project"]["name"] == "Demo"
+    assert out["environment"]["baseUrl"] == "http://echo:18080"
+    assert len(http.calls) == 2
