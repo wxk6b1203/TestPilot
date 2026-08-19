@@ -1,9 +1,9 @@
-import { Button, Card, Empty, Input, Modal, Space, Tag } from 'antd'
-import { ArrowLeftOutlined, PlusOutlined } from '@ant-design/icons'
+import { Button, Card, Empty, Input, Modal, Popconfirm, Space, Tag, Typography } from 'antd'
+import { ArrowLeftOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { get, post, put, warnTruncated } from '../api'
+import { del, get, post, put, warnTruncated } from '../api'
 import type { ListResp, Script } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
@@ -148,6 +148,20 @@ export default function Scripts() {
     }
   }
 
+  const removeScript = async (s: Script) => {
+    try {
+      await del(`/api/v1/scripts/${s.id}`)
+      message.success('已删除')
+      if (s.id === id) {
+        allowOnce()
+        nav('/scripts', { replace: true })
+      }
+      loadScripts().catch((e) => message.error(e.message))
+    } catch (e: any) {
+      message.error(e.message)
+    }
+  }
+
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 
   const panel = (
@@ -164,13 +178,24 @@ export default function Scripts() {
       activeId={id}
       onPick={(s) => nav(`/scripts/${s.id}/edit`)}
       renderItem={(s) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+          <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
             {s.name}
           </span>
-          <Tag style={{ margin: 0 }} color={s.language === 'python' ? 'blue' : 'default'}>
-            {s.language || 'python'}
-          </Tag>
+          <Space size={4} onClick={(e) => e.stopPropagation()}>
+            <Tag style={{ margin: 0 }} color={s.language === 'python' ? 'blue' : 'default'}>
+              {s.language || 'python'}
+            </Tag>
+            <Popconfirm
+              title="删除脚本？"
+              description="删除后不可恢复"
+              onConfirm={async () => {
+                await removeScript(s)
+              }}
+            >
+              <Button size="small" danger type="text" icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </Space>
         </div>
       )}
     />
@@ -180,6 +205,14 @@ export default function Scripts() {
     <Space>
       <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/scripts')}>返回</Button>
       <Button type="primary" loading={saving} onClick={save}>保存</Button>
+      {id && (
+        <Typography.Text
+          copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+          style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
+        >
+          ID {id}
+        </Typography.Text>
+      )}
     </Space>
   )
 

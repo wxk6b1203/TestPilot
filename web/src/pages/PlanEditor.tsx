@@ -184,6 +184,14 @@ export default function PlanEditor() {
               返回
             </Button>
             <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>编辑测试计划</span>
+            {id && (
+              <Typography.Text
+                copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+                style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
+              >
+                ID {id}
+              </Typography.Text>
+            )}
           </Space>
           <Space>
             <Button size="small" icon={<PlayCircleOutlined />} loading={running} onClick={run}>

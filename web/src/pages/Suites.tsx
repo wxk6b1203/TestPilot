@@ -1,4 +1,4 @@
-import { Button, Card, Empty, Input, Modal, Space, Tag } from 'antd'
+import { Button, Card, Empty, Input, Modal, Space, Tag, Typography } from 'antd'
 import {
   ArrowDownOutlined, ArrowLeftOutlined, ArrowUpOutlined, LeftOutlined, PlusOutlined, RightOutlined,
 } from '@ant-design/icons'
@@ -236,6 +236,14 @@ export default function Suites() {
     <Space>
       <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/suites')}>返回</Button>
       <Button type="primary" loading={saving} onClick={save}>保存</Button>
+      {id && (
+        <Typography.Text
+          copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+          style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
+        >
+          ID {id}
+        </Typography.Text>
+      )}
     </Space>
   )
 
