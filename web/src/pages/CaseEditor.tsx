@@ -15,6 +15,7 @@ import {
   Space,
   Switch,
   Tooltip,
+  Typography,
 } from 'antd'
 import {
   AimOutlined, ApiOutlined, ArrowLeftOutlined, BranchesOutlined, CheckSquareOutlined,
@@ -1290,11 +1291,15 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
             size="small" style={{ width: 200 }} value={name} placeholder="用例名称"
             onChange={(e) => setName(e.target.value)}
           />
-          <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>描述</span>
-          <Input
-            size="small" style={{ width: 240 }} value={description} placeholder="描述（可选）"
-            onChange={(e) => setDescription(e.target.value)}
-          />
+          {caseType === 1 && (
+            <>
+              <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>描述</span>
+              <Input
+                size="small" style={{ width: 240 }} value={description} placeholder="描述（可选）"
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </>
+          )}
           <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>类型</span>
           <Segmented
             size="small"
@@ -1305,6 +1310,18 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
               { label: '低代码', value: 2 },
             ]}
           />
+          {!isNew && (
+            <Space size={4}>
+              <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>ID</span>
+              <Typography.Text
+                code
+                style={{ fontSize: 12 }}
+                copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+              >
+                {id}
+              </Typography.Text>
+            </Space>
+          )}
           <span style={{ flex: 1 }} />
           <Button size="small" icon={<PlayCircleOutlined />} loading={runningCase} onClick={runNow}>
             运行
@@ -1364,6 +1381,13 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
               requiredMark={false}
               styles={{ label: FORM_LABEL_STYLE, extra: FORM_EXTRA_STYLE }}
             >
+              <Form.Item style={FORM_ITEM_STYLE} label="描述"
+                extra="用例用途/覆盖场景等补充说明，保存后展示在用例列表与运行报告">
+                <Input
+                  style={{ width: 420 }} value={description} placeholder="描述（可选）"
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </Form.Item>
               <Form.Item style={FORM_ITEM_STYLE} label="入口函数（可选，默认 run）"
                 extra="脚本内可定义多个流程函数，通过入口函数切换；留空等价于 run">
                 <Input
