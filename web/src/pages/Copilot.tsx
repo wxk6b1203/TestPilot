@@ -82,7 +82,6 @@ export default function Copilot() {
   const [sessions, setSessions] = useState<Session[]>([])
   const [view, setView] = useState<'chat' | 'trash'>('chat')
   const [trash, setTrash] = useState<TrashSession[]>([])
-  const [confirmId, setConfirmId] = useState('')
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -108,10 +107,8 @@ export default function Copilot() {
       message.success('已移入回收站')
       setSessions((prev) => prev.filter((x) => x.id !== s.id))
       if (sessionId === s.id) newChat()
-      setConfirmId('')
     } catch (e: any) {
       message.error(e.message)
-      setConfirmId('')
     }
   }
 
@@ -256,26 +253,22 @@ export default function Copilot() {
               onClick={() => openSession(s.id)}
               style={{
                 cursor: 'pointer', padding: '6px 8px', borderRadius: 6, margin: '2px 4px',
-                display: 'flex', alignItems: 'center', gap: 4,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
                 background: s.id === sessionId ? PALETTE.selectedRow : undefined,
               }}
             >
               <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{s.title || '新对话'}</Typography.Text>
-              {confirmId === s.id ? (
-                <Button
-                  size="small" danger
-                  onClick={(e) => { e.stopPropagation(); void confirmDeleteSession(s) }}
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                <Popconfirm
+                  title="删除会话？"
+                  description="删除后会移入回收站，30 天后自动清理"
+                  onConfirm={async () => {
+                    await confirmDeleteSession(s)
+                  }}
                 >
-                  删除
-                </Button>
-              ) : (
-                <Button
-                  type="text" size="small"
-                  icon={<DeleteOutlined />}
-                  style={{ color: PALETTE.textTertiary, flexShrink: 0 }}
-                  onClick={(e) => { e.stopPropagation(); setConfirmId(s.id) }}
-                />
-              )}
+                  <Button size="small" danger type="text" icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
             </div>
           ))}
           {sessions.length === 0 && (
