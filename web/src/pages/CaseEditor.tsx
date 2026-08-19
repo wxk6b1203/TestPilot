@@ -1311,16 +1311,12 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
             ]}
           />
           {!isNew && (
-            <Space size={4}>
-              <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>ID</span>
-              <Typography.Text
-                code
-                style={{ fontSize: 12 }}
-                copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
-              >
-                {id}
-              </Typography.Text>
-            </Space>
+            <Typography.Text
+              copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+              style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
+            >
+              ID {id}
+            </Typography.Text>
           )}
           <span style={{ flex: 1 }} />
           <Button size="small" icon={<PlayCircleOutlined />} loading={runningCase} onClick={runNow}>
