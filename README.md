@@ -155,10 +155,16 @@ worker/venv/bin/python scripts/e2e_phase9.py
 - **制品后端（v2）**：`artifact_backend=local|s3` 双实现（S3 兼容对象存储，键 `{prefix}{tenant}/{uri}`；
   上报时同步上传、读取/retention 走后端）
 - **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表；其中 1 张为 v2 预留——
-  api_tokens，GORM AutoMigrate 当前迁移 31 张）
+- **DDL / 迁移**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表）；运行时 schema
+  由版本化迁移管理（基线 AutoMigrate + `schema_migrations`，v2 已创建 api_tokens），见
+  `docs/ci-migration-plan.md`
+- **CI 集成**：`GET /runs/:id/junit`（JUnit XML）；`run_finished` webhook 带 `junit_url`；
+  GitHub Actions CI/CD 与 buf proto 治理见 `.github/workflows/`
 
 ## 代码生成
+
+统一入口：`scripts/proto-gen.sh`（生成 Go/Python/grounding）与
+`scripts/proto-check.sh`（buf lint/breaking + 生成零漂移校验）。手动命令如下：
 
 ```bash
 # Go（scheduler/gen/）
@@ -294,8 +300,8 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- client_credentials 机器凭证 / api_tokens（CI Token）：DDL 已预留，属另议项
-- CI 触发 CLI / JUnit XML：依赖 api_tokens，当前未排期
+- client_credentials 机器凭证 / api_tokens 业务 API：api_tokens 表已由 v2 迁移预建，颁发/校验/CLI 仍属另议项
+- JUnit XML 报告与 CI Webhook 已可用（`/runs/:id/junit` + `run_finished` webhook）；独立 CLI 仍未实现
 - VictoriaMetrics：当前压测指标落 `stress_metric_points` 表，大规模部署可替换
 - Vault 密钥后端：当前使用敏感变量 + secret_ref + 审计脱敏替代
 - 证书管理已提供 CRUD，但 Worker 客户端证书执行（cert_ref 实际使用）与 Vault 绑定，另议

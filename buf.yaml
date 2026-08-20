@@ -1,0 +1,16 @@
+# Buf v2 配置：proto lint + breaking change 治理。
+# 本地/CI 使用 scripts/proto-check.sh 统一执行。
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+  except:
+    # Worker Connect 是双向流：消息名为 WorkerEvent/SchedulerCommand 是刻意设计，
+    # 不要求改成 ConnectRequest/ConnectResponse。
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

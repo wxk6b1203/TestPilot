@@ -26,7 +26,7 @@
 
 ## 进度总览（2026-08-17 更新）
 
-**Phase 0–9 与 v2 第一批/第二批/第三批全部完成并回归通过**（M1–M6 里程碑达成）。当前无进行中的功能批次；后续工作集中在文档对账、生产安全加固与「明确不做/另议」项排期决策。
+**Phase 0–9 与 v2 第一批/第二批/第三批全部完成并回归通过**（M1–M6 里程碑达成）。当前批次为 CI/CD 与工程化收尾；功能侧仍按「明确不做/另议」清单排期。
 
 v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto reflection）、低代码 Page 模型、压测 behavior_case。
 
@@ -45,6 +45,7 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 | 2026-08-17 补齐轮 | ✅ | 证书 CRUD / 接口 pre-post 脚本 / Copilot gRPC 工具面 / 运行取消 / 雪花节点可配置 / DNS 解析绑定 / sandbox rlimits 移除 preexec_fn / 生产 egress 默认拦私网 / 通知 dialer 防 rebinding |
 | 2026-08-17 HTTP 契约补齐 | ✅ | cookies / tls_verify(optional) / comment_tolerant_json / binary_ref（artifact 解析 + base64 内联）| Copilot 新增 create_project / query_api_directory / check_variable_refs |
 | 低代码按接口 ID 调用与自动封装 | ✅ | `ctx.api/http_api/grpc_api` + 派发时自动生成 `tp_api_wrappers.py`（`Api<ID>` 稳定别名）；HTTP 快照继承 pre/post/cookies/TLS/JSONC/binary_ref，gRPC 快照走 reflection；行为压测同步支持；REST 封装预览；完整设计见 `docs/lowcode-api-invocation.md` |
+| CI/CD 与迁移工程化 | ✅ | 版本化迁移（schema_migrations 基线 + v2 api_tokens）、JUnit XML 报告（/runs/:id/junit）、run_finished webhook 附带 junit_url、buf lint/breaking + proto 生成复现检查、GitHub Actions CI/CD；设计见 `docs/ci-migration-plan.md` |
 
 **v2 状态**（三批均已完成，详见本文件末尾「v2 范围」）：
 - 第一批：curl 导出 / Copilot 反代 / OpenAPI URL 导入
@@ -306,9 +307,9 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 ## 6. 工程规范
 
 - **目录**：`scheduler/`(Go module)、`worker/`(Python)、`copilot/`(Python)、`frontend/`(Vite)、`proto/`、`deploy/`、`docs/`
-- **proto 治理**：`buf lint` + `buf breaking`（防破坏变更）；codegen 入 CI，产物不入库
+- **proto 治理**：`buf lint` + `buf breaking`（防破坏变更）；protoc 生成产物随仓库提交（支持离线构建），CI 用 `scripts/proto-check.sh` 校验零漂移
 - **分支/提交**：trunk-based + 短生命周期 feature 分支；Conventional Commits
-- **CI**：proto lint/codegen、Go 单测、Python 单测、迁移校验、前端构建（当前以本地命令验证，未启用 GitHub Actions；需要远程 CI 时另建）
+- **CI**：`.github/workflows/ci.yml` —— buf lint/breaking、proto 生成校验、Go/Python/Copilot 单测、前端 lint/build；`.github/workflows/cd.yml` 在 `v*` tag 发布镜像（需远程 GitHub Actions 执行）
 - **版本协调**：Worker 注册上报 `sdk_version`，Scheduler 校验兼容范围；Copilot grounding 随发布与 Scheduler 对齐
 - **多 DB**：开发期 SQLite/PG，迁移脚本以 PG 为准，CI 覆盖 PG
 
