@@ -434,6 +434,9 @@ func TestRunFinishedDeliveries(t *testing.T) {
 	if got["triggered_by"] != "tester" {
 		t.Fatalf("triggered_by=%v", got["triggered_by"])
 	}
+	if got["junit_url"] != "/api/v1/runs/"+strconv.FormatInt(run.ID, 10)+"/junit" {
+		t.Fatalf("junit_url=%v", got["junit_url"])
+	}
 	summary, ok := got["summary"].(map[string]any)
 	if !ok || summary["passed"] != float64(1) {
 		t.Fatalf("summary=%v", got["summary"])

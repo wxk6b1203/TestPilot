@@ -25,7 +25,8 @@
 > 本文档定义逻辑模型与表结构。落地方式：**运行库 schema 由 Scheduler 启动时 GORM AutoMigrate
 > 创建/演进**（`scheduler/internal/model`，当前 32 张——含 v2 落地的 test_suites /
 > test_suite_items / scripts / grpc_apis / proto_files）；`docs/sql/*.sql` 为生产 DDL 参考脚本
-> （33 表 = GORM 32 张 + 1 张 v2 预留 api_tokens，后者尚未进 GORM 模型）。
+> （33 表 = GORM 32 张 + api_tokens 1 张；api_tokens 自 v2 迁移起运行时建表，仍未进 GORM 模型）。
+> 版本化迁移约定见 `docs/ci-migration-plan.md`。
 
 ## 0. 约定
 

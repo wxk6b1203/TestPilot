@@ -82,6 +82,7 @@
 |---|---|---|---|
 | GET | /runs | viewer | `?plan_id=` 过滤 |
 | GET | /runs/{id} | viewer | run + cases + steps（含请求/响应快照/断言明细） |
+| GET | /runs/{id}/junit | viewer | JUnit XML 报告（CI 集成；`Content-Disposition: attachment`） |
 | POST | /runs/{id}/cancel | member | 取消 RUNNING 运行：run→ABORTED、未决 case→SKIPPED、广播 Worker cancel |
 | GET | /artifacts/{id}/content | viewer | 产物文件内容（截图/trace/har） |
 

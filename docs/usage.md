@@ -205,6 +205,16 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 写操作需 HITL 审批（前端按钮）；全部工具调用经 Scheduler gRPC 落审计（actor=copilot）。
 API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。
 
+
+## CI 集成（JUnit / Webhook）
+
+- 触发：`POST /api/v1/plans/:id/run`（或单用例 `POST /api/v1/cases/:id/run`）。
+- 报告：`GET /api/v1/runs/:id/junit` 返回 JUnit XML，可直接交给 Jenkins/GitLab
+  CI 的 JUnit 插件渲染。
+- 事件：租户通知渠道订阅 `run_finished` 后，通用 webhook payload 包含
+  `status`、`summary` 与 `junit_url`，CI 无需轮询即可按事件拉取报告。
+- 完整流程与迁移/CI 约定见 `docs/ci-migration-plan.md`。
+
 ## 压测
 
 `POST /stress-plans`（load_profile：concurrency/duration/ramp）。两种目标：

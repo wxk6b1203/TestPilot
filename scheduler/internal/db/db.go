@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/glebarez/sqlite"
+	"github.com/testpilot/testpilot/internal/migrate"
 	"github.com/testpilot/testpilot/internal/model"
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
@@ -57,6 +58,12 @@ func Open(path, dsn string, pool Pool) (*gorm.DB, error) {
 		if pool.ConnMaxLifetimeMin > 0 {
 			sqlDB.SetConnMaxLifetime(time.Duration(pool.ConnMaxLifetimeMin) * time.Minute)
 		}
+	}
+	// 版本化迁移先行：存量库写 v1 基线，新库由 AutoMigrate 建基线，
+	// 随后按序应用 schema_migrations 之后的增量（v2 api_tokens 等）。
+	// AutoMigrate 仍保留为模型级兜底（幂等，不删列），具体约定见 docs/ci-migration-plan.md。
+	if _, err := migrate.Run(d, model.AllModels()); err != nil {
+		return nil, fmt.Errorf("migrate: %w", err)
 	}
 	if err := d.AutoMigrate(model.AllModels()...); err != nil {
 		return nil, fmt.Errorf("migrate: %w", err)

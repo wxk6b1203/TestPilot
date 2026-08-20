@@ -337,6 +337,11 @@ expect = {case1["name"]: 2, case2["name"]: 3, case3["name"]: 2,
           case11["name"]: 2}  # suite 展开使 case1/case3 各出现两次
 summary = run.get("summary") or {}
 print(f"run status={run['status']} summary={json.dumps(summary)}")
+jr = api.get(f"/api/v1/runs/{run_id}/junit")
+if jr.status_code != 200 or "<testsuites" not in jr.text or 'failures="1"' not in jr.text:
+    print(f"✗ junit export failed: {jr.status_code}\n{jr.text[:300]}")
+    sys.exit(1)
+print("✓ junit export: testsuites with expected failures")
 if run["status"] != 3:  # 一个 case 失败 → run FAILED
     print(f"✗ expect run FAILED(3), got {run['status']}")
     ok = False

@@ -194,6 +194,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPost, "/runs/:id/cancel", auth.RoleMember, s.cancelRun)
 	h(fiber.MethodGet, "/runs", auth.RoleViewer, s.listRuns)
 	h(fiber.MethodGet, "/runs/:id", auth.RoleViewer, s.getRun)
+	h(fiber.MethodGet, "/runs/:id/junit", auth.RoleViewer, s.runJUnit)
 	h(fiber.MethodGet, "/artifacts/:id/content", auth.RoleViewer, s.getArtifactContent)
 
 	h(fiber.MethodGet, "/stress-plans", auth.RoleViewer, s.listStressPlans)

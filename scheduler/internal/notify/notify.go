@@ -102,6 +102,8 @@ func RunFinished(db *gorm.DB, runID int64) {
 		"summary":      json.RawMessage(run.Summary),
 		"triggered_by": run.TriggeredBy,
 		"finished_at":  run.FinishedAt,
+		// CI 集成：接收方可直接拉取 JUnit XML 报告（相对路径，拼接控制台 base URL）。
+		"junit_url": fmt.Sprintf("/api/v1/runs/%d/junit", run.ID),
 	}
 	title := "TestPilot 运行完成"
 	text := fmt.Sprintf("计划 %d 运行 %d：status=%d，summary=%s", run.PlanID, run.ID, run.Status, string(run.Summary))
