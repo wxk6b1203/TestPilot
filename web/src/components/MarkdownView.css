@@ -1,0 +1,81 @@
+/* LLM Markdown 回复样式：在 Copilot 气泡内保持紧凑、可读 */
+.tp-markdown {
+  font-size: 13px;
+  line-height: 1.65;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
+.tp-markdown > :first-child { margin-top: 0; }
+.tp-markdown > :last-child { margin-bottom: 0; }
+
+.tp-markdown p { margin: 0 0 8px; }
+.tp-markdown h1, .tp-markdown h2, .tp-markdown h3,
+.tp-markdown h4, .tp-markdown h5, .tp-markdown h6 {
+  margin: 12px 0 6px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.tp-markdown h1 { font-size: 18px; }
+.tp-markdown h2 { font-size: 16px; }
+.tp-markdown h3 { font-size: 15px; }
+.tp-markdown h4, .tp-markdown h5, .tp-markdown h6 { font-size: 14px; }
+
+.tp-markdown ul, .tp-markdown ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.tp-markdown li { margin: 2px 0; }
+.tp-markdown li > ul, .tp-markdown li > ol { margin-bottom: 0; }
+
+.tp-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+.tp-markdown pre {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: #f6f8fa;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  overflow-x: auto;
+}
+.tp-markdown pre code {
+  display: block;
+  padding: 0;
+  background: transparent;
+  white-space: pre;
+}
+
+.tp-markdown blockquote {
+  margin: 8px 0;
+  padding: 2px 10px;
+  border-left: 3px solid #d0d7de;
+  color: rgba(0, 0, 0, 0.55);
+}
+
+.tp-markdown a { color: #1677ff; }
+.tp-markdown a:hover { text-decoration: underline; }
+
+.tp-markdown table {
+  margin: 8px 0;
+  border-collapse: collapse;
+  max-width: 100%;
+  font-size: 12px;
+}
+.tp-markdown th, .tp-markdown td {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  padding: 4px 8px;
+  text-align: left;
+}
+.tp-markdown th { background: rgba(0, 0, 0, 0.03); font-weight: 600; }
+
+.tp-markdown hr {
+  margin: 12px 0;
+  border: 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.12);
+}

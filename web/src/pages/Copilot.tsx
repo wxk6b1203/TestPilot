@@ -11,6 +11,7 @@ import type { UIMessage } from 'ai'
 import { del, get, getToken } from '../api'
 import type { ListResp } from '../api'
 import { useLayout } from '../hooks/useLayout'
+import MarkdownView from '../components/MarkdownView'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
 
@@ -390,7 +391,7 @@ export default function Copilot() {
                   boxShadow: '0 1px 2px rgba(0,0,0,.04)',
                 }}>
                   {m.parts.map((p: any, i: number) => (
-                    <PartView key={i} part={p} onRespond={respond} />
+                    <PartView key={i} part={p} role={m.role} onRespond={respond} />
                   ))}
                 </div>
               </div>
@@ -426,11 +427,66 @@ function formatTime(v: string) {
 }
 
 
+// 整段 JSON 检测：工具返回/模型直接输出的 JSON 保持 pre + prettify，
+// 避免被 Markdown 当段落渲染后丢失缩进与换行
+const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
+
+function parseJSONObject(text: string): object | null {
+  const trimmed = text.trim()
+  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return null
+  try {
+    const value = JSON.parse(trimmed)
+    if (value !== null && typeof value === 'object') return value as object
+  } catch {
+    // 非 JSON
+  }
+  return null
+}
+
+// 工具卡 input/output 的显示值：
+// - JSON 字符串（常见于 Vercel AI 工具 args/result）→ parse 后按 1 空格缩进 prettify
+// - 普通字符串（错误信息等）→ 原文
+// - 对象/数组 → JSON.stringify prettify
+function stringifyToolValue(value: unknown): string {
+  if (typeof value === 'string') {
+    const parsed = parseJSONObject(value)
+    if (parsed !== null) return JSON.stringify(parsed, null, 1)
+    return value
+  }
+  return JSON.stringify(value, null, 1) ?? String(value)
+}
+
+function prettifyJSONText(text: string): string | null {
+  const value = parseJSONObject(text)
+  return value === null ? null : JSON.stringify(value, null, 2)
+}
+
 // 单条 UIMessagePart 渲染：text / reasoning / tool（含审批态）
-function PartView({ part, onRespond }: { part: any; onRespond: (p: any, ok: boolean) => void }) {
+function PartView({ part, role, onRespond }: {
+  part: any
+  role: string
+  onRespond: (p: any, ok: boolean) => void
+}) {
   if (part.type === 'text') {
-    // 用 span 继承气泡颜色（用户蓝底白字 / AI 白底深字）；Typography 自带色会覆盖继承
-    return <span style={{ whiteSpace: 'pre-wrap' }}>{part.text}</span>
+    const text = String(part.text ?? '')
+    if (role === 'assistant') {
+      // 整段 JSON：沿用工具返回的 pre/prettify 呈现；否则 LLM 文本按 Markdown 渲染
+      const pretty = prettifyJSONText(text)
+      if (pretty !== null) {
+        return (
+          <pre style={{
+            margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+            fontFamily: MONO, fontSize: 12, textAlign: 'left',
+          }}>
+            {pretty}
+          </pre>
+        )
+      }
+      return <MarkdownView text={text} />
+    }
+    // 用户输入保持纯文本，避免把用户敲的 # 等误渲染
+    // 用 span 继承气泡颜色（用户蓝底白字）；Typography 自带色会覆盖继承
+    return <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
   }
   if (part.type === 'reasoning') {
     return (
@@ -450,7 +506,7 @@ function PartView({ part, onRespond }: { part: any; onRespond: (p: any, ok: bool
         </Space>
         {part.input != null && (
           <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {typeof part.input === 'string' ? part.input : JSON.stringify(part.input, null, 1)}
+            {stringifyToolValue(part.input)}
           </pre>
         )}
         {part.state === 'approval-requested' && (
@@ -462,7 +518,7 @@ function PartView({ part, onRespond }: { part: any; onRespond: (p: any, ok: bool
         {part.state === 'approval-responded' && <Typography.Text type="secondary">已审批，等待执行…</Typography.Text>}
         {part.state === 'output-available' && part.output != null && (
           <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {typeof part.output === 'string' ? part.output : JSON.stringify(part.output, null, 1)}
+            {stringifyToolValue(part.output)}
           </pre>
         )}
         {part.state === 'output-error' && <Typography.Text type="danger">{part.errorText}</Typography.Text>}

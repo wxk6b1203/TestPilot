@@ -1,5 +1,7 @@
 # ---- TestPilot 项目 ----
 .data/
+# pnpm 本地依赖 store（node_modules 已链接到此处，可随时 pnpm install 重建）
+.pnpm-store/
 scheduler/*.db
 web/node_modules/
 worker/.venv/
