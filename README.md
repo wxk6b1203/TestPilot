@@ -187,11 +187,10 @@ cd web && pnpm lint && pnpm build
 
 ## License
 
-TestPilot 采用双重授权：
+TestPilot 采用 [Apache License 2.0](LICENSE)（`SPDX: Apache-2.0`）：
 
-- **AGPL-3.0**：开源使用，完整条款见 [LICENSE](LICENSE)。
-- **Commercial License**：闭源 / 商业托管 / 不承担 AGPL 义务的场景，条款草案见
+- **开源使用**：允许商用、修改、闭源衍生与再分发，仅需保留版权与署名声明（Apache 2.0 第 4 条）。
+- **商标**：TestPilot 名称与 logo 的使用受[商标使用指南](TRADEMARK_GUIDELINES.md)约束。
+- **商业授权**：需要白标（免署名）或特殊保证的，见
   [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)（中文）与
   [COMMERCIAL_LICENSE_EN.md](COMMERCIAL_LICENSE_EN.md)（英文）。
-
-`SPDX-License-Identifier: AGPL-3.0-only OR Commercial`

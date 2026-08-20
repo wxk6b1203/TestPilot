@@ -1,6 +1,6 @@
 # Contributing Guide
 
-Thank you for your interest in and contributions to **TestPilot**. Please read this guide first — especially the **Contributor License Agreement (CLA)** below: this project uses a dual-licensing model, and the CLA is a legal prerequisite for accepting contributions.
+Thank you for your interest in and contributions to **TestPilot**. Please read this guide first — especially the **Contributor License Agreement (CLA)** below: this project is distributed under the Apache License 2.0, and the CLA is a legal prerequisite for accepting contributions.
 
 > For the Chinese version, see [CONTRIBUTING_ZH.md](CONTRIBUTING_ZH.md).
 
@@ -44,13 +44,13 @@ TestPilot is currently in the early planning stage; the repository mainly contai
 
 ## Contributor License Agreement (CLA)
 
-> **Important**: This project is **dual-licensed** (AGPL-3.0 or a commercial license). The Licensor (wxk6b1203) needs to license all code, including your contributions, under both models. The following terms are therefore a **necessary prerequisite** for accepting contributions.
+> **Important**: This project is distributed under the **Apache License 2.0**, with a **commercial license** available for value-added services (white-label). The Licensor (wxk6b1203) needs to license all code, including your contributions, under both models. The following terms are therefore a **necessary prerequisite** for accepting contributions.
 
 **By submitting a Pull Request, patch, or contributing code, documentation or any other content to this project in any form (a "Contribution"), you represent and warrant that:**
 
 1. **Originality**: the Contribution is your original work, or you are entitled to make the grants below on its behalf; the Contribution does not infringe the intellectual property rights of any third party.
 2. **Grant of rights**: you grant the project Licensor a **perpetual, irrevocable, non-exclusive, worldwide, royalty-free** license to:
-   - use, copy, modify and distribute your Contribution and its derivative works under the terms of **AGPL-3.0**;
+   - use, copy, modify and distribute your Contribution and its derivative works under the terms of **Apache License 2.0**;
    - use, copy, modify, distribute and sublicense your Contribution and its derivative works under a **commercial license** (including closed-source and proprietary licensing);
    - combine your Contribution with other parts of the project and license the combined work as a whole.
 3. **No attribution requirement**: you waive any claim to attribution for the Contribution (your contribution will still be recorded in the project's commit history).
