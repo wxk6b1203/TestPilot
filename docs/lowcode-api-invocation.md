@@ -1,6 +1,6 @@
 # 低代码按接口 ID 调用与自动封装（完整方案）
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [技术博文](blog-lowcode-copilot.md) · [v2 特性存档](v2-features.md)
 
 > 状态：本方案为实施依据，与 `docs/design.md` §6 互补。目标不是 MVP，而是
 > “接口目录变更 → 低代码脚本无需改动，下次运行自动获得最新封装”的完整闭环。

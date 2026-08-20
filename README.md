@@ -132,6 +132,7 @@ curl -s -o junit.xml http://localhost:8080/api/v1/runs/<run_id>/junit \
 | `docs/deployment.md` | 部署、数据库、制品存储、可观测性与安全清单 |
 | `docs/ci-migration-plan.md` | 迁移版本化、JUnit/Webhook、API Token、proto 治理与 CI/CD |
 | `docs/lowcode-api-invocation.md` | 低代码按接口 ID 调用与自动封装设计 |
+| `docs/blog-lowcode-copilot.md` | 技术博文：低代码与 Copilot 相比传统 API 工具的设计优势 |
 | `docs/roadmap.md` | 阶段路线图、风险登记与另议项 |
 | `docs/error-codes.md` | 错误码注册表 |
 

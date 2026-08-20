@@ -1,6 +1,6 @@
 # 工程化能力设计：迁移、JUnit、Webhook、API Token、Proto 治理与 CI/CD
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [技术博文](blog-lowcode-copilot.md) · [v2 特性存档](v2-features.md)
 
 > 本文档汇总工程化能力的完整设计：为什么这么做、方案取舍、实现位置、使用方式与后续约定。
 > 对应用户操作手册见 `docs/usage.md`，REST 参考见 `docs/api.md`。

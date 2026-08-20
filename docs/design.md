@@ -1,6 +1,6 @@
 # TestPilot 设计文档
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [技术博文](blog-lowcode-copilot.md) · [v2 特性存档](v2-features.md)
 
 > 本文档基于 `docs/init.md` 审阅与澄清结果细化而成。原始 `init.md` 存在事实性错误（H2 与 GORM 不兼容）、架构矛盾（Worker 语言、Copilot 协议、Playwright 构建开关）、核心概念缺失（测试用例/计划/套件、压测、报告、断言、多租户、认证）。本文档给出统一、可落地的设计方案。
 >
