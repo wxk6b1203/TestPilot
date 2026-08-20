@@ -177,6 +177,22 @@ export default function Copilot() {
 
   const busy = status === 'submitted' || status === 'streaming'
 
+  // 相邻同角色消息合成一个外框：一次 Agent 往返产生的多个 UIMessage
+  // （文本 + 工具卡 + 审批后的续接）在流式与刷新后的历史里都显示为同一气泡
+  const messageGroups = useMemo(() => {
+    const groups: { role: string; items: typeof messages }[] = []
+    for (const m of messages) {
+      const role = m.role === 'user' ? 'user' : 'assistant'
+      const last = groups[groups.length - 1]
+      if (last && last.role === role) {
+        last.items.push(m)
+      } else {
+        groups.push({ role, items: [m] })
+      }
+    }
+    return groups
+  }, [messages])
+
   useEffect(() => {
     loadSessions()
   }, [])
@@ -374,28 +390,33 @@ export default function Copilot() {
                   </div>
               </div>
             )}
-            {messages.map((m) => (
-              <div
-                key={m.id}
-                style={{
-                  display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start',
-                  marginBottom: 12,
-                }}>
-                <div style={{
-                  maxWidth: '78%',
-                  padding: '8px 12px',
-                  borderRadius: 10,
-                  background: m.role === 'user' ? PALETTE.primary : '#FFFFFF',
-                  color: m.role === 'user' ? '#FFFFFF' : PALETTE.text,
-                  border: m.role === 'user' ? undefined : `1px solid ${PALETTE.border}`,
-                  boxShadow: '0 1px 2px rgba(0,0,0,.04)',
-                }}>
-                  {m.parts.map((p: any, i: number) => (
-                    <PartView key={i} part={p} role={m.role} onRespond={respond} />
-                  ))}
+            {messageGroups.map((group) => {
+              const isUser = group.role === 'user'
+              return (
+                <div
+                  key={group.items[0].id}
+                  style={{
+                    display: 'flex', justifyContent: isUser ? 'flex-end' : 'flex-start',
+                    marginBottom: 12,
+                  }}>
+                  <div style={{
+                    maxWidth: '78%',
+                    padding: '8px 12px',
+                    borderRadius: 10,
+                    background: isUser ? PALETTE.primary : '#FFFFFF',
+                    color: isUser ? '#FFFFFF' : PALETTE.text,
+                    border: isUser ? undefined : `1px solid ${PALETTE.border}`,
+                    boxShadow: '0 1px 2px rgba(0,0,0,.04)',
+                  }}>
+                    {group.items.map((m) => (
+                      m.parts.map((p: any, i: number) => (
+                        <PartView key={`${m.id}:${i}`} part={p} role={group.role} onRespond={respond} />
+                      ))
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
             <div ref={bottomRef} />
           </div>
           <div style={{ padding: '8px 12px', borderTop: `1px solid ${PALETTE.border}`, flexShrink: 0 }}>
