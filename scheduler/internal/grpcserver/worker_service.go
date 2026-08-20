@@ -8,6 +8,7 @@ import (
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
 	"github.com/testpilot/testpilot/internal/dispatch"
+	"github.com/testpilot/testpilot/internal/events"
 	"github.com/testpilot/testpilot/internal/logging"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -52,10 +53,16 @@ func (s *WorkerService) Connect(stream workerv1.WorkerService_ConnectServer) err
 		return status.Error(codes.ResourceExhausted, err.Error())
 	}
 	logging.L.Infow("worker registered", "id", w.ID, "caps", w.Capabilities, "sdk", w.SDKVersion)
+	s.Disp.Events().Publish("workers", events.Event{Type: "worker_updated", Data: map[string]any{
+		"worker_id": w.ID, "action": "registered",
+	}})
 	defer func() {
 		s.Disp.Unregister(w.ID)
 		w.Shutdown() // 关闭信号：派发方/泵协程感知退出（Send 永不 close，防 send-on-closed panic）
 		logging.L.Infow("worker disconnected", "id", w.ID)
+		s.Disp.Events().Publish("workers", events.Event{Type: "worker_updated", Data: map[string]any{
+			"worker_id": w.ID, "action": "disconnected",
+		}})
 	}()
 
 	// 下行：命令泵到流（closed 感知；Send 不再被 close）
@@ -124,7 +131,20 @@ func (s *WorkerService) handleEvent(w *dispatch.Worker, ev *workerv1.WorkerEvent
 			logging.L.Errorw("handle stress metrics failed", "err", err, "run", e.StressMetrics.GetRunId())
 		}
 	case *workerv1.WorkerEvent_StepProgress:
-		logging.L.Debugw("step progress", "task", e.StepProgress.GetTaskId(), "path", e.StepProgress.GetStepPath(), "status", e.StepProgress.GetStatus())
+		detail := map[string]any{}
+		if e.StepProgress.Detail != nil {
+			detail = e.StepProgress.Detail.AsMap()
+		}
+		s.Disp.Events().Publish("run:"+e.StepProgress.GetRunId(), events.Event{
+			Type: "step_progress",
+			Data: map[string]any{
+				"run_id":         e.StepProgress.GetRunId(),
+				"case_result_id": e.StepProgress.GetCaseId(),
+				"step_path":      e.StepProgress.GetStepPath(),
+				"status":         e.StepProgress.GetStatus(),
+				"detail":         detail,
+			},
+		})
 	case *workerv1.WorkerEvent_LogBatch:
 		logging.L.Debugw("worker logs", "task", e.LogBatch.GetTaskId(), "lines", len(e.LogBatch.GetLines()))
 	case *workerv1.WorkerEvent_Artifact:

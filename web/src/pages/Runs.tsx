@@ -4,6 +4,7 @@ import { download, get, post, warnTruncated } from '../api'
 import type { ListResp, TestRun } from '../api'
 import RunDetailDrawer, { StatusTag } from '../components/RunDetailDrawer'
 import { useLayout } from '../hooks/useLayout'
+import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
 
 export default function Runs() {
@@ -11,6 +12,7 @@ export default function Runs() {
   const [rows, setRows] = useState<TestRun[]>([])
   const [detail, setDetail] = useState<TestRun | null>(null)
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
+  const detailTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const load = async () => {
     if (!projectId) return
@@ -19,28 +21,46 @@ export default function Runs() {
     warnTruncated(r, '运行记录')
   }
 
-  // 列表轮询 + 项目切换重置（不依赖 detail——此前依赖 detail 导致打开详情后
-  // effect 重跑并 setDetail(null)，抽屉"弹出来又弹回去"）
+  // 项目切换重置 + 初始加载 + 30s 慢速兜底对账（实时更新走 SSE）
   useEffect(() => {
     setRows([])
     setDetail(null)
     load().catch((e) => message.error(e.message))
-    timer.current = setInterval(() => load().catch(() => undefined), 3000)
+    timer.current = setInterval(() => load().catch(() => undefined), 30000)
     return () => clearInterval(timer.current)
   }, [projectId])
 
-  // 详情打开且运行中 → 独立轮询刷新详情；结束后自动停
-  useEffect(() => {
-    if (!detail || (detail.status !== 1 && detail.status !== 0)) return
-    const t = setInterval(async () => {
-      try {
-        setDetail(await get<TestRun>(`/api/v1/runs/${detail.id}`))
-      } catch {
-        /* 忽略瞬时错误 */
+  // 项目 run 创建/收尾事件 → 刷新列表（step 级进度只走 run 详情通道，不刷列表）
+  useEventStream(
+    projectId ? [`project:${projectId}`] : [],
+    (event) => {
+      if (['run_created', 'run_updated', 'stress_created', 'stress_updated'].includes(event)) {
+        void load().catch(() => undefined)
       }
-    }, 3000)
-    return () => clearInterval(t)
-  }, [detail?.id, detail?.status])
+    },
+    !!projectId,
+  )
+
+  // 详情抽屉：run step_progress / run_updated → 300ms 防抖刷新详情
+  useEventStream(
+    detail ? [`run:${detail.id}`] : [],
+    () => {
+      const id = detail?.id
+      if (!id) return
+      if (detailTimer.current) clearTimeout(detailTimer.current)
+      detailTimer.current = setTimeout(async () => {
+        try {
+          setDetail(await get<TestRun>(`/api/v1/runs/${id}`))
+        } catch {
+          /* 忽略瞬时错误 */
+        }
+      }, 300)
+    },
+    !!detail,
+  )
+  useEffect(() => () => {
+    if (detailTimer.current) clearTimeout(detailTimer.current)
+  }, [])
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 

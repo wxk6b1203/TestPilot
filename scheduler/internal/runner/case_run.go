@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -69,6 +70,10 @@ func (r *Runner) RunCase(ctx context.Context, tenantID, caseID, envID int64,
 	}); err != nil {
 		return 0, err
 	}
+	r.publishProject(tc.ProjectID, "run_created", map[string]any{
+		"run_id": strconv.FormatInt(run.ID, 10),
+		"status": run.Status,
+	})
 	span.SetAttributes(attribute.Int64("run_id", run.ID), attribute.Int64("case_id", caseID),
 		attribute.Int64("tenant_id", tenantID))
 	logging.L.Infow("case run triggered", "run_id", run.ID, "case_id", caseID,
@@ -84,6 +89,10 @@ func (r *Runner) RunCase(ctx context.Context, tenantID, caseID, envID int64,
 			"status":      int16(commonv1.RunStatus_RUN_STATUS_FAILED),
 			"finished_at": &now,
 			"summary":     `{"total":0,"passed":0,"failed":0,"skipped":0,"error":"no suitable worker online"}`,
+		})
+		r.publishProject(tc.ProjectID, "run_updated", map[string]any{
+			"run_id": strconv.FormatInt(run.ID, 10),
+			"status": int16(commonv1.RunStatus_RUN_STATUS_FAILED),
 		})
 		return run.ID, dispatch.ErrNoWorker
 	}

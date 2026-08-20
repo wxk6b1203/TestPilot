@@ -30,6 +30,8 @@ Python 低代码编写测试，支持 Playwright 页面 E2E、分布式压测、
 ### 报告与 CI
 
 - 三级结果模型：TestRun → TestCaseResult → TestStepResult，含请求/响应快照、断言明细与产物。
+- **实时进度推送**：SSE 通道（run/project/stress/workers）替代高频轮询，
+  运行列表、详情抽屉、压测报告与 Worker 状态实时刷新，保留 30s 兜底对账。
 - 运行记录与运行详情均支持**导出 JUnit XML**（`GET /runs/:id/junit`）。
 - `run_finished` webhook 带 `junit_url`，可事件驱动接入 Jenkins / GitLab 等 CI。
 - **API Token**：管理台可颁发 / 撤销 `tp_` 机器凭证，适用于 CI / CLI；数据库仅存哈希，

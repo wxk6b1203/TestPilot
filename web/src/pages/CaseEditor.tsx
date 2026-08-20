@@ -36,6 +36,7 @@ import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { useStableRows } from '../hooks/useStableRows'
 import { useLayout } from '../hooks/useLayout'
+import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
@@ -1182,18 +1183,17 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   }
   useSaveShortcut(() => { void save() })
 
-  // 运行结果抽屉打开且运行中 → 轮询刷新，结束自动停
-  useEffect(() => {
-    if (!runDetail || !runDrawerOpen || (runDetail.status !== 0 && runDetail.status !== 1)) return
-    const t = setInterval(async () => {
-      try {
-        setRunDetail(await get<TestRun>(`/api/v1/runs/${runDetail.id}`))
-      } catch {
-        // 瞬时错误忽略，下个周期重试
-      }
-    }, 2000)
-    return () => clearInterval(t)
-  }, [runDetail?.id, runDetail?.status, runDrawerOpen])
+  // 运行结果抽屉打开且运行中 → SSE 实时刷新，结束事件也会推送到位
+  useEventStream(
+    runDetail && runDrawerOpen && (runDetail.status === 0 || runDetail.status === 1)
+      ? [`run:${runDetail.id}`]
+      : [],
+    () => {
+      const id = runDetail?.id
+      if (!id) return
+      void get<TestRun>(`/api/v1/runs/${id}`).then(setRunDetail).catch(() => {})
+    },
+  )
 
   const wrappersBaseUrl = () => {
     const params = [

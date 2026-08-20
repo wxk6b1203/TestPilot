@@ -2,6 +2,7 @@ import { Card, Table, Tag } from 'antd'
 import { useEffect, useRef, useState } from 'react'
 import { CAPS, get } from '../api'
 import type { ListResp, WorkerInfo } from '../api'
+import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
 
 export default function Workers() {
@@ -13,9 +14,11 @@ export default function Workers() {
 
   useEffect(() => {
     load().catch((e) => message.error(e.message))
-    timer.current = setInterval(() => load().catch(() => undefined), 5000)
+    timer.current = setInterval(() => load().catch(() => undefined), 30000) // 兜底对账
     return () => clearInterval(timer.current)
   }, [])
+
+  useEventStream(['workers'], () => void load().catch(() => undefined))
 
   return (
     <Card title="在线 Worker">

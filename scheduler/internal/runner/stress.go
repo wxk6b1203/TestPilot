@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"strconv"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -111,6 +112,11 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 	if err := r.db.Create(run).Error; err != nil {
 		return 0, err
 	}
+	r.publishProject(plan.ProjectID, "stress_created", map[string]any{
+		"stress_run_id": strconv.FormatInt(run.ID, 10),
+		"plan_id":       strconv.FormatInt(planID, 10),
+		"status":        run.Status,
+	})
 	span.SetAttributes(attribute.Int64("run_id", run.ID), attribute.Int64("plan_id", planID),
 		attribute.Int64("tenant_id", tenantID))
 	logging.L.Infow("stress run triggered", "run_id", run.ID, "plan_id", planID,

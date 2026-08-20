@@ -31,6 +31,7 @@
 | POST | /auth/login | 公开 | `{username,password}` → `{token,user,tenant_id,role}` |
 | POST | /auth/register | 公开* | `{username,password,display_name?,tenant_name?}` → 同 login。注册即自建租户（owner）；*需配置开关 `registration_enabled=true`，否则 403 `REGISTRATION_DISABLED`；用户名重复 409 `USERNAME_TAKEN` |
 | GET | /me | viewer | 当前用户/租户/角色 |
+| GET | /events | viewer | SSE 实时事件；`?channels=run:<id>,project:<id>,stress:<id>,workers`（最多 8 个） |
 | POST | /auth/switch-tenant | viewer | `{tenant_id}` 换签到另一租户（落审计） |
 | POST | /tenants | viewer | `{name}` 自助建租户，创建者为 owner |
 | GET | /auth/oidc/providers | 公开 | 启用的 OIDC 身份源列表 |

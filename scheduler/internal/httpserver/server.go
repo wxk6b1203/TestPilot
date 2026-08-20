@@ -105,6 +105,7 @@ func (s *Server) App() *fiber.App {
 
 	// 认证信息
 	h(fiber.MethodGet, "/me", auth.RoleViewer, s.me)
+	h(fiber.MethodGet, "/events", auth.RoleViewer, s.eventsStream)
 
 	// 领域 CRUD
 	h(fiber.MethodGet, "/projects", auth.RoleViewer, s.listProjects)

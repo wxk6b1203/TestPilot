@@ -1,10 +1,12 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,6 +15,7 @@ import (
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/artifactstore"
+	"github.com/testpilot/testpilot/internal/events"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/metrics"
 	"github.com/testpilot/testpilot/internal/model"
@@ -143,6 +146,8 @@ type Dispatcher struct {
 
 	taskRuns sync.Map // taskID(string) → runID(int64)：结果回报后清理
 	runTasks sync.Map // runID(int64) → *runTaskSet：取消时遍历广播
+
+	events *events.Broker // 实时进度事件（SSE 推送）
 }
 
 // RegisterWaiter 注册调试等待器（必须在 Dispatch 之前调用，防结果先于等待到达）。
@@ -162,8 +167,11 @@ func (d *Dispatcher) TakeWaiter(taskID string) (chan *workerv1.TaskResult, bool)
 }
 
 func New(db *gorm.DB) *Dispatcher {
-	return &Dispatcher{db: db, workers: map[string]*Worker{}}
+	return &Dispatcher{db: db, workers: map[string]*Worker{}, events: events.NewBroker()}
 }
+
+// Events 返回实时进度事件总线（HTTP SSE 与各派发路径共用）。
+func (d *Dispatcher) Events() *events.Broker { return d.events }
 
 // TrackTask 记录 task → run 归属（派发成功前调用；失败时调用 UntrackTask 回滚）。
 func (d *Dispatcher) TrackTask(taskID string, runID int64) {
@@ -511,6 +519,7 @@ func (d *Dispatcher) HandleStressMetrics(batch *workerv1.StressMetricBatch) erro
 		return nil // 未知 run（可能已清理）：丢弃不报错
 	}
 	rows := make([]model.StressMetricPoint, 0, len(batch.GetPoints()))
+	points := make([]map[string]any, 0, len(batch.GetPoints()))
 	for _, p := range batch.GetPoints() {
 		rows = append(rows, model.StressMetricPoint{
 			ID:           model.NextID(),
@@ -524,8 +533,53 @@ func (d *Dispatcher) HandleStressMetrics(batch *workerv1.StressMetricBatch) erro
 			ErrorRate:    p.GetErrorRate(),
 			Concurrency:  int(p.GetConcurrency()),
 		})
+		points = append(points, map[string]any{
+			"ts":             p.GetTs().AsTime().Format(time.RFC3339Nano),
+			"rps":            p.GetRps(),
+			"latency_p50_ms": p.GetLatencyP50Ms(),
+			"latency_p95_ms": p.GetLatencyP95Ms(),
+			"latency_p99_ms": p.GetLatencyP99Ms(),
+			"error_rate":     p.GetErrorRate(),
+			"concurrency":    p.GetConcurrency(),
+		})
 	}
-	return d.db.Create(&rows).Error
+	if err := d.db.Create(&rows).Error; err != nil {
+		return err
+	}
+	d.events.Publish("stress:"+strconv.FormatInt(runID, 10), events.Event{
+		Type: "stress_metrics",
+		Data: map[string]any{
+			"stress_run_id": strconv.FormatInt(runID, 10),
+			"points":        points,
+		},
+	})
+	return nil
+}
+
+// publishStressUpdated 压测收尾/创建时广播 stress 与 project channel。
+func (d *Dispatcher) publishStressUpdated(runID int64) {
+	var run model.StressRun
+	if err := d.db.Select("id", "stress_plan_id", "status", "summary", "finished_at").
+		Where("id = ?", runID).First(&run).Error; err != nil {
+		return
+	}
+	payload := map[string]any{
+		"stress_run_id": strconv.FormatInt(run.ID, 10),
+		"plan_id":       strconv.FormatInt(run.StressPlanID, 10),
+		"status":        run.Status,
+		"summary":       json.RawMessage(run.Summary),
+		"finished_at":   run.FinishedAt,
+	}
+	d.events.Publish("stress:"+strconv.FormatInt(runID, 10), events.Event{
+		Type: "stress_updated", Data: payload,
+	})
+	var plan model.StressTestPlan
+	if err := d.db.Select("project_id").Where("id = ?", run.StressPlanID).First(&plan).Error; err == nil &&
+		plan.ProjectID > 0 {
+		d.events.Publish("project:"+strconv.FormatInt(plan.ProjectID, 10), events.Event{
+			Type: "stress_updated", Data: payload,
+		})
+	}
 }
 
 // handleStressResult 压测子任务回报：全部到齐后汇总收尾。
@@ -581,6 +635,7 @@ func (d *Dispatcher) handleStressResult(res *workerv1.TaskResult) error {
 	}
 	metrics.StressRunsTotal.WithLabelValues(metrics.RunStatusName(int16(status))).Inc()
 	go notify.StressFinished(d.db, runID)
+	d.publishStressUpdated(runID)
 	return nil
 }
 
@@ -602,7 +657,7 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 		w.EndStress()
 		return d.handleStressResult(res)
 	}
-	return d.db.Transaction(func(tx *gorm.DB) error {
+	err := d.db.Transaction(func(tx *gorm.DB) error {
 		acceptedCR := map[int64]bool{}
 		for _, cr := range res.GetCaseResults() {
 			crID := mustInt64(cr.GetId())
@@ -688,6 +743,58 @@ func (d *Dispatcher) HandleTaskResult(w *Worker, res *workerv1.TaskResult) error
 		}
 		return d.maybeFinishRun(tx, mustInt64(res.GetRunId()))
 	})
+	if err == nil {
+		d.publishRunUpdated(mustInt64(res.GetRunId()))
+	}
+	return err
+}
+
+// publishRunUpdated 在任务结果落库后广播 run 更新：run 详情订阅者刷新，
+// 所属项目订阅者刷新列表（运行中 case 变化只发 run channel，避免列表高频刷新）。
+func (d *Dispatcher) publishRunUpdated(runID int64) {
+	var run model.TestRun
+	if err := d.db.Select("id", "plan_id", "status", "summary", "finished_at").
+		Where("id = ?", runID).First(&run).Error; err != nil {
+		return
+	}
+	payload := map[string]any{
+		"run_id":      strconv.FormatInt(run.ID, 10),
+		"plan_id":     strconv.FormatInt(run.PlanID, 10),
+		"status":      run.Status,
+		"summary":     json.RawMessage(run.Summary),
+		"finished_at": run.FinishedAt,
+	}
+	d.events.Publish("run:"+strconv.FormatInt(runID, 10), events.Event{
+		Type: "run_updated", Data: payload,
+	})
+	if pid := projectIDForRun(d.db, runID); pid > 0 {
+		d.events.Publish("project:"+strconv.FormatInt(pid, 10), events.Event{
+			Type: "run_updated", Data: payload,
+		})
+	}
+}
+
+// projectIDForRun 反查 run 所属项目（计划 run 走 plan，单用例 run 走 case）。
+func projectIDForRun(db *gorm.DB, runID int64) int64 {
+	var run model.TestRun
+	if err := db.Select("plan_id").Where("id = ?", runID).First(&run).Error; err != nil {
+		return 0
+	}
+	if run.PlanID != 0 {
+		var plan model.TestPlan
+		if err := db.Select("project_id").Where("id = ?", run.PlanID).First(&plan).Error; err == nil {
+			return plan.ProjectID
+		}
+		return 0
+	}
+	var cr model.TestCaseResult
+	if err := db.Select("case_id").Where("run_id = ?", runID).Order("id asc").First(&cr).Error; err == nil {
+		var tc model.TestCase
+		if err := db.Select("project_id").Where("id = ?", cr.CaseID).First(&tc).Error; err == nil {
+			return tc.ProjectID
+		}
+	}
+	return 0
 }
 
 // maybeFinishRun 当 run 下所有 case 均结束时汇总并收尾。

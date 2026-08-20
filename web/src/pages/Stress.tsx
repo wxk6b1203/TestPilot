@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { del, get, HTTP_METHODS, post, STATUS, warnTruncated } from '../api'
 import type { Environment, HttpApi, ListResp, TestCase } from '../api'
 import { useLayout } from '../hooks/useLayout'
+import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
 
 interface StressPlan {
@@ -104,9 +105,38 @@ export default function Stress() {
     get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => setApis(r.items))
     get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`).then((r) => setCases(r.items))
     get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`).then((r) => setEnvs(r.items))
-    const t = setInterval(load, 3000)
+    const t = setInterval(load, 30000) // 兜底对账；实时更新走 SSE
     return () => clearInterval(t)
   }, [projectId])
+
+  // 项目压测创建/收尾事件 → 刷新列表
+  useEventStream(
+    projectId ? [`project:${projectId}`] : [],
+    (event) => {
+      if (['stress_created', 'stress_updated'].includes(event)) load()
+    },
+    !!projectId,
+  )
+
+  // 报告抽屉：指标点直接追加，收尾事件拉全量详情
+  useEventStream(
+    detail ? [`stress:${detail.id}`] : [],
+    (event, data) => {
+      if (!detail) return
+      if (event === 'stress_metrics' && Array.isArray(data?.points)) {
+        const pts = data.points as MetricPoint[]
+        setDetail((prev) => prev ? {
+          ...prev,
+          metrics: [...(prev.metrics || []), ...pts].slice(-3000),
+        } : prev)
+        return
+      }
+      if (event === 'stress_updated') {
+        get<StressRun>(`/api/v1/stress-runs/${detail.id}`).then(setDetail).catch(() => {})
+      }
+    },
+    !!detail,
+  )
 
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 

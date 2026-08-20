@@ -149,6 +149,17 @@ Authorization: Bearer <JWT>
 4. CI 收到 payload 后按 `status` 判断，需要报告时用同一 token 拉 `junit_url`；
 5. CI 把 XML 交给 JUnit 插件渲染（Jenkins/GitLab 原生支持）。
 
+### 4.3 实时进度 SSE
+
+- 端点：`GET /api/v1/events?channels=run:<id>,project:<id>,stress:<id>,workers`（viewer）。
+- Scheduler 侧：`internal/events` 内存 Broker；Worker 已有 `step_progress` 上报在此转发，
+  任务结果/收尾/压测指标/Worker 上下线分别发布到对应 channel。
+- 前端侧：`web/src/hooks/useEventStream.ts` 用 fetch + ReadableStream 解析 SSE
+  （原生 EventSource 不能带 Authorization header，因此不引入额外依赖）。
+- 原轮询点已替换：Runs 列表/详情、CaseEditor 运行抽屉、Stress 列表/报告、
+  Workers 列表；各页保留 30s 慢速兜底对账。
+- 多实例边界：内存 Broker 仅覆盖本实例；跨实例事件需后续接 Redis/NATS。
+
 ---
 
 ## 5. API Token（机器凭证）

@@ -13,6 +13,7 @@ import (
 	workerv1 "github.com/testpilot/testpilot/gen/worker/v1"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/dispatch"
+	"github.com/testpilot/testpilot/internal/events"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
 	"github.com/testpilot/testpilot/internal/quota"
@@ -32,6 +33,15 @@ type Runner struct {
 
 func New(db *gorm.DB, disp *dispatch.Dispatcher) *Runner {
 	return &Runner{db: db, disp: disp}
+}
+
+func (r *Runner) publishProject(projectID int64, typ string, data map[string]any) {
+	if projectID <= 0 || r.disp == nil {
+		return
+	}
+	r.disp.Events().Publish("project:"+strconv.FormatInt(projectID, 10), events.Event{
+		Type: typ, Data: data,
+	})
 }
 
 func taskTypeFor(caseType int16) commonv1.TaskType {
@@ -96,6 +106,11 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 	}); err != nil {
 		return 0, err
 	}
+	r.publishProject(plan.ProjectID, "run_created", map[string]any{
+		"run_id":  strconv.FormatInt(run.ID, 10),
+		"plan_id": strconv.FormatInt(planID, 10),
+		"status":  run.Status,
+	})
 	span.SetAttributes(attribute.Int64("run_id", run.ID), attribute.Int64("plan_id", planID),
 		attribute.Int64("tenant_id", tenantID))
 	logging.L.Infow("run triggered", "run_id", run.ID, "plan_id", planID,
@@ -134,6 +149,10 @@ func (r *Runner) Trigger(ctx context.Context, tenantID, planID, envID int64, tri
 			"status":      int16(commonv1.RunStatus_RUN_STATUS_FAILED),
 			"finished_at": &now,
 			"summary":     `{"total":0,"passed":0,"failed":0,"skipped":0,"error":"no suitable worker online"}`,
+		})
+		r.publishProject(plan.ProjectID, "run_updated", map[string]any{
+			"run_id": strconv.FormatInt(run.ID, 10),
+			"status": int16(commonv1.RunStatus_RUN_STATUS_FAILED),
 		})
 		return run.ID, dispatch.ErrNoWorker
 	}
