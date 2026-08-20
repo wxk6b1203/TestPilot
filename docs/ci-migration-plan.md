@@ -27,7 +27,8 @@
 ### 非目标
 
 - 不引入 golang-migrate 等外部迁移运行时（见 §2 取舍）；
-- 不在本期实现 API Token / CLI 二进制（仍为另议项，但迁移已预建 `api_tokens` 表）；
+- 独立 CLI 二进制不在本期实现；API Token 基础能力（颁发/撤销/认证）已落地，
+  scopes 细粒度授权留作后续。
 - 不改动现有 REST/前端业务语义；
 - 不把 buf 生成代码接入构建（继续用 protoc，buf 只做 lint/breaking）。
 
@@ -112,6 +113,7 @@ Authorization: Bearer <JWT>
 - 纯渲染函数：`scheduler/internal/httpserver/junit.go`（`renderJUnit`）
 - handler：`scheduler/internal/httpserver/junit.go`（`runJUnit`）
 - 路由：`scheduler/internal/httpserver/server.go`
+- 前端：运行记录页每行「导出 JUnit」+ 运行详情抽屉顶部「导出 JUnit」（带 Bearer 下载）
 
 ---
 
@@ -134,15 +136,14 @@ Authorization: Bearer <JWT>
 }
 ```
 
-### 4.2 CI 推荐流程（无需等 API Token 也能用）
+### 4.2 CI 推荐流程
 
-1. CI 用成员 JWT 调 `POST /api/v1/plans/:id/run`（`env_id` 可选）；
-2. 配置租户通知渠道订阅 `run_finished`，webhook 指向 CI 的 Job Trigger
+1. 管理台「API Token」页颁发 `tp_` 机器凭证（原始值仅显示一次，保存到 CI Secret）；
+2. CI 用 `Authorization: Bearer tp_…` 调 `POST /api/v1/plans/:id/run`（`env_id` 可选）；
+3. 配置租户通知渠道订阅 `run_finished`，webhook 指向 CI 的 Job Trigger
    （Jenkins Generic Webhook / GitLab Pipeline Trigger Token / 自定义网关）；
-3. CI 收到 payload 后按 `status` 判断，需要报告时用同 JWT 拉 `junit_url`；
-4. CI 把 XML 交给 JUnit 插件渲染（Jenkins/GitLab 原生支持）。
-
-> API Token / CLI 落地后，步骤 1/3 可改为机器凭证，无需人类账号 JWT。
+4. CI 收到 payload 后按 `status` 判断，需要报告时用同一 token 拉 `junit_url`；
+5. CI 把 XML 交给 JUnit 插件渲染（Jenkins/GitLab 原生支持）。
 
 ---
 

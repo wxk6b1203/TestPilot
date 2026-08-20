@@ -17,8 +17,8 @@ import {
 import { PlusOutlined } from '@ant-design/icons'
 import { del, get, post, put } from '../../api'
 import type {
-  AuditLog, IdentityProvider, ListResp, Member, NotificationChannel, Schedule, TenantQuota,
-  TenantSetting, TestPlan, Environment,
+  ApiToken, AuditLog, IdentityProvider, ListResp, Member, NotificationChannel, Schedule,
+  TenantQuota, TenantSetting, TestPlan, Environment,
 } from '../../api'
 import { PALETTE } from '../../theme'
 import { useLayout } from '../../hooks/useLayout'
@@ -430,6 +430,117 @@ function SchedulesTab() {
   )
 }
 
+function ApiTokensTab() {
+  const [items, setItems] = useState<ApiToken[]>([])
+  const [modal, setModal] = useState(false)
+  const [created, setCreated] = useState('')
+  const [form] = Form.useForm()
+  const load = () =>
+    get<{ items: ApiToken[] }>('/api/v1/api-tokens').then((r) => setItems(r.items))
+  useEffect(() => { load().catch(() => {}) }, [])
+
+  const remove = async (id: string) => {
+    try {
+      await del(`/api/v1/api-tokens/${id}`)
+      message.success('已删除')
+      load()
+    } catch (e: any) { message.error(e.message) }
+  }
+
+  return (
+    <div>
+      <Space style={{ marginBottom: 12 }}>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModal(true) }}>
+          新建 Token
+        </Button>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          CI/CLI 机器凭证：原始 token 仅在创建时显示一次，请立即保存
+        </Typography.Text>
+      </Space>
+      <Table
+        size="small" rowKey="id" dataSource={items} pagination={false}
+        columns={[
+          { title: '名称', dataIndex: 'name' },
+          {
+            title: 'Scopes', dataIndex: 'scopes',
+            render: (v: string[]) => (
+              <Space size={4}>
+                {(v || ['*']).map((s) => <Tag key={s} style={{ margin: 0 }}>{s}</Tag>)}
+              </Space>
+            ),
+          },
+          { title: '颁发者', dataIndex: 'user_id', width: 100, render: (v: string) => `#${v.slice(-8)}` },
+          {
+            title: '过期时间', dataIndex: 'expires_at', width: 160,
+            render: (v?: string) => v ? new Date(v).toLocaleString() : '永不过期',
+          },
+          {
+            title: '最近使用', dataIndex: 'last_used_at', width: 160,
+            render: (v?: string) => v ? new Date(v).toLocaleString() : '—',
+          },
+          {
+            title: '操作', width: 80,
+            render: (_, row) => (
+              <Popconfirm title="删除该 Token？使用中的 CI 会立即失效" onConfirm={() => remove(row.id)}>
+                <Button size="small" danger>删除</Button>
+              </Popconfirm>
+            ),
+          },
+        ]}
+      />
+      <Modal
+        title="新建 API Token" open={modal}
+        onCancel={() => setModal(false)}
+        onOk={async () => {
+          const v = await form.validateFields()
+          const days = Number(v.expires_in_days) || 0
+          const expires_at = days > 0
+            ? new Date(Date.now() + days * 86400_000).toISOString()
+            : ''
+          try {
+            const r = await post<{ id: string; token: string }>('/api/v1/api-tokens', {
+              name: v.name,
+              expires_at,
+              scopes: String(v.scopes ?? '*').split(',').map((s: string) => s.trim()).filter(Boolean),
+            })
+            setCreated(r.token)
+            setModal(false)
+            load()
+          } catch (e: any) { message.error(e.message) }
+        }}
+      >
+        <Form form={form} layout="vertical">
+          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+            <Input placeholder="如 jenkins-ci / gitlab-runner" />
+          </Form.Item>
+          <Form.Item name="expires_in_days" label="有效期（天，0 = 永不过期）" initialValue={0}>
+            <InputNumber min={0} max={3650} style={{ width: 160 }} />
+          </Form.Item>
+          <Form.Item name="scopes" label="Scopes（逗号分隔，本期仅记录）" initialValue="*">
+            <Input placeholder="*" />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title="Token 创建成功（仅显示一次）"
+        open={!!created}
+        onCancel={() => setCreated('')}
+        footer={<Button type="primary" onClick={() => setCreated('')}>我已保存</Button>}
+      >
+        <Typography.Paragraph>
+          以下凭证仅此一次可见，请复制到 CI Secret / 本地凭据库：
+        </Typography.Paragraph>
+        <Typography.Paragraph code copyable={{ text: created }} style={{ wordBreak: 'break-all' }}>
+          {created}
+        </Typography.Paragraph>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          使用方式：Authorization: Bearer {created.slice(0, 12)}…；权限等同颁发者当前租户角色。
+        </Typography.Text>
+      </Modal>
+    </div>
+  )
+}
+
 function AuditTab() {
   const [items, setItems] = useState<AuditLog[]>([])
   const load = () =>
@@ -462,6 +573,7 @@ export default function AdminConsole() {
     { key: 'members', label: '成员', children: <MembersTab /> },
     { key: 'quotas', label: '配额', children: <QuotasTab /> },
     { key: 'settings', label: '设置', children: <SettingsTab /> },
+    { key: 'tokens', label: 'API Token', children: <ApiTokensTab /> },
     { key: 'idp', label: '身份源', children: <IdpTab /> },
     { key: 'notifications', label: '通知', children: <NotificationsTab /> },
     { key: 'schedules', label: '定时任务', children: <SchedulesTab /> },

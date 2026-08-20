@@ -186,6 +186,14 @@ export interface Me {
   tenant_id: string
   role: number
 }
+export interface ApiToken {
+  id: string
+  name: string
+  user_id: string
+  scopes: string[]
+  expires_at?: string
+  last_used_at?: string
+}
 export interface Schedule {
   id: string
   plan_id: string

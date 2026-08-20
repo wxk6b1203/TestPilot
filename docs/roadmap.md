@@ -372,7 +372,7 @@ v2 第三批（已完成）：Postman 导入导出、gRPC 接口测试（proto r
 
 ### 明确不做/另议
 - **OAuth2 授权码登录**：✅ 已落地（2026-08-14）——`type=oauth2` + userinfo 身份拉取 + 无 discovery 提供方显式端点接入；**client_credentials（机器凭证）**仍另议（属 api_tokens 场景）
-- **api_tokens 表（CI token）**：DDL 已预留；roadmap Phase 3 的「CI 集成 + CLI」整体待议（用户已明确不依赖 GitHub CI）
+- **api_tokens（CI token）**：✅ 基础能力已落地（v2 迁移建表 + `/api-tokens` 颁发/撤销 + `tp_` token 认证 + 管理台 UI）；scopes 细粒度授权与独立 CLI 仍另议
 - **邮件通知**：需引入 SMTP 配置/凭据与投递语义，另议；当前 webhook/钉钉/飞书可用
 - **计划级 notifications 规则**：与现有「租户渠道 + events 订阅」模型冲突，暂以租户渠道为准；规则字段仅存储
 - **项目 bundle 导出**：尚无导出格式/用例定义，另议；OpenAPI/curl/Postman 已可用

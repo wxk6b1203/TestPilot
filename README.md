@@ -300,7 +300,7 @@ Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Author
 
 ## MVP 边界（未含）
 
-- client_credentials 机器凭证 / api_tokens 业务 API：api_tokens 表已由 v2 迁移预建，颁发/校验/CLI 仍属另议项
+- API Token：管理台可颁发/撤销 CI 凭证（`tp_` 前缀，库中仅存哈希）；scopes 细粒度裁剪与独立 CLI 仍属另议项
 - JUnit XML 报告与 CI Webhook 已可用（`/runs/:id/junit` + `run_finished` webhook）；独立 CLI 仍未实现
 - VictoriaMetrics：当前压测指标落 `stress_metric_points` 表，大规模部署可替换
 - Vault 密钥后端：当前使用敏感变量 + secret_ref + 审计脱敏替代

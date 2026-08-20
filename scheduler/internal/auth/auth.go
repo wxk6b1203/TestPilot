@@ -73,17 +73,30 @@ func FromContext(ctx context.Context) (*Claims, bool) {
 	return c, ok
 }
 
-// Middleware 解析 Authorization: Bearer <token>，注入 Claims（经 c.SetContext，
-// 下游 handler 由 c.Context() 取回）。
+// TokenResolver 解析非 JWT 的租户 API Token（如 CI token）。
+// 仅在 JWT 解析失败且 token 带 API token 前缀时调用。
+type TokenResolver func(ctx context.Context, raw string) (*Claims, error)
+
+// Middleware 解析 Authorization: Bearer <JWT>，注入 Claims。
 func Middleware(secret string) fiber.Handler {
+	return MiddlewareWithTokenResolver(secret, nil)
+}
+
+// MiddlewareWithTokenResolver 在 JWT 之外支持租户 API Token：
+// JWT 优先；非 JWT 再交给 resolver（例如 tp_ 前缀的 CI token）。
+func MiddlewareWithTokenResolver(secret string, resolve TokenResolver) fiber.Handler {
 	return func(c fiber.Ctx) error {
 		h := c.Get("Authorization")
 		if !strings.HasPrefix(h, "Bearer ") {
 			return c.Status(fiber.StatusUnauthorized).
 				SendString(`{"error":{"code":"UNAUTHORIZED","message":"missing bearer token"}}`)
 		}
-		claims, err := ParseToken(secret, strings.TrimPrefix(h, "Bearer "))
-		if err != nil {
+		raw := strings.TrimPrefix(h, "Bearer ")
+		claims, err := ParseToken(secret, raw)
+		if err != nil && resolve != nil {
+			claims, err = resolve(c.Context(), raw)
+		}
+		if err != nil || claims == nil {
 			return c.Status(fiber.StatusUnauthorized).
 				SendString(`{"error":{"code":"UNAUTHORIZED","message":"invalid token"}}`)
 		}

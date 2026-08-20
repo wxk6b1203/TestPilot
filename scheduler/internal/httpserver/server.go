@@ -95,8 +95,10 @@ func (s *Server) App() *fiber.App {
 	// 生产配置后非白名单来源一律 403（也可在反向代理层做同等限制）
 	app.Get("/metrics", s.metricsGuard(), adaptor.HTTPHandler(metrics.Handler()))
 
-	// 受保护 API：组中间件 = JWT 认证 + 人工变更审计
-	api := app.Group("/api/v1", auth.Middleware(s.cfg.JWTSecret), audit.Middleware(s.db))
+	// 受保护 API：组中间件 = JWT/API Token 认证 + 人工变更审计
+	api := app.Group("/api/v1",
+		auth.MiddlewareWithTokenResolver(s.cfg.JWTSecret, s.resolveAPIToken),
+		audit.Middleware(s.db))
 	h := func(method, path string, min int16, fn fiber.Handler) {
 		api.Add([]string{method}, path, auth.RequireRole(min, fn))
 	}
@@ -229,6 +231,9 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/tenant/settings", auth.RoleAdmin, s.listTenantSettings)
 	h(fiber.MethodPut, "/tenant/settings/:key", auth.RoleAdmin, s.upsertTenantSetting)
 	h(fiber.MethodDelete, "/tenant/settings/:key", auth.RoleAdmin, s.deleteTenantSetting)
+	h(fiber.MethodGet, "/api-tokens", auth.RoleAdmin, s.listAPITokens)
+	h(fiber.MethodPost, "/api-tokens", auth.RoleAdmin, s.createAPIToken)
+	h(fiber.MethodDelete, "/api-tokens/:id", auth.RoleAdmin, s.deleteAPIToken)
 	h(fiber.MethodGet, "/schedules", auth.RoleViewer, s.listSchedules)
 	h(fiber.MethodPost, "/schedules", auth.RoleMember, s.createSchedule)
 	h(fiber.MethodPut, "/schedules/:id", auth.RoleMember, s.updateSchedule)

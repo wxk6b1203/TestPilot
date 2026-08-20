@@ -1,7 +1,9 @@
-import { Badge, Collapse, Descriptions, Drawer, Space, Tag, Typography } from 'antd'
+import { Badge, Button, Collapse, Descriptions, Drawer, Space, Tag, Typography } from 'antd'
+import { DownloadOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
-import { getToken, STATUS } from '../api'
+import { download, getToken, STATUS } from '../api'
 import type { Artifact, TestRun } from '../api'
+import { message } from '../messageBridge'
 
 export function StatusTag({ v }: { v: number }) {
   const s = STATUS[v] || { text: String(v), color: 'default' }
@@ -67,6 +69,18 @@ export default function RunDetailDrawer({
     >
       {run && (
         <>
+          <div style={{ marginBottom: 12 }}>
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              onClick={() => {
+                download(`/api/v1/runs/${run.id}/junit`, `testpilot-run-${run.id}.xml`)
+                  .catch((e) => message.error(e.message))
+              }}
+            >
+              导出 JUnit
+            </Button>
+          </div>
           {run.summary?.error && (
             <Typography.Paragraph type="danger">{run.summary.error}</Typography.Paragraph>
           )}

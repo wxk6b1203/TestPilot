@@ -123,6 +123,19 @@ type TenantMember struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// ApiToken 租户 API Token（CI/CLI 机器凭证）。表由 schema_migrations v2 创建，
+// 因此不加入 AllModels（AutoMigrate 不管理该表，只由版本化迁移演进）。
+type ApiToken struct {
+	ID         int64      `json:"id" gorm:"primaryKey"`
+	TenantID   int64      `json:"tenant_id" gorm:"index:idx_api_tokens_tenant"`
+	UserID     int64      `json:"user_id" gorm:"index"`
+	Name       string     `json:"name"`
+	TokenHash  string     `json:"-" gorm:"column:token_hash"`
+	Scopes     JSON       `json:"scopes" gorm:"type:text"`
+	ExpiresAt  *time.Time `json:"expires_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+}
+
 // ---- 项目 / 环境 / 变量 / 证书 ----
 
 type Project struct {

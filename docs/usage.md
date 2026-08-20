@@ -208,9 +208,11 @@ API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。
 
 ## CI 集成（JUnit / Webhook）
 
-- 触发：`POST /api/v1/plans/:id/run`（或单用例 `POST /api/v1/cases/:id/run`）。
+- 触发：`POST /api/v1/plans/:id/run`（或单用例 `POST /api/v1/cases/:id/run`）；
+  管理台「API Token」页可为 CI/CLI 颁发机器凭证（`Authorization: Bearer tp_…`），
+  权限等同颁发者当前租户角色，删除立即失效。
 - 报告：`GET /api/v1/runs/:id/junit` 返回 JUnit XML，可直接交给 Jenkins/GitLab
-  CI 的 JUnit 插件渲染。
+  CI 的 JUnit 插件渲染；前端「运行记录」列表与运行详情抽屉均提供「导出 JUnit」。
 - 事件：租户通知渠道订阅 `run_finished` 后，通用 webhook payload 包含
   `status`、`summary` 与 `junit_url`，CI 无需轮询即可按事件拉取报告。
 - 完整流程与迁移/CI 约定见 `docs/ci-migration-plan.md`。

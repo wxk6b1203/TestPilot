@@ -30,6 +30,19 @@ token = r.json()["token"]
 api.headers["Authorization"] = f"Bearer {token}"
 print("✓ login")
 
+# ---- CI 机器凭证：颁发 → API token 认证 → 撤销 ----
+tr = api.post("/api/v1/api-tokens", json={"name": f"e2e-token-{int(time.time())}", "scopes": ["*"]})
+tr.raise_for_status()
+api_token = tr.json()["token"]
+ci = httpx.Client(base_url=args.base, timeout=15)
+ci.headers["Authorization"] = f"Bearer {api_token}"
+me = ci.get("/api/v1/me")
+if me.status_code != 200 or me.json()["tenant_id"] != "1":
+    print(f"✗ api token auth failed: {me.status_code} {me.text}")
+    sys.exit(1)
+api.delete(f"/api/v1/api-tokens/{tr.json()['id']}").raise_for_status()
+print("✓ api token issue/auth/revoke")
+
 stamp = int(time.time())
 
 # ---- v2：公开注册（配置开关 registration_enabled；关闭时 403 优雅跳过）----

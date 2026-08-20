@@ -1,6 +1,6 @@
 import { Button, Card, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
-import { get, post, warnTruncated } from '../api'
+import { download, get, post, warnTruncated } from '../api'
 import type { ListResp, TestRun } from '../api'
 import RunDetailDrawer, { StatusTag } from '../components/RunDetailDrawer'
 import { useLayout } from '../hooks/useLayout'
@@ -71,10 +71,18 @@ export default function Runs() {
           { title: '结束时间', dataIndex: 'finished_at', width: 170, render: (v?: string) => v?.slice(0, 19).replace('T', ' ') || '-' },
           {
             title: '操作',
-            width: 150,
+            width: 190,
             render: (_, r) => (
               <Space>
                 <Typography.Link onClick={async () => setDetail(await get(`/api/v1/runs/${r.id}`))}>详情</Typography.Link>
+                <Typography.Link
+                  onClick={() => {
+                    download(`/api/v1/runs/${r.id}/junit`, `testpilot-run-${r.id}.xml`)
+                      .catch((e) => message.error(e.message))
+                  }}
+                >
+                  导出 JUnit
+                </Typography.Link>
                 {(r.status === 0 || r.status === 1) && (
                   <Popconfirm
                     title="取消该运行？未完成用例将标记为跳过"
