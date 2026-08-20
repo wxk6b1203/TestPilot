@@ -46,6 +46,8 @@ Python 低代码编写测试，支持 Playwright 页面 E2E、分布式压测、
 ### Copilot
 
 - 自然语言生成接口 / 用例 / 计划，分析失败根因，做覆盖率与目录问答。
+- **Playwright UI 用例生成**：`create_ui_test_case` 把自然语言流程转成结构化 UI 步骤，
+  默认生成可视化 UI_ACTION 步骤树，复杂流程可生成低代码 `ctx.page` 脚本。
 - 写/触发操作默认 HITL 审批并落审计；支持当前页面项目/环境上下文。
 - 支持 DeepSeek 与任意 OpenAI 兼容端点；前端经 Vercel AI SSE 流式交互。
 

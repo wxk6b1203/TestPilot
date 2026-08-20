@@ -28,13 +28,16 @@ from testpilot_copilot.main import _render_rows, _short
 from testpilot_copilot.tools import (
     CopilotDeps,
     _METHODS,
+    build_declarative_ui_case,
     check_variable_refs,
     create_api,
     create_test_plan,
+    create_ui_test_case,
     get_current_context,
     json_format_parse,
     list_apis,
     list_runs,
+    render_lowcode_ui_source,
 )
 
 # ---------------------------------------------------------------------------
@@ -450,3 +453,150 @@ def test_get_current_context_hydrates_when_details_missing():
     assert out["project"]["name"] == "Demo"
     assert out["environment"]["baseUrl"] == "http://echo:18080"
     assert len(http.calls) == 2
+
+
+# ---------------------------------------------------------------------------
+# Playwright UI 用例生成：源码渲染 / 声明式步骤树 / create_ui_test_case 请求
+# ---------------------------------------------------------------------------
+
+
+_LOGIN_STEPS = [
+    {"action": "fill", "target": "#username", "value": "{{vars.username}}"},
+    {"action": "fill", "target": "#password", "value": "{{vars.password}}"},
+    {"action": "click", "target": "button[type=submit]"},
+    {"action": "wait", "value": 1000},
+    {"action": "expect_text", "target": ".welcome", "value": "欢迎 {{vars.username}}"},
+    {"action": "screenshot", "full_page": False},
+]
+
+
+def test_render_lowcode_ui_source_basic_flow_and_templates():
+    src = render_lowcode_ui_source("/login", _LOGIN_STEPS)
+    assert src.startswith("from testpilot_sdk import Context\n")
+    assert 'async def run(ctx):' in src
+    assert '    await ctx.page.goto("/login")' in src
+    assert 'await ctx.page.fill("#username", str(ctx.vars["username"]))' in src
+    assert 'await ctx.page.fill("#password", str(ctx.vars["password"]))' in src
+    assert 'await ctx.page.click("button[type=submit]")' in src
+    assert "await ctx.page.wait_for(1000)" in src
+    assert 'await ctx.page.expect_text(".welcome", (' in src
+    assert 'str(ctx.vars["username"])' in src
+    assert "await ctx.page.screenshot(full_page=False)" in src
+    # 生成源码必须是合法 Python
+    compile(src, "<ui-case>", "exec")
+
+
+def test_render_lowcode_ui_source_parameters_template_and_press():
+    src = render_lowcode_ui_source("https://example.com/", [
+        {"action": "press", "target": "input", "value": "{{parameters.hotkey}}"},
+        {"action": "wait", "value": "{{parameters.wait_ms}}"},
+        {"action": "expect_visible", "target": "//div[@id='app']"},
+    ])
+    assert 'await ctx.page.goto("https://example.com/")' in src
+    assert 'str(ctx.parameters["hotkey"])' in src
+    assert 'await ctx.page.wait_for(int(ctx.parameters["wait_ms"]))' in src
+    assert "await ctx.page.expect_visible(\"//div[@id='app']\")" in src
+    compile(src, "<ui-case>", "exec")
+
+
+def test_render_lowcode_ui_source_rejects_bad_steps():
+    with pytest.raises(ValueError, match="不能为空"):
+        render_lowcode_ui_source("/login", [])
+    with pytest.raises(ValueError, match="action 不合法"):
+        render_lowcode_ui_source("/login", [{"action": "swipe", "target": "x"}])
+    with pytest.raises(ValueError, match="缺少 value"):
+        render_lowcode_ui_source("/login", [{"action": "fill", "target": "#x"}])
+    with pytest.raises(ValueError, match="毫秒整数"):
+        render_lowcode_ui_source("/login", [{"action": "wait", "value": "1.5"}])
+    with pytest.raises(ValueError, match="不支持等待 selector"):
+        render_lowcode_ui_source(
+            "/login", [{"action": "wait", "target": "#x", "value": 1000}])
+
+
+def test_build_declarative_ui_case_steps_and_units():
+    dc = build_declarative_ui_case("/login", [
+        {"action": "fill", "target": "#username", "value": "{{vars.username}}"},
+        {"action": "uncheck", "target": "#remember"},
+        {"action": "expect_visible", "target": ".welcome"},
+        {"action": "wait", "value": 1500},
+        {"action": "screenshot"},
+    ])
+    # start_url 首步 + 5 个动作
+    assert len(dc.steps) == 6
+    first = dc.steps[0]
+    assert first.type == pb.STEP_TYPE_UI_ACTION
+    assert first.ui_action.action == pb.UI_ACTION_GOTO
+    assert first.ui_action.target == "/login"
+    assert first.ui_action.value == ""
+
+    fill = dc.steps[1]
+    assert fill.ui_action.action == pb.UI_ACTION_FILL
+    assert fill.ui_action.target == "#username"
+    assert fill.ui_action.value == "{{vars.username}}"  # 声明式模板原样交给引擎
+
+    assert dc.steps[2].ui_action.action == pb.UI_ACTION_CHECK
+    assert dc.steps[2].ui_action.value == "false"       # uncheck → CHECK(false)
+    assert dc.steps[3].ui_action.value == ""            # expect_visible 默认可见
+    assert dc.steps[4].ui_action.value == "1.5"         # 1500ms → 1.5s
+    assert dc.steps[5].ui_action.value == "full"        # screenshot 默认全页
+
+
+def test_build_declarative_ui_case_rejects_missing_target_or_bad_wait():
+    with pytest.raises(ValueError, match="缺少 target"):
+        build_declarative_ui_case("/login", [{"action": "click", "value": "x"}])
+    with pytest.raises(ValueError, match="毫秒整数"):
+        build_declarative_ui_case("/login", [{"action": "wait", "value": "abc"}])
+
+
+def test_create_ui_test_case_builds_declarative_request_by_default():
+    stub = _RecordingStub(cpb.CreateTestCaseResponse())
+    out = asyncio.run(create_ui_test_case(
+        SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p7")),
+        name="登录冒烟", start_url="/login", steps=_LOGIN_STEPS,
+        description="打开登录页并断言欢迎语"))
+    assert out == {}
+    name, req = stub.requests[0]
+    assert name == "CreateTestCase"
+    assert req.project_id == "p7"
+    assert req.ctx.tenant_id == 7 and req.ctx.actor == "copilot"
+    assert req.case.name == "登录冒烟"
+    assert req.case.description == "打开登录页并断言欢迎语"
+    assert req.case.type == pb.TEST_CASE_TYPE_DECLARATIVE
+    assert len(req.case.declarative.steps) == 7  # start_url + 6 steps
+    assert req.case.declarative.steps[1].ui_action.value == "{{vars.username}}"
+
+
+def test_create_ui_test_case_builds_lowcode_request():
+    stub = _RecordingStub(cpb.CreateTestCaseResponse())
+    asyncio.run(create_ui_test_case(
+        SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p8")),
+        name="登录脚本", start_url="/login", steps=_LOGIN_STEPS,
+        case_type="lowcode"))
+    req = stub.requests[0][1]
+    assert req.case.type == pb.TEST_CASE_TYPE_LOWCODE
+    assert req.case.lowcode.entry == "run"
+    assert 'ctx.page.goto("/login")' in req.case.lowcode.source
+    assert 'ctx.vars["username"]' in req.case.lowcode.source
+
+
+def test_build_declarative_ui_case_wait_template_converts_ms_to_seconds():
+    dc = build_declarative_ui_case("/", [
+        {"action": "wait", "value": "{{parameters.wait_ms}}"},
+    ])
+    # 工具约定 wait 单位毫秒；声明式 UI_ACTION_WAIT 按秒解释，必须 /1000
+    assert dc.steps[1].ui_action.value == "{{parameters.wait_ms / 1000}}"
+
+
+def test_create_ui_test_case_rejects_invalid_inputs_before_rpc():
+    stub = _RecordingStub(cpb.CreateTestCaseResponse())
+    deps = _fake_deps(stub, ui_project_id="p9")
+
+    with pytest.raises(ValueError, match="declarative 或 lowcode"):
+        asyncio.run(create_ui_test_case(
+            SimpleNamespace(deps=deps), name="x", start_url="/",
+            steps=[{"action": "click", "target": "#x"}], case_type="raw"))
+    with pytest.raises(ValueError, match="未选择项目"):
+        asyncio.run(create_ui_test_case(
+            SimpleNamespace(deps=_fake_deps(stub)), name="x", start_url="/",
+            steps=[{"action": "click", "target": "#x"}]))
+    assert stub.requests == []

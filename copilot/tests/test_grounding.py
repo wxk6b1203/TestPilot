@@ -28,9 +28,11 @@ def test_instructions_embed_schema_and_sdk_verbatim():
 def test_instructions_structure():
     text = _build_instructions()
     assert "## 工作准则" in text
+    assert "## Playwright UI 用例生成" in text
     assert "## 数据字典（领域 schema）" in text
     assert "## 低代码 SDK" in text
-    # schema 段落在 SDK 段落之前
+    # 使用准则在 grounding 段落之前；schema 段落在 SDK 段落之前
+    assert text.index("## Playwright UI 用例生成") < text.index("## 数据字典")
     assert text.index("## 数据字典") < text.index("## 低代码 SDK")
 
 
@@ -40,6 +42,16 @@ def test_grounding_files_exist_and_nonempty():
     sdk_path = grounding / "sdk-api.md"
     assert schema_path.is_file() and schema_path.stat().st_size > 0
     assert sdk_path.is_file() and sdk_path.stat().st_size > 0
+
+
+def test_grounding_sdk_documents_playwright_page_model():
+    grounding = _PROMPTS.parent / "grounding"
+    sdk_doc = (grounding / "sdk-api.md").read_text(encoding="utf-8")
+    assert "## Page（Playwright UI 用例" in sdk_doc
+    assert "ctx.page.fill" in sdk_doc
+    assert "expect_text" in sdk_doc and "wait_for" in sdk_doc
+    # 防止 LLM 生成沙箱内不可用的 playwright import
+    assert "禁止 `from playwright" in sdk_doc
 
 
 def test_domain_schema_is_valid_json_with_expected_shape():

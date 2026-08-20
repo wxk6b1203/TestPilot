@@ -6,6 +6,8 @@
 - `async def run(ctx: Context)` — 入口签名；ctx 注入全部能力
 - `ctx.vars` — 变量视图：读 `ctx.vars["k"]`、写 `ctx.vars["k"] = v`（运行结束合并回用例上下文）
 - `ctx.base_url: str` / `ctx.parameters: dict` / `ctx.tenant_id: int`
+- `ctx.page -> Page` — Playwright 页面模型（UI 用例）；浏览器随首个 UI 动作惰性启动，
+  每用例一个隔离 BrowserContext，产物（截图/trace/HAR）挂到步骤结果
 - `ctx.http_api(api_id) -> HttpAPI` / `ctx.grpc_api(api_id) -> GrpcAPI` / `ctx.api(api_id)`
   — 按接口目录 ID 调用（推荐）；api_id 必须声明在 definition.httpApiRefs / grpcApiRefs 中
 - `await ctx.http(method, uri, *, headers=None, params=None, body=None, timeout=30.0) -> Response`
@@ -39,6 +41,30 @@ g = await Api456().run(request={"message": "hi"})   # request 深合并快照
 - HTTP：`status: int` / `headers: dict` / `body: Any`（JSON 解析后）/ `text: str` /
   `elapsed_ms: int` / `api_id: str` / `request: dict`
 - gRPC：`GrpcResponse.status` / `.json`（返回体，等价声明式 $.json）/ `.request` / `.elapsed_ms`
+
+## Page（Playwright UI 用例，经 ctx.page 能力桥驱动浏览器）
+```python
+async def run(ctx):
+    await ctx.page.goto("/login")                      # 相对路径基于环境 base_url
+    await ctx.page.fill("#username", ctx.vars["user"]) # locator 支持 CSS / XPath
+    await ctx.page.fill("#password", ctx.vars["pass"])
+    await ctx.page.click("button[type=submit]")
+    await ctx.page.wait_for(1000)                      # 固定等待，单位毫秒
+    await ctx.page.expect_text(".welcome", "欢迎")       # 断言失败 → 用例失败
+    await ctx.page.expect_visible(".logout")
+    await ctx.page.screenshot(full_page=True)
+```
+- 可用方法：`goto(url)` / `click(selector)` / `fill(selector, value)` /
+  `select(selector, value)` / `check(selector)` / `uncheck(selector)` /
+  `hover(selector)` / `press(selector, key="Enter")`（selector="" 表示键盘按键）/
+  `expect_text(selector, text)` / `expect_visible(selector)` /
+  `wait_for(milliseconds)` / `screenshot(full_page=True)`
+- `expect_text` / `expect_visible` 是断言，不匹配直接让脚本失败；`goto` 的相对 URL
+  以环境 base_url 解析，且与 HTTP 出口共用 SSRF/私网拦截策略
+- 低代码桥**不渲染 `{{...}}` 模板**：脚本内请直接用 Python 表达式 `ctx.vars["k"]` /
+  `ctx.parameters["k"]`，不要写 `{{vars.k}}` 字符串
+- 沙箱内没有 Playwright 包：禁止 `from playwright...`，浏览器只能经 `ctx.page` 驱动
+- UI 步骤失败时自动截屏，trace.zip / network.har 随报告产物返回
 
 ## assert_that(actual, label="") — 链式断言（失败即 fail-fast，结果入报告）
 `.eq(v) .ne(v) .gt(n) .ge(n) .lt(n) .le(n) .contains(x) .matches(regex) .exists() .type_is("object|array|string|number|boolean|null")`

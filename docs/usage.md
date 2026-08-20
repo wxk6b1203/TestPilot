@@ -202,7 +202,17 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 `project_id`/`environment_id` 的工具参数省略时默认作用于该选择，Copilot 页顶部
 有当前上下文提示条。
 新增工具：`create_project`（创建项目）、`query_api_directory`（接口目录问答）、
-`check_variable_refs`（检查接口/用例中的 `{{var}}` 引用是否已定义）。
+`check_variable_refs`（检查接口/用例中的 `{{var}}` 引用是否已定义）、
+`create_ui_test_case`（Playwright UI 用例生成）。
+
+**Playwright UI 用例生成**：在 Copilot 页描述页面流程（如「打开 /login，输入
+{{vars.username}}，点击登录按钮，断言出现欢迎语」），Copilot 会调用
+`create_ui_test_case` 生成用例。支持动作 goto / click / fill / select / check /
+uncheck / hover / press / expect_text / expect_visible / wait / screenshot；
+`start_url` 相对路径基于环境 base_url。默认生成**声明式 UI_ACTION 步骤树**（可在
+用例页继续可视化编辑）；流程包含循环/条件/复杂变量时 Copilot 会选择
+`case_type=lowcode` 生成 `ctx.page` Python 脚本。两者均需 HITL 审批。
+
 写操作需 HITL 审批（前端按钮）；全部工具调用经 Scheduler gRPC 落审计（actor=copilot）。
 API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。
 

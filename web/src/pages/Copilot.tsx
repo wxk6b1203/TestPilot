@@ -28,6 +28,13 @@ interface TrashSession {
   message_count: number
 }
 
+// 空态快捷示例：让新用户一眼看到 Copilot 的能力入口（含 Playwright UI 用例生成）
+const SUGGESTIONS = [
+  '当前项目有哪些接口',
+  '帮我分析最近一次失败的运行',
+  '生成一个打开当前环境首页并断言欢迎语的 Playwright UI 用例',
+]
+
 // 按 pydantic-ai VercelAIAdapter 的请求 schema（extra=forbid）重建 part：
 // SDK v7 序列化会带 id/providerMetadata 等字段，后端不接受，逐字段裁剪
 const sanitizePart = (p: any): any => {
@@ -223,12 +230,14 @@ export default function Copilot() {
     setMessages([])
   }
 
-  const submit = () => {
-    const text = input.trim()
-    if (!text || busy) return
+  const submitText = (text: string) => {
+    const trimmed = text.trim()
+    if (!trimmed || busy) return
     setInput('')
-    sendMessage({ text })
+    sendMessage({ text: trimmed })
   }
+
+  const submit = () => submitText(input)
 
   // HITL：批准/拒绝 → 补审批回执，sendAutomaticallyWhen 命中后 SDK 自动续发
   const respond = (part: any, approved: boolean) => {
@@ -352,6 +361,16 @@ export default function Copilot() {
               <div style={{ textAlign: 'center', color: PALETTE.textTertiary, marginTop: 40 }}>
                 <RobotOutlined style={{ fontSize: 28 }} />
                 <div style={{ marginTop: 8 }}>向 Copilot 描述任务，例如「当前项目有哪些接口」「创建一个接口 GET /ping」</div>
+                  <div style={{
+                    marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8,
+                    justifyContent: 'center', padding: '0 24px',
+                  }}>
+                    {SUGGESTIONS.map((s) => (
+                      <Button key={s} size="small" onClick={() => submitText(s)}>
+                        {s}
+                      </Button>
+                    ))}
+                  </div>
               </div>
             )}
             {messages.map((m) => (
