@@ -1,6 +1,9 @@
-# CI/CD、Proto 治理、JUnit/Webhook 与迁移版本化设计
+# 工程化能力设计：迁移、JUnit、Webhook、API Token、Proto 治理与 CI/CD
 
-> 本文档是这三块工程化能力的完整设计记录：为什么这么做、方案取舍、实现位置、使用方式与后续约定。
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
+
+> 本文档汇总工程化能力的完整设计：为什么这么做、方案取舍、实现位置、使用方式与后续约定。
+> 对应用户操作手册见 `docs/usage.md`，REST 参考见 `docs/api.md`。
 
 ## 目录
 
@@ -8,9 +11,10 @@
 2. 迁移版本化
 3. JUnit XML 报告
 4. Webhook 与 CI 集成流程
-5. Proto 治理自动化
-6. GitHub Actions CI/CD
-7. 后续开发约定
+5. API Token（机器凭证）
+6. Proto 治理自动化
+7. GitHub Actions CI/CD
+8. 后续开发约定
 
 ---
 
@@ -147,9 +151,40 @@ Authorization: Bearer <JWT>
 
 ---
 
-## 5. Proto 治理自动化
+## 5. API Token（机器凭证）
 
-### 5.1 配置
+### 5.1 设计
+
+- 原始 token：`tp_` + 64 hex（256-bit 随机值），**仅在创建响应中返回一次**。
+- 数据库只存 SHA-256 哈希（`api_tokens.token_hash`）；表由 schema_migrations v2 管理。
+- 认证入口：`auth.MiddlewareWithTokenResolver` —— JWT 优先，非 JWT 再尝试 API token。
+- 权限不固化在 token 内：每次请求按颁发者在 `tenant_members` 中的当前角色动态取权；
+  成员被移除、禁用或 token 过期后立即失效。
+- `last_used_at` 每次认证时尽力更新；`scopes` 本期仅记录展示，未做细粒度裁剪。
+
+### 5.2 REST
+
+| 方法 | 路径 | 角色 | 说明 |
+|---|---|---|---|
+| GET | `/api-tokens` | admin | 列出本租户 token 元数据（不含原始 token） |
+| POST | `/api-tokens` | admin | `{name, scopes?, expires_at?}` → `{id, token}`；expires_at 为 RFC3339 |
+| DELETE | `/api-tokens/{id}` | admin | 撤销，立即失效 |
+
+### 5.3 前端
+
+管理台「API Token」Tab：创建（名称/有效期/Scopes）、一次性 token 弹窗复制、
+列表、撤销。适合 CI 管理员自助维护，不依赖命令行。
+
+### 5.4 测试
+
+- 单元测试：创建/列表隐藏原始值/删除后 401、过期拒绝、租户隔离。
+- e2e：颁发 → 用 token 调 `/me` → 撤销，闭环校验。
+
+---
+
+## 6. Proto 治理自动化
+
+### 6.1 配置
 
 - `buf.yaml`：module `proto`，lint `STANDARD`；
   仅排除两条 `RPC_REQUEST_STANDARD_NAME` / `RPC_RESPONSE_STANDARD_NAME`
@@ -158,7 +193,7 @@ Authorization: Bearer <JWT>
 - `scripts/proto-gen.sh`：统一 Go + Python + grounding 生成入口。
 - `scripts/proto-check.sh`：buf lint/breaking + 重新生成 + `git diff --exit-code`。
 
-### 5.2 版本锁定
+### 6.2 版本锁定
 
 | 工具 | 版本 |
 |---|---|
@@ -169,16 +204,16 @@ Authorization: Bearer <JWT>
 | grpcio-tools | 1.83.0 |
 | protobuf | 7.35.1 |
 
-### 5.3 生成产物检查范围
+### 6.3 生成产物检查范围
 
 `scheduler/gen/`、`worker/src/testpilot/`、`scheduler/internal/grpcserver/schema.json`、
 `copilot/src/testpilot_copilot/grounding/`。
 
 ---
 
-## 6. GitHub Actions CI/CD
+## 7. GitHub Actions CI/CD
 
-### 6.1 CI（.github/workflows/ci.yml）
+### 7.1 CI（.github/workflows/ci.yml）
 
 | Job | 内容 |
 |---|---|
@@ -188,7 +223,7 @@ Authorization: Bearer <JWT>
 | copilot | vendor wheel + editable install + pytest |
 | web | pnpm frozen install + oxlint + tsc/vite build |
 
-### 6.2 CD（.github/workflows/cd.yml）
+### 7.2 CD（.github/workflows/cd.yml）
 
 - 触发：`v*` tag 或手动 workflow_dispatch；
 - 构建三个镜像（scheduler/worker/copilot）并推送到 `ghcr.io`；
@@ -196,7 +231,7 @@ Authorization: Bearer <JWT>
 
 ---
 
-## 7. 后续开发约定
+## 8. 后续开发约定
 
 - **schema 变更必须走迁移**：不得只改 GORM tag 后依赖 AutoMigrate 静默变更；
   AutoMigrate 只作为新库基线与模型级兜底。

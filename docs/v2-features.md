@@ -1,6 +1,6 @@
-# TestPilot v2 第二批特性说明
+# TestPilot v2 特性设计存档（已全部交付）
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
 
 ## 目录
 
@@ -9,13 +9,15 @@
 3. lowcode script_ref（脚本资产库）
 4. LOOP parallel（要点）
 5. 对象存储制品后端（要点）
-6. api_id 派发期解析与 param_overrides（第二批补完）
+6. api_id 派发期解析与 param_overrides
 
 ---
 
-
-> v2 第二批交付说明（2026-08-14）。前三节（suite 引用展开 / ApplyOpenApiDiff / lowcode script_ref）
-> 为详细设计记录，后两节为 loop parallel 与对象存储制品后端的要点速览。
+> **文档状态**：本文档记录的六项 v2 能力均已交付并被测试覆盖，保留本文作为
+> 实现细节与语义边界的权威设计存档。功能入口与当前状态请以 README、
+> `docs/usage.md` 与 `docs/roadmap.md` 为准；不要以本文中的“本批/补完”时间性
+> 描述判断是否完成。
+>
 > 实现位置：Scheduler `internal/{runner,impexp,httpserver,artifactstore,dispatch,retention}`，
 > Worker `engine.py`，契约 `proto/testpilot/{common,copilot}/v1/*.proto`。
 
@@ -233,7 +235,7 @@ Worker 无 DB、引擎只接受 `source`，因此**解析发生在 Scheduler 派
 - 配置项：`artifact_backend` `s3_endpoint` `s3_access_key` `s3_secret_key` `s3_bucket`
   `s3_region` `s3_prefix` `s3_use_ssl` `s3_path_style`（详见 `deploy/scheduler.yaml.example`）。
 
-## 6. api_id 派发期解析与 param_overrides（第二批补完）
+## 6. api_id 派发期解析与 param_overrides
 
 > 本批交付时遗留的两处边界（roadmap 曾标注"未实现"），已随补完提交落地。
 

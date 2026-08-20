@@ -1,308 +1,195 @@
 # TestPilot
 
-LLM 驱动的自动化集成测试平台 —— Phase 0–9（Copilot、压测、多租户企业化、可观测性与 compose 部署）。
+TestPilot 是一个 LLM 增强的集成测试平台：统一管理 HTTP / gRPC 接口，用声明式步骤树或
+Python 低代码编写测试，支持 Playwright 页面 E2E、分布式压测、AI Copilot 生成与分析，
+并面向团队提供多租户、RBAC、定时调度、通知和 CI 集成。
+
+## 功能
+
+### 接口管理
+
+- HTTP 接口：方法 / URI / params / headers / cookies / body / TLS / 重定向 / JSONC / 二进制引用；
+  单接口调试工作区（即时请求与响应面板）。
+- gRPC 接口：proto 文件资产 + server reflection 动态调用，无需预编译桩。
+- 目录树、项目 / 环境 / 变量 / 证书管理；变量支持 `{{expr}}` 模板与敏感标记。
+- 导入导出：OpenAPI 3、curl 命令、Postman Collection v2.1；
+  Copilot 可对 OpenAPI 做增量 diff（`apply_openapi_diff`）。
+
+### 测试
+
+- **声明式用例**：递归步骤树，支持 API_CALL / GRPC_CALL / ASSERTION / SET_VAR /
+  IF / LOOP / RETRY / DELAY / CODE_BLOCK / UI_ACTION，前后置脚本与步骤级参数覆盖。
+- **低代码用例**：`testpilot-sdk` Python SDK + `assert_that` 链式断言，按接口 ID 调用
+  （`ctx.http_api(id)` / `ctx.grpc_api(id)`），派发时自动生成 `Api<ID>` 封装类；
+  脚本在受限沙箱中执行，HTTP/变量/UI 副作用经能力桥由 Worker 代执行，沙箱内零凭据。
+- **Playwright E2E**：`ctx.page` 页面模型与 13 种 UI 动作，截图 / trace / HAR 产物，
+  trace 可用 Playwright Trace Viewer 回放。
+- **套件 / 计划 / 脚本资产**：套件有序展开、脚本资产复用（`script_ref`）、
+  计划条目参数覆盖，支持单用例直接运行。
+
+### 报告与 CI
+
+- 三级结果模型：TestRun → TestCaseResult → TestStepResult，含请求/响应快照、断言明细与产物。
+- 运行记录与运行详情均支持**导出 JUnit XML**（`GET /runs/:id/junit`）。
+- `run_finished` webhook 带 `junit_url`，可事件驱动接入 Jenkins / GitLab 等 CI。
+- **API Token**：管理台可颁发 / 撤销 `tp_` 机器凭证，适用于 CI / CLI；数据库仅存哈希，
+  权限随颁发者的租户成员角色动态生效。
+- 运行取消、租户配额、数据保留策略与制品生命周期管理。
+
+### 压测
+
+- 接口压测：Locust 子进程发压，多 Worker 拆分负载，RPS / P95 / 错误率时序图。
+- 行为压测：低代码用例作为负载模型，沙箱常驻循环执行，按并发与 ramp 门控。
+
+### Copilot
+
+- 自然语言生成接口 / 用例 / 计划，分析失败根因，做覆盖率与目录问答。
+- 写/触发操作默认 HITL 审批并落审计；支持当前页面项目/环境上下文。
+- 支持 DeepSeek 与任意 OpenAI 兼容端点；前端经 Vercel AI SSE 流式交互。
+
+### 平台能力
+
+- 多租户隔离、雪花 ID、JWT + OIDC / OAuth2 登录、owner / admin / member / viewer RBAC。
+- 定时调度、Webhook / 钉钉 / 飞书通知、配额、租户配置开关、审计日志。
+- 版本化 schema 迁移（`schema_migrations`）、SQLite / PostgreSQL 双存储、
+  S3 兼容制品后端、Prometheus 指标 + OpenTelemetry 链路。
+- Docker Compose 生产部署模板（Scheduler / Worker / Copilot / PG / Jaeger / Prometheus）。
 
 ## 组件
 
-| 组件 | 技术 | 端口 | 说明 |
+| 组件 | 技术栈 | 地址 | 职责 |
 |---|---|---|---|
-| Scheduler | Go 1.25 · fiber v3 · GORM/SQLite · gRPC | :8080 (REST+前端) / :9090 (gRPC) | 领域模型、认证(JWT)、调度派发、结果落库、CopilotToolService |
-| Worker | Python 3.13 · grpcio · asyncio · httpx | 连接 :9090 | 声明式执行引擎 + 表达式语言 + 低代码沙箱 + Playwright + Locust 压测 |
-| Copilot | Python 3.13 · FastAPI · pydantic-ai 2.28 | :8100 | AI 生成/分析：工具经 Scheduler gRPC 执行，写操作 HITL 审批 + 审计 |
-| 前端 | React 19 · TS · Vite · AntD | :5173 (dev) | IDE 式控制台（图标栏+面板+工作区）：接口调试、用例步骤树、计划/套件/脚本/gRPC、压测报告、租户管理台、Copilot 对话 |
-| echo 服务 | Python stdlib | :18080 | 联调用本地回显服务 |
-
-设计文档：`docs/design.md`（架构）· `docs/data-model.md`（32 表 ER）· `docs/roadmap.md`（实施路线）·
-`docs/v2-features.md`（v2 第二批特性详述）。
-使用/部署/API：`docs/usage.md` · `docs/deployment.md` · `docs/api.md`。
-契约：`proto/testpilot/{common,worker,copilot}/v1/*.proto`。
+| Scheduler | Go · fiber v3 · GORM · gRPC | `:8080` REST/前端，`:9090` gRPC | 领域 CRUD、认证/RBAC、调度、结果落库、通知、Copilot 工具面 |
+| Worker | Python · asyncio · httpx · grpcio | 连接 `:9090` | 声明式执行引擎、低代码沙箱、Playwright、压测 |
+| Copilot | Python · FastAPI · pydantic-ai | `:8100` | AI Agent：经 Scheduler gRPC 工具读写，HITL 审批 |
+| Frontend | React · TypeScript · Vite · Ant Design | `:5173`（dev） | IDE 式控制台：接口、用例、计划、报告、管理台、Copilot 对话 |
+| echo | Python stdlib | `:18080` | 本地联调回显服务 |
 
 ## 快速开始
 
-前置：Go 1.25+ · Python 3.13 + uv · Node 24 + pnpm。
+前置：Go 1.25+、Python 3.13、Node 22+ 与 pnpm 11+。
 
 ```bash
-# 1. Worker 依赖（uv 环境落在 worker/venv，python 版本见 .python-version）
+# 1. Worker 依赖（Playwright 可选）
 cd worker && uv sync --extra playwright \
   && venv/bin/python -m playwright install chromium && cd ..
-#   （playwright 为可选 extra，不跑 UI 用例可去掉 --extra playwright 与浏览器安装）
 
-# 1b. Copilot 依赖 + 密钥（DeepSeek 等 OpenAI 兼容端点）
-#     （pydantic-ai-extensions 未发布公共 PyPI，经 tool.uv.sources 解析 copilot/vendor/ 内 wheel）
-cd copilot && uv sync && cp .env.example .env  # 编辑填入 TP_COPILOT_API_KEY（勿提交） && cd ..
+# 2. Copilot 依赖 + LLM 密钥
+cd copilot && uv sync && cp .env.example .env && cd ..
+# 编辑 copilot/.env，填入 TP_COPILOT_API_KEY
 
-# 2. 前端依赖 + 构建（构建后 Scheduler 可直接托管于 :8080）
+# 3. 前端依赖
 cd web && pnpm install && pnpm build && cd ..
 
-# 3. 一键起全栈（scheduler + worker + copilot + echo + vite dev）
+# 4. 一键启动全栈（scheduler + worker + copilot + echo + vite）
 scripts/dev.sh start
 
-# 4. 端到端闭环验证（声明式 + 低代码沙箱 + UI 用例 + 压测）
+# 5. 端到端验证
 worker/venv/bin/python scripts/e2e.py
-# 4b. Copilot E2E（真实 LLM 调用：HITL 生成接口+用例、审计校验）
-worker/venv/bin/python scripts/e2e_copilot.py
-# 4c. Phase 8 E2E（RBAC / 跨租户隔离 / 配额 429 / OIDC 登录 / 定时+通知）
-worker/venv/bin/python scripts/e2e_phase8.py
-# 4d. Phase 9 E2E（Prometheus 指标 / 审计留痕）
-worker/venv/bin/python scripts/e2e_phase9.py
 ```
 
-打开 http://localhost:5173 （dev 热更新）或 http://localhost:8080 （托管构建产物），
-账号 `admin` / `admin123`。Copilot 对话页在左侧菜单「Copilot」。
+打开 <http://localhost:5173>（开发热更新）或 <http://localhost:8080>（Scheduler 托管构建产物）。
+默认账号：`admin / admin123`（生产环境必须修改 `TP_ADMIN_PASSWORD` 与 `TP_JWT_SECRET`）。
 
 停止：`scripts/dev.sh stop`；状态：`scripts/dev.sh status`。
 
-生产形态（PG + 多 Worker + Jaeger + Prometheus）：
-`cp deploy/.env.example deploy/.env && docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build`，
-详见 `docs/deployment.md`。
+## 使用
 
-## MVP 能力
-
-- **声明式用例**：递归步骤树 — API_CALL / ASSERTION / SET_VAR / IF / LOOP / RETRY / DELAY /
-  CODE_BLOCK（沙箱）/ UI_ACTION（Playwright）
-- **低代码用例（Phase 4）**：Python SDK（pydantic 模型 + `assert_that` 链式断言）在
-  **subprocess 沙箱**中运行：setrlimit 资源约束、环境变量白名单、临时工作目录、超时强杀，
-  macOS `sandbox-exec` / Linux `bwrap` 强制无网络出口；HTTP/变量等副作用经**能力桥**
-  （stdin/stdout JSON Lines）由 Worker 代执行 —— 沙箱内零凭据、零明文密钥
-- **低代码 Page 模型（v2 第三批）**：SDK `ctx.page`（goto/click/fill/select/check/hover/
-  press/expect_text/expect_visible/wait_for/screenshot）——沙箱内经能力桥（op=ui_action）
-  转发给 Worker 的 Playwright UiSession 执行，浏览器按 run/case 隔离，截图/trace/har
-  产物挂到步骤结果；断言失败随桥错误传播
-- **UI 测试（Phase 5）**：13 种 UI_ACTION（GOTO/CLICK/FILL/SELECT/CHECK/HOVER/PRESS/
-  EXPECT_TEXT/EXPECT_VISIBLE/SCREENSHOT/WAIT/UPLOAD/DOWNLOAD）；每用例一次浏览器启动、
-  BrowserContext 隔离、全程 tracing；产物 = 截图（含失败自动截图）+ trace.zip + network.har，
-  运行详情页内联看图、trace 下载后可 `npx playwright show-trace` 回放
-- **Copilot（Phase 6）**：FastAPI + pydantic-ai 2.28，Provider 注册表（deepseek /
-  openai_compatible）直连 OpenAI 兼容端点；工具 = CopilotToolService gRPC（22 RPC，
-  不直连 DB；新增 create_project / query_api_directory / check_variable_refs）；写/触发工具 `requires_approval` → 前端 HITL 批准后才执行，
-  Scheduler 落审计（actor=copilot, approved_by=用户）；上下文压缩经
-  pydantic-ai-extensions 的 ContextCompression capability（fraction 0.7 触发、保留最近 6 条）；
-  前端手写 Vercel AI SSE 消费（文本流 + 工具调用 + 审批按钮），会话经 Scheduler REST 持久化
-- **压测（Phase 7）**：Locust 以独立子进程运行（gevent，不与 asyncio 混部），
-  JSON Lines stdout 协议上报采样点；Scheduler 将目标并发均衡拆分到多个 stress-capable
-  Worker（Worker 独占式压测调度）；指标点落 `stress_metric_points`（生产换 VictoriaMetrics），
-  报告页手绘 SVG 时序图（RPS/P95/并发/错误率）。
-  **行为压测（v2 第三批）**：`target_type=2` 接低代码行为用例——Worker 进程内 asyncio
-  负载环 + **沙箱常驻循环模式**（预起 K 个沙箱、迭代门控按 ramp 放行、每迭代全新 vars
-  快照、经能力桥执行 HTTP/UI 操作），迭代延迟/错误率按 metrics_interval 采样，指标协议
-  与 Locust 路径一致（报告页零改动）
-- **表达式语言**：`{{expr}}` 模板 + AST 白名单安全求值（无函数调用/dunder），
-  作用域含环境变量、`vars`、`response`（`response.json` / `.status` / `.headers` / `.elapsed_ms`）
-- **默认 auth 注入**：项目/环境级 `category=HEADER` 的变量自动注入每个 api_call 请求头
-  （声明式与低代码能力桥一致生效；接口/SDK 显式同名头优先，忽略大小写；值支持 `{{var}}`
-  模板；敏感变量不注入——沙箱零凭据不变）
-- **统一断言**：STATUS / HEADER / BODY / JSONPATH / ELAPSED × EQ/NE/EXISTS/NOT_EXISTS/CONTAINS/MATCHES/GT/LT/GE/LE/TYPE_IS
-- **HTTP 请求增强**：`cookies` 发送（值可 `{{var}}`）；`settings.tls_verify` 缺省校验、显式
-  false 跳过；`settings.comment_tolerant_json` 兼容注释 JSON；`body.binary_ref` 支持
-  `base64:<data>` 或 `artifact:<id>`（Scheduler 派发前读产物内联，上限 8MiB）
-- **多租户**：tenant_id 全表隔离（应用层过滤），雪花 ID，REST 层 ID 字符串化（JS 安全、输入字符串自动还原）
-- **认证 / RBAC（Phase 8）**：本地账号（bcrypt + JWT 24h；种子 `admin/admin123` = tenant 1 owner）
-  + **OIDC / OAuth2 授权码双轨**（可插拔 identity_providers，租户级；OIDC=id_token 验签
-  RS256 JWKS / HS256，OAuth2=access_token 换 userinfo 取身份——无 discovery 的提供方
-  （如 GitHub）经 IdP config 显式端点接入；外部用户首次登录自动建档并落 viewer）。
-  角色 owner=1 / admin=2 / member=3 / viewer=4（小=高），路由约定：GET→viewer、领域写→member、
-  租户治理（成员/配额/通知/身份源/审计）→admin；自助建租户（POST /tenants）+ switch-tenant
-  换签；最后一名 owner 不可降级/移除。
-  **公开注册（v2）**：`POST /auth/register`（配置开关 `registration_enabled`，默认关）——
-  注册即自建租户并成为 owner，成功直接签发 token；用户名唯一（409 `USERNAME_TAKEN`）
-- **租户配置开关表（v2）**：`tenant_settings`（key-value，UNIQUE(tenant_id,key)）——
-  未来特性开关/租户级配置的落点；REST `GET|PUT|DELETE /tenant/settings`（admin+）
-- **配额（Phase 8）**：tenant_quota（metric 维度上限，0/缺省=不限，用量实时从事实表计算）——
-  concurrent_runs / monthly_runs / artifact_bytes / ai_calls / worker_slots；超限 429 `QUOTA_EXCEEDED`
-- **定时调度（Phase 8）**：robfig/cron 5 段表达式，overlap_policy（跳过/并发），
-  启动时 misfire 补跑（落后 >2min）；触发记 trigger=SCHEDULED + triggered_by=schedule:<id>
-- **通知（Phase 8）**：notification_channels —— Webhook（原始 JSON）/ 钉钉（markdown + HMAC-SHA256
-  URL 签名）/ 飞书（text + body 签名）；事件 run_finished / stress_finished，异步发送不阻塞结果落库
-- **SSRF 出口控制（Phase 8，Worker）**：`TP_EGRESS_ALLOW` host 白名单（精确/`.后缀`）+
-  `TP_EGRESS_BLOCK_PRIVATE=1` 解析后拦截私网/环回；声明式引擎与沙箱能力桥共用
-- **数据保留（Phase 8）**：`TP_RETENTION_RUN_DAYS`（0=永久），按 run 级联清理
-  step/case/artifact（含磁盘文件）+ 压测时序点，每小时一轮、单轮 500 run 上限
-- **可观测性（Phase 9）**：`GET /metrics`（Prometheus：HTTP/run/dispatch/配额/通知/worker 池）；
-  OTel 链路三进程贯通（Scheduler REST/gRPC span → `TaskAssignment.traceparent` → Worker，
-  Copilot 经 gRPC metadata 注入），`TP_OTEL_EXPORTER=stdout|otlp`；日志带统一 trace_id
-- **审计完善（Phase 9）**：人工变更中间件（非 GET 成功即落）、敏感变量读取（secret_read）、
-  租户切换（落目标租户）；Copilot 写操作审计自 Phase 6
-- **部署（Phase 9）**：`deploy/` —— 三组件 Dockerfile + `docker-compose.prod.yml`
-  （PG + scheduler + worker 副本 + stress worker + copilot + Jaeger + Prometheus）+ `.env.example`；
-  `TP_DB_DSN` 一键 SQLite→PostgreSQL（PG 全量 e2e 回归通过）
-- **调度**：Worker 能力路由（functional/lowcode/playwright/stress）+ 最少负载优先 + 共享/独占租户模型
-- **套件（v2）**：`test_suites`/`test_suite_items`（仅 case 引用、有序、无嵌套），PlanItem
-  `ref_type=2` 触发时展开为 case 序列派发；`/suites` REST CRUD
-- **脚本资产库（v2）**：`scripts` 表 + `/scripts` REST CRUD；低代码用例 `script_ref` 引用，
-  派发前由 Scheduler 按租户解析内联为 `source`（沙箱零凭据不变）
-- **api_id 派发期解析（v2 补完）**：api_call 步骤的 `api_id` 引用（含 if/loop/retry 嵌套）
-  派发前批量解析为 inline 快照，保留 `override`；显式 inline 优先
-- **gRPC 接口测试（v2 第三批）**：`/grpc-apis`（full_service/method/request_message/metadata/
-  deadline）+ `/proto-files`（proto 源文件资产）；GRPC_CALL 步骤经 **server reflection**
-  动态解析消息类型并 unary 调用（Worker 无编译桩），目标地址取环境 base_url，
-  请求 = request_message ⊕ request_override，JSONPATH 断言对响应消息生效
-- **参数覆盖（v2 补完）**：计划条目 `param_overrides` 深合并进低代码 `parameters`
-  （`ctx.parameters`），并追加为任务级模板变量（最高优先级，不改共享环境）
-- **接口调试（前端 IDE 化）**：`POST /apis/debug` 单步派发同步返回响应快照；
-  控制台「发送→即时响应」工作区（参数/请求头/请求体结构化编辑、Ctrl+Enter 发送、
-  响应体/头/断言/日志面板）；调试 run 落库可查但不进运行列表
-- **前端控制台（IDE 化重构）**：顶栏（项目/环境/租户切换）+ 图标栏 + 二级面板 +
-  主工作区三栏布局；用例可视化步骤树编辑器（10 种步骤类型嵌套编辑）、计划条目编辑器
-  （套件引用/重排/参数覆盖）、套件/脚本/gRPC 接口/Proto 文件管理页、租户管理台
-  （成员/配额/设置/身份源/通知/定时/审计）、注册与 OIDC/OAuth2 登录页；设计 token 统一
-  （`web/src/theme.ts`，参考 Apifox 视觉语言）
-- **导入导出**：OpenAPI 3（JSON/YAML，幂等跳过）、curl 命令行、Postman Collection v2.1
-  （folder 递归、query/header/body 映射、幂等）、导出 OpenAPI 3 / curl / Postman；
-  Copilot 工具 `apply_openapi_diff`——按 method+uri 增量应用（added/changed/breaking/removed，
-  removed 仅报告不删除；auto_update_cases 回写用例 inline 快照）
-- **并行循环（v2）**：LOOP `parallel=true` 并发迭代，变量快照隔离，结果按迭代序合并
-- **结果模型**：TestRun → TestCaseResult → TestStepResult（点路径定址，含请求/响应快照与断言明细）+ Artifact（截图/trace/har）
-- **制品后端（v2）**：`artifact_backend=local|s3` 双实现（S3 兼容对象存储，键 `{prefix}{tenant}/{uri}`；
-  上报时同步上传、读取/retention 走后端）
-- **错误码体系**：REST 统一 `{error:{code,message}}`，注册表见 `docs/error-codes.md`
-- **DDL / 迁移**：`docs/sql/postgresql.sql` / `docs/sql/mysql.sql`（33 表）；运行时 schema
-  由版本化迁移管理（基线 AutoMigrate + `schema_migrations`，v2 已创建 api_tokens），见
-  `docs/ci-migration-plan.md`
-- **CI 集成**：`GET /runs/:id/junit`（JUnit XML）；`run_finished` webhook 带 `junit_url`；
-  GitHub Actions CI/CD 与 buf proto 治理见 `.github/workflows/`
-
-## 代码生成
-
-统一入口：`scripts/proto-gen.sh`（生成 Go/Python/grounding）与
-`scripts/proto-check.sh`（buf lint/breaking + 生成零漂移校验）。手动命令如下：
+### CI 接入示例
 
 ```bash
-# Go（scheduler/gen/）
-protoc -I proto --go_out=scheduler/gen --go_opt=module=github.com/testpilot/testpilot/gen \
-  --go-grpc_out=scheduler/gen --go-grpc_opt=module=github.com/testpilot/testpilot/gen \
-  proto/testpilot/common/v1/types.proto proto/testpilot/worker/v1/worker.proto \
-  proto/testpilot/copilot/v1/copilot.proto
+# 1. 在管理台「API Token」创建机器凭证（原始 token 只显示一次）
+TOKEN="tp_..."
 
-# Python（worker/src/）
-cd worker && venv/bin/python -m grpc_tools.protoc -I ../proto \
-  --python_out=src --pyi_out=src --grpc_python_out=src \
-  ../proto/testpilot/common/v1/types.proto ../proto/testpilot/worker/v1/worker.proto \
-  ../proto/testpilot/copilot/v1/copilot.proto
+# 2. 触发计划运行
+curl -s -X POST http://localhost:8080/api/v1/plans/<plan_id>/run \
+  -H "Authorization: Bearer $TOKEN"
+
+# 3. 运行结束后下载 JUnit 报告
+curl -s -o junit.xml http://localhost:8080/api/v1/runs/<run_id>/junit \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-## 启动配置（YAML / 环境变量 / 命令行）
+也可以配置通知渠道订阅 `run_finished`，webhook payload 中包含 `status` / `summary` /
+`junit_url`，CI 无需轮询即可按事件拉取报告。
 
-三个服务统一三级覆盖：**显式 CLI flag > 环境变量 > YAML 配置文件 > 内置默认**
-（Copilot 在 env 与 YAML 之间多一层 `.env`）。
-YAML 路径：`--config` 指定 > `TP_CONFIG` / `TP_WORKER_CONFIG` / `TP_COPILOT_CONFIG` >
-当前目录 `<service>.yaml` 自动发现。键名 = flag 的 snake_case 形态
-（`--http-addr` ↔ `http_addr` ↔ `TP_HTTP_ADDR`）。逐键注释示例见
-`deploy/scheduler.yaml.example` / `worker.yaml.example` / `copilot.yaml.example`。
+### 配置
+
+三个服务统一三级配置：CLI flag > 环境变量 > YAML 文件；逐键注释模板见
+`deploy/scheduler.yaml.example` / `deploy/worker.yaml.example` / `deploy/copilot.yaml.example`。
+生产环境变量与安全清单见 `docs/deployment.md`。
+
+### 完整文档
+
+| 文档 | 内容 |
+|---|---|
+| `docs/design.md` | 总体架构与设计决策 |
+| `docs/data-model.md` | 数据模型与 33 张表 |
+| `docs/usage.md` | 用例、调度、通知、Copilot、压测、CI 操作手册 |
+| `docs/api.md` | REST API 参考 |
+| `docs/deployment.md` | 部署、数据库、制品存储、可观测性与安全清单 |
+| `docs/ci-migration-plan.md` | 迁移版本化、JUnit/Webhook、API Token、proto 治理与 CI/CD |
+| `docs/lowcode-api-invocation.md` | 低代码按接口 ID 调用与自动封装设计 |
+| `docs/roadmap.md` | 阶段路线图、风险登记与另议项 |
+| `docs/error-codes.md` | 错误码注册表 |
+
+## 开发
+
+### 目录结构
+
+```text
+scheduler/   Go：领域模型、REST/gRPC、调度、迁移、通知、制品
+worker/      Python：执行引擎、低代码 SDK、沙箱、Playwright、压测
+copilot/     Python：FastAPI + pydantic-ai Agent 与工具集
+web/         React：控制台前端
+proto/       protobuf 单一契约（common / worker / copilot）
+deploy/      Dockerfile、compose 与 YAML 模板
+docs/        设计、数据模型、使用、部署、API 文档
+scripts/     dev、e2e、proto 生成/校验等脚本
+```
+
+### 测试与构建
 
 ```bash
-scheduler --config scheduler.yaml          # 或全 flag：scheduler --http-addr :8080 --jwt-secret xxx
-testpilot-worker --scheduler 127.0.0.1:9090 --capabilities functional,lowcode,playwright \
-  --tags region=local --max-concurrency 4 --tenant-id 0
-testpilot-copilot --http-addr 0.0.0.0:8100 --model deepseek-v4-flash   # api_key 不走 CLI（进程列表可见）
+# Scheduler
+cd scheduler && go test ./...
+
+# Worker
+cd worker && venv/bin/python -m pytest -q -W error::pytest.PytestUnraisableExceptionWarning
+
+# Copilot
+cd copilot && venv/bin/python -m pytest -q
+
+# 前端
+cd web && pnpm lint && pnpm build
 ```
 
-## 环境变量（Scheduler）
+### proto 契约治理
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `TP_HTTP_ADDR` | `:8080` | REST + 前端托管 |
-| `TP_GRPC_ADDR` | `:9090` | gRPC（Worker/Copilot） |
-| `TP_STATIC_DIR` | 空 | 前端 dist 目录（空则不托管） |
-| `TP_DB_PATH` | `testpilot.db` | SQLite 文件 |
-| `TP_DB_DSN` | 空 | 非空切 PostgreSQL（`postgres://user:pass@host:5432/db?sslmode=disable`），优先于 TP_DB_PATH |
-| `TP_DB_MAX_OPEN_CONNS` / `TP_DB_MAX_IDLE_CONNS` / `TP_DB_CONN_MAX_LIFETIME_MIN` | `0` | 连接池（0=驱动默认；PG 生产建议 20/5/30） |
-| `TP_JWT_SECRET` | `dev-secret-change-me` | JWT 签名密钥（生产必改） |
-| `TP_JWT_EXPIRE_HOURS` | `24` | 令牌有效期 |
-| `TP_SNOWFLAKE_NODE` | `1` | 雪花 ID 节点号（0-1023）；多 Scheduler 实例必须各不相同 |
-| `TP_REGISTRATION_ENABLED` | `false` | 公开注册开关（`POST /auth/register`：注册即自建租户，创建者为 owner） |
-| `TP_LOG_LEVEL` | `info` | debug/info/warn/error |
-| `TP_LOG_FORMAT` | `text` | `json` = 生产格式日志 |
-| `TP_ARTIFACT_DIR` | `.data/artifacts` | 产物根目录（Worker 与 Scheduler 须一致；s3 后端下为暂存目录） |
-| `TP_ARTIFACT_BACKEND` | `local` | 产物后端：`local` 本地目录 / `s3` 对象存储 |
-| `TP_S3_ENDPOINT` / `TP_S3_BUCKET` / `TP_S3_ACCESS_KEY` / `TP_S3_SECRET_KEY` | 空 | S3 兼容端点与桶（OSS 端点形如 `https://s3.oss-cn-shanghai.aliyuncs.com`；AK/SK 仅 env/YAML，不走 CLI） |
-| `TP_S3_REGION` / `TP_S3_PREFIX` / `TP_S3_USE_SSL` / `TP_S3_PATH_STYLE` | 空/空/`true`/`false` | 地域、对象键前缀、TLS、path-style 寻址（私有 MinIO 用） |
-| `TP_RETENTION_RUN_DAYS` | `0` | 运行数据保留天数（0=永久；>0 时级联清理） |
-| `TP_RETENTION_INTERVAL_MIN` | `60` | 保留清理轮询间隔 |
-| `TP_COPILOT_TRASH_RETENTION_DAYS` | `30` | Copilot 回收站保留天数（0=不自动清理；每天清理一次） |
-| `TP_BODY_LIMIT_MB` | `64` | 请求体上限（OpenAPI 导入需要较大值） |
-| `TP_READ_TIMEOUT_SEC` / `TP_WRITE_TIMEOUT_SEC` / `TP_IDLE_TIMEOUT_SEC` | `0` | HTTP 超时（0=不限） |
-| `TP_OTEL_EXPORTER` | 空 | 空=关 / `stdout` 调试 / `otlp`（配 `TP_OTEL_ENDPOINT`，默认 127.0.0.1:4317） |
-| `TP_COPILOT_URL` | `http://127.0.0.1:8100` | `/copilot-api/*` 反代目标（生产前端 SSE 入口收敛到 :8080；空=关闭） |
+- proto 位于 `proto/`，是 Go / Python / Copilot 三方的单一事实源。
+- 生成入口：`scripts/proto-gen.sh`（Go gRPC + Python gRPC + Copilot grounding）。
+- 校验入口：`scripts/proto-check.sh`（`buf lint` / `buf breaking` + 生成零漂移检查）。
+- 生成产物随仓库提交以支持离线构建，修改 proto 后必须同步提交生成结果。
 
-Worker 可用键（YAML 键同名 snake_case；env：基础项带 `TP_WORKER_` 前缀——
-`TP_WORKER_SCHEDULER` / `TP_WORKER_CAPABILITIES` / `TP_WORKER_MAX_CONCURRENCY` 等，
-产物/egress/沙箱/链路沿用文档化旧键 `TP_ARTIFACT_DIR` / `TP_EGRESS_*` / `TP_SANDBOX_*` /
-`TP_OTEL_*`，与沙箱子进程继承约定一致）：
-`scheduler` `name` `capabilities` `tags` `max_concurrency` `tenant_id` `log_level`
-`artifact_dir` `egress_allow` `egress_block_private` `sandbox_*`（cpu/mem_mb/nproc/nofile/fsize_mb/net）
-`otel_exporter` `otel_endpoint`。
+### 数据库迁移
 
-Worker 出口控制（SSRF）：`TP_EGRESS_ALLOW`（逗号分隔 host 白名单，支持 `.后缀`；空=不限）、
-`TP_EGRESS_BLOCK_PRIVATE=1`（解析目标后拦截私网/环回/链路本地地址）。
+- 迁移记录表 `schema_migrations`；`v1` = 当前 GORM AutoMigrate 基线。
+- 新增迁移：在 `scheduler/internal/migrate/migrate.go` 注册下一版本，同时提供
+  SQLite / PostgreSQL 两版幂等 SQL，并补充存量库与新库测试。
+- 详细约定见 `docs/ci-migration-plan.md`。
 
-沙箱限额（Worker 环境变量）：`TP_SANDBOX_CPU`(30s) `TP_SANDBOX_MEM_MB`(1024)
-`TP_SANDBOX_NPROC`(128) `TP_SANDBOX_NOFILE`(128) `TP_SANDBOX_FSIZE_MB`(32)
-`TP_SANDBOX_NET`(deny/allow)
+### CI / CD
 
-## REST 一览（`/api/v1`，除 login 外均需 `Authorization: Bearer`）
+- `.github/workflows/ci.yml`：proto 治理 + Scheduler / Worker / Copilot 测试 + 前端构建。
+- `.github/workflows/cd.yml`：`v*` tag 触发，构建并推送 Scheduler / Worker / Copilot 镜像到 `ghcr.io`。
 
-```
-POST /auth/login            GET  /me
-POST /auth/register         POST /auth/switch-tenant   # register 公开注册（开关控制）
-POST /tenants          # 自助建租户（创建者为 owner）
-GET|POST /projects          GET|PUT|DELETE /projects/{id}
-GET|POST /environments      PUT|DELETE /environments/{id}
-GET|POST /variables         PUT|DELETE /variables/{id}
-GET|POST /apis              GET|PUT|DELETE /apis/{id}
-GET|POST /grpc-apis         GET|PUT|DELETE /grpc-apis/{id}   # gRPC 接口
-GET|POST /proto-files       GET|DELETE /proto-files/{id}     # proto 源文件资产
-GET|POST /cases             GET|PUT|DELETE /cases/{id}
-GET|POST /suites            GET|PUT|DELETE /suites/{id}      # 套件（case_ids 有序）
-GET|POST /scripts           GET|PUT|DELETE /scripts/{id}     # 低代码脚本资产
-GET|POST /plans             GET|PUT|DELETE /plans/{id}
-POST /plans/{id}/run        GET  /runs  GET /runs/{id}
-POST /import/openapi        POST /import/curl   POST /import/postman
-GET  /export/openapi?project_id=   GET /export/curl?project_id=
-GET  /export/postman?project_id=
-GET  /workers               GET  /artifacts/{id}/content
-GET|POST /stress-plans      GET|PUT|DELETE /stress-plans/{id}
-POST /stress-plans/{id}/run GET  /stress-runs  GET /stress-runs/{id}
-GET  /copilot/sessions      POST /copilot/sessions   DELETE /copilot/sessions/{id}
-GET|POST /copilot/sessions/{id}/messages
-GET  /copilot/trash         DELETE /copilot/trash/{id}  # 回收站列表 / 彻底删除
-GET /audit-logs
-# 租户治理（admin+）
-GET|POST /tenant/members    PUT|DELETE /tenant/members/{userID}
-GET  /tenant/quotas         PUT  /tenant/quotas/{metric}
-GET  /tenant/settings       PUT|DELETE /tenant/settings/{key}   # 租户配置开关表
-GET|POST /schedules         PUT|DELETE /schedules/{id}
-GET|POST /notifications     PUT|DELETE /notifications/{id}
-GET|POST /identity-providers  PUT|DELETE /identity-providers/{id}
-# OIDC 登录链路（公开，无需 token）
-GET  /auth/oidc/providers   GET  /auth/oidc/{id}/login  GET /auth/oidc/{id}/callback
-```
+## License
 
-Copilot 服务自身（:8100）：`POST /api/chat`（Vercel AI SSE，需 `Authorization: Bearer <scheduler token>`，
-可选 `X-Session-Id` 续会话）+ `GET /api/healthz`。
+TestPilot 采用双重授权：
 
-## 环境变量（Copilot）
+- **AGPL-3.0**：开源使用，完整条款见 [LICENSE](LICENSE)。
+- **Commercial License**：闭源 / 商业托管 / 不承担 AGPL 义务的场景，条款草案见
+  [COMMERCIAL_LICENSE.md](COMMERCIAL_LICENSE.md)（中文）与
+  [COMMERCIAL_LICENSE_EN.md](COMMERCIAL_LICENSE_EN.md)（英文）。
 
-| 变量 | 默认 | 说明 |
-|---|---|---|
-| `TP_COPILOT_PROVIDER` | `deepseek` | Provider 注册表 key：`deepseek` / `openai_compatible` |
-| `TP_COPILOT_API_KEY` | 无 | LLM 密钥（只放 `copilot/.env` 或环境变量，勿提交） |
-| `TP_COPILOT_BASE_URL` | 空 | 空 = Provider 默认端点（deepseek → api.deepseek.com） |
-| `TP_COPILOT_MODEL` | `deepseek-v4-flash` | 主模型 |
-| `TP_COPILOT_SUMMARIZER_MODEL` | 同主模型 | 上下文压缩摘要器 |
-| `TP_COPILOT_SYSTEM_PROMPT_FILE` | 空 | 主 Agent 提示词模板路径；空=包内置 `prompts/system.md`，支持 `{{schema}}` / `{{sdk_doc}}` 占位符 |
-| `TP_COPILOT_SUMMARIZER_PROMPT_FILE` | 空 | 摘要器提示词路径；空=包内置 `prompts/summarizer.md` |
-| `TP_COPILOT_CONTEXT_WINDOW` | `64000` | 压缩阈值基准（fraction 0.7 触发） |
-| `TP_SCHEDULER_GRPC` | `127.0.0.1:9090` | CopilotToolService |
-| `TP_SCHEDULER_REST` | `http://127.0.0.1:8080` | 会话持久化 / /me 解析 |
-| `TP_COPILOT_ADDR` | `0.0.0.0:8100` | 对外 SSE 服务 |
-| `TP_COPILOT_HTTP_TIMEOUT` | `15` | 调 Scheduler REST 超时（秒） |
-| `TP_OTEL_EXPORTER` / `TP_OTEL_ENDPOINT` | 空 / `127.0.0.1:4317` | 链路（与 Scheduler/Worker 同键，分进程互不影响） |
-
-## MVP 边界（未含）
-
-- API Token：管理台可颁发/撤销 CI 凭证（`tp_` 前缀，库中仅存哈希）；scopes 细粒度裁剪与独立 CLI 仍属另议项
-- JUnit XML 报告与 CI Webhook 已可用（`/runs/:id/junit` + `run_finished` webhook）；独立 CLI 仍未实现
-- VictoriaMetrics：当前压测指标落 `stress_metric_points` 表，大规模部署可替换
-- Vault 密钥后端：当前使用敏感变量 + secret_ref + 审计脱敏替代
-- 证书管理已提供 CRUD，但 Worker 客户端证书执行（cert_ref 实际使用）与 Vault 绑定，另议
-- 接口 pre/post 脚本已执行，但 email 通知、计划级通知规则、项目 bundle 导出另议（详见 `docs/roadmap.md`）
+`SPDX-License-Identifier: AGPL-3.0-only OR Commercial`

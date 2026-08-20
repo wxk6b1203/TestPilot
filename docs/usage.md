@@ -1,6 +1,6 @@
 # TestPilot 使用指南
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
 
 ## 目录
 
@@ -13,8 +13,9 @@
 7. 配额
 8. OIDC 登录
 9. Copilot
-10. 压测
-11. 审计
+10. CI 集成（JUnit / Webhook / API Token）
+11. 压测
+12. 审计
 
 ---
 

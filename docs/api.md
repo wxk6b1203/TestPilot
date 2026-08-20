@@ -1,6 +1,6 @@
 # TestPilot REST API 参考
 
-> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [v2 特性](v2-features.md)
+> 📚 文档导航：[设计](design.md) · [数据模型](data-model.md) · [路线图](roadmap.md) · [使用指南](usage.md) · [部署](deployment.md) · [API 参考](api.md) · [错误码](error-codes.md) · [工程化](ci-migration-plan.md) · [低代码 ID 调用](lowcode-api-invocation.md) · [v2 特性存档](v2-features.md)
 
 ## 目录
 
@@ -11,7 +11,7 @@
 5. 压测
 6. 导入导出 / Worker
 7. Copilot 反代（不在 /api/v1 下）
-8. 定时调度 / 通知 / 配额 / 成员 / 身份源 / 审计
+8. 定时调度 / 通知 / 配额 / 成员 / API Token / 身份源 / 审计
 9. Copilot 会话持久化
 10. 其他端点（不在 /api/v1 下）
 
