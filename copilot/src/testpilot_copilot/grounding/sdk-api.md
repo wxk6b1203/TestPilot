@@ -50,21 +50,25 @@ async def run(ctx):
     await ctx.page.fill("#password", ctx.vars["pass"])
     await ctx.page.click("button[type=submit]")
     await ctx.page.wait_for(1000)                      # 固定等待，单位毫秒
+    await ctx.page.wait_for_selector(".welcome", timeout_ms=5000)  # 等待元素出现
     await ctx.page.expect_text(".welcome", "欢迎")       # 断言失败 → 用例失败
     await ctx.page.expect_visible(".logout")
+    await ctx.page.expect_hidden(".spinner")            # 断言元素隐藏/不存在
     await ctx.page.screenshot(full_page=True)
 ```
 - 可用方法：`goto(url)` / `click(selector)` / `fill(selector, value)` /
   `select(selector, value)` / `check(selector)` / `uncheck(selector)` /
   `hover(selector)` / `press(selector, key="Enter")`（selector="" 表示键盘按键）/
   `expect_text(selector, text)` / `expect_visible(selector)` /
-  `wait_for(milliseconds)` / `screenshot(full_page=True)`
-- `expect_text` / `expect_visible` 是断言，不匹配直接让脚本失败；`goto` 的相对 URL
-  以环境 base_url 解析，且与 HTTP 出口共用 SSRF/私网拦截策略
+  `expect_hidden(selector)` / `wait_for(milliseconds)` /
+  `wait_for_selector(selector, timeout_ms=10000)` /
+  `download(selector, name=None)` / `screenshot(full_page=True)`
+- `expect_text` / `expect_visible` / `expect_hidden` 是断言，不匹配直接让脚本失败；
+  `goto` 的相对 URL 以环境 base_url 解析，且与 HTTP 出口共用 SSRF/私网拦截策略
 - 低代码桥**不渲染 `{{...}}` 模板**：脚本内请直接用 Python 表达式 `ctx.vars["k"]` /
   `ctx.parameters["k"]`，不要写 `{{vars.k}}` 字符串
 - 沙箱内没有 Playwright 包：禁止 `from playwright...`，浏览器只能经 `ctx.page` 驱动
-- UI 步骤失败时自动截屏，trace.zip / network.har 随报告产物返回
+- 截图、UI 操作失败时的现场截图与 trace.zip / network.har 都会挂到用例步骤结果
 
 ## assert_that(actual, label="") — 链式断言（失败即 fail-fast，结果入报告）
 `.eq(v) .ne(v) .gt(n) .ge(n) .lt(n) .le(n) .contains(x) .matches(regex) .exists() .type_is("object|array|string|number|boolean|null")`

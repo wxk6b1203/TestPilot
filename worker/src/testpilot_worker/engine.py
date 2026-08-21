@@ -596,6 +596,7 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
     case_rel = f"{task.run_id}/{task.functional.case_result_id}"
     ui_session: ui.UiSession | None = None
     bridge_artifacts: list[ui.UiArtifact] = []
+    ui_logs: list[str] = []
 
     def get_session() -> ui.UiSession:
         nonlocal ui_session
@@ -607,6 +608,29 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
                 render=lambda s: s,  # 低代码脚本自行渲染，桥不处理模板
             )
         return ui_session
+
+    async def handle_ui_action(args: dict) -> dict:
+        """包装 ui_action 桥：与声明式 UI_ACTION 一致地采集步骤日志/截图产物，
+        并在浏览器操作失败时立即保存现场截图（不掩盖原始错误）。"""
+        try:
+            out = await ui.bridge_ui_handler(get_session)(args)
+        except Exception:
+            try:
+                bridge_artifacts.extend(await get_session().failure_screenshot())
+            except Exception as e:  # 现场截图失败不能吞掉原始错误
+                logging.getLogger(__name__).warning(
+                    "lowcode ui failure screenshot failed: %s", e)
+            raise
+        ui_logs.extend(str(x) for x in out.get("logs") or [])
+        for item in out.get("artifacts") or []:
+            try:
+                bridge_artifacts.append(ui.UiArtifact(
+                    kind=str(item.get("kind") or "artifact"),
+                    uri=str(item.get("uri") or ""),
+                    size=int(item.get("size") or 0)))
+            except (AttributeError, TypeError, ValueError):
+                continue
+        return out
 
     timeout = min(task.timeout.ToSeconds() or 120, 300)
     caller = lowcode_api.LowCodeApiCaller(
@@ -620,7 +644,7 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
     try:
         backend: ExecutionBackend = SubprocessBackend(
             lambda args: bridge_http_handler(caller.client, base_url, args, auto_headers),
-            extra_ops={"ui_action": ui.bridge_ui_handler(get_session)},
+            extra_ops={"ui_action": handle_ui_action},
             api_handler=caller.handle,
             grpc_handler=caller.raw_grpc)
         res = await backend.run(lc.source, lc.entry or "run", payload, timeout,
@@ -646,6 +670,8 @@ async def _run_lowcode(task: wpb.TaskAssignment) -> tuple[int, str, int, list[pb
     logs = list(res.logs or [])
     if caller.logs:
         logs = list(caller.logs[-200:]) + logs
+    if ui_logs:
+        logs.extend(ui_logs[-200:])
     if logs:
         sr.logs.extend(logs[-500:])
     sr.assertions.extend(_sdk_assertions(res.assertions))

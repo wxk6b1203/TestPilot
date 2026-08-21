@@ -442,6 +442,7 @@ _UI_ACTION_ENUM = {
     "hover": pb.UI_ACTION_HOVER, "press": pb.UI_ACTION_PRESS,
     "expect_text": pb.UI_ACTION_EXPECT_TEXT, "expect_visible": pb.UI_ACTION_EXPECT_VISIBLE,
     "screenshot": pb.UI_ACTION_SCREENSHOT, "wait": pb.UI_ACTION_WAIT,
+    "download": pb.UI_ACTION_DOWNLOAD,
 }
 # 每个 action 必填字段；wait 的 value 统一为毫秒（低代码生成器转为 ctx.page.wait_for，
 # 声明式生成器转为 UI_ACTION_WAIT 的秒）。
@@ -458,11 +459,15 @@ _UI_STEP_REQUIRED: dict[str, tuple[str, ...]] = {
     "expect_visible": ("target",),
     "wait": ("value",),
     "screenshot": (),
+    "download": ("target",),
 }
 # 低代码桥不渲染模板（与声明式引擎不同），生成器把 {{vars.x}} / {{parameters.x}}
 # 转为 ctx.vars / ctx.parameters 访问；其余平台模板语法保持不变。
 _TEMPLATE_RE = re.compile(
     r"\{\{\s*(vars|parameters)\s*\.\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\}\}")
+# 用于找出任意 {{...}}：识别不了（表达式/索引等）就明确报错，绝不把模板字面量
+# 静默写进低代码脚本（否则运行时既不渲染也不会报语法错，断言/输入会得到错误值）。
+_ANY_TEMPLATE_RE = re.compile(r"\{\{.*?\}\}", re.S)
 
 
 def _normalize_ui_steps(steps: Any) -> list[dict[str, Any]]:
@@ -502,9 +507,21 @@ def _py_path_expr(root: str, path: str) -> str:
     return f"ctx.{root}[" + "][".join(json.dumps(p, ensure_ascii=False) for p in parts) + "]"
 
 
+def _validate_lowcode_templates(text: str) -> None:
+    """低代码只支持点路径模板；其他表达式模板直接报错，避免把未渲染的
+    `{{...}}` 字面量静默写进脚本（运行时不报语法错，但值一定不对）。"""
+    for m in _ANY_TEMPLATE_RE.finditer(text):
+        if _TEMPLATE_RE.fullmatch(m.group(0)) is None:
+            raise ValueError(
+                "lowcode 模式仅支持 {{vars.a.b}} / {{parameters.a.b}} 模板，"
+                f"无法转换表达式模板 {m.group(0)!r}；请改用 ctx.vars / ctx.parameters "
+                "Python 表达式，或选择 declarative 模式")
+
+
 def _lowcode_text(value: Any) -> str:
     """字符串参数 → Python 表达式；纯文本用 JSON 双引号字面量，含 {{vars.x}} 模板时转为拼接式。"""
     text = str(value)
+    _validate_lowcode_templates(text)
     if not _TEMPLATE_RE.search(text):
         return json.dumps(text, ensure_ascii=False)
     pieces: list[str] = []
@@ -523,6 +540,7 @@ def _lowcode_text(value: Any) -> str:
 
 def _lowcode_wait_ms(value: Any) -> str:
     text = str(value).strip()
+    _validate_lowcode_templates(text)
     m = _TEMPLATE_RE.fullmatch(text)
     if m:
         return f"int({_py_path_expr(m.group(1), m.group(2))})"
@@ -536,9 +554,13 @@ def render_lowcode_ui_source(start_url: str, steps: Any) -> str:
     """把 UI 步骤渲染为 lowcode case_type 的 Python 源码（仅使用 ctx.page）。"""
     if not str(start_url).strip():
         raise ValueError("start_url 不能为空")
-    lines = ["from testpilot_sdk import Context", "", "", "async def run(ctx):",
-             f"    await ctx.page.goto({_lowcode_text(start_url)})"]
-    for s in _normalize_ui_steps(steps):
+    normalized = _normalize_ui_steps(steps)
+    lines = ["from testpilot_sdk import Context", "", "", "async def run(ctx):"]
+    # LLM 常把 start_url 同时作为首个 goto 步骤；与首步完全相同时不重复导航。
+    if not (normalized and normalized[0]["action"] == "goto"
+            and normalized[0]["target"] == str(start_url).strip()):
+        lines.append(f"    await ctx.page.goto({_lowcode_text(start_url)})")
+    for s in normalized:
         action = s["action"]
         target = _lowcode_text(s["target"]) if s["target"] else '""'
         value = s["value"]
@@ -562,15 +584,23 @@ def render_lowcode_ui_source(start_url: str, steps: Any) -> str:
             lines.append(
                 f"    await ctx.page.expect_text({target}, {_lowcode_text(value)})")
         elif action == "expect_visible":
-            lines.append(f"    await ctx.page.expect_visible({target})")
+            hidden = str(value or "").strip().lower() in ("hidden", "false", "0")
+            method = "expect_hidden" if hidden else "expect_visible"
+            lines.append(f"    await ctx.page.{method}({target})")
         elif action == "wait":
+            wait_ms = _lowcode_wait_ms(value)
             if s["target"]:
-                raise ValueError(
-                    "lowcode 模式 wait 仅支持固定毫秒，不支持等待 selector；"
-                    "等待元素请使用 expect_visible 或改用 declarative 模式")
-            lines.append(f"    await ctx.page.wait_for({_lowcode_wait_ms(value)})")
+                lines.append(
+                    f"    await ctx.page.wait_for_selector({target}, "
+                    f"timeout_ms={wait_ms})")
+            else:
+                lines.append(f"    await ctx.page.wait_for({wait_ms})")
         elif action == "screenshot":
             lines.append(f"    await ctx.page.screenshot(full_page={s['full_page']!r})")
+        elif action == "download":
+            name = ("" if value in (None, "")
+                    else f", name={_lowcode_text(value)}")
+            lines.append(f"    await ctx.page.download({target}{name})")
         else:  # 防御：_normalize_ui_steps 已校验，不会到这里
             raise ValueError(f"unknown ui action: {action}")
     lines.append("")
@@ -612,13 +642,17 @@ def build_declarative_ui_case(start_url: str, steps: Any) -> pb.DeclarativeCase:
     """把 UI 步骤渲染为声明式用例：首个 UI_ACTION GOTO + 后续 UI_ACTION 步骤。"""
     if not str(start_url).strip():
         raise ValueError("start_url 不能为空")
+    normalized = _normalize_ui_steps(steps)
     dc = pb.DeclarativeCase()
-    first = dc.steps.add()
-    first.type = pb.STEP_TYPE_UI_ACTION
-    first.name = "打开页面"
-    first.ui_action.action = pb.UI_ACTION_GOTO
-    first.ui_action.target = str(start_url)
-    for s in _normalize_ui_steps(steps):
+    # LLM 常把 start_url 同时作为首个 goto 步骤；与首步完全相同时不重复导航。
+    if not (normalized and normalized[0]["action"] == "goto"
+            and normalized[0]["target"] == str(start_url).strip()):
+        first = dc.steps.add()
+        first.type = pb.STEP_TYPE_UI_ACTION
+        first.name = "打开页面"
+        first.ui_action.action = pb.UI_ACTION_GOTO
+        first.ui_action.target = str(start_url)
+    for s in normalized:
         step = dc.steps.add()
         step.type = pb.STEP_TYPE_UI_ACTION
         action = s["action"]
@@ -634,28 +668,40 @@ async def create_ui_test_case(ctx: RunContext[CopilotDeps], name: str,
                               start_url: str, steps: list[dict],
                               project_id: str | None = None,
                               description: str = "",
-                              case_type: str = "declarative") -> dict:
+                              case_type: str = "declarative",
+                              parameters: dict | None = None) -> dict:
     """创建 Playwright UI 测试用例（写操作，需审批）。
 
     start_url：打开页面的 URL；相对路径（如 /login）基于运行环境 base_url。
     steps：有序 UI 动作数组，每个元素 {"action": ..., "target": "...", "value": "..."}。
     支持动作：goto/click/fill/select/check/uncheck/hover/press/expect_text/
-    expect_visible/wait/screenshot。
+    expect_visible/wait/screenshot/download。
     - target 为 Playwright locator（CSS 或 XPath），fill/select 等还需 value；
-    - wait 的 value 是毫秒整数（如 1000）；screenshot 可用 "full_page": false；
-    - target/value 中可写 {{vars.xxx}} / {{parameters.xxx}} 引用运行时变量。
+    - wait 的 value 是毫秒整数（如 1000）；wait 带 target 时表示等待 selector；
+    - expect_visible 的 value 为 "hidden"/"false"/"0" 时断言元素不可见；
+    - download 的 value 可选：保存文件名（不带 value 时使用响应头文件名）；
+    - screenshot 可用 "full_page": false；
+    - target/value 中可写 {{vars.xxx}} 引用环境变量；{{parameters.xxx}} 仅
+      lowcode 模式可用（默认值放在 parameters 参数，脚本经 ctx.parameters 读取）；
+      lowcode 模式仅支持点路径模板（如 {{vars.user.name}}），复杂表达式请
+      用 ctx.vars / ctx.parameters 编写，或改用 declarative 模式。
     case_type：declarative（默认，生成可视化 UI_ACTION 步骤树）或
     lowcode（生成 ctx.page Python 脚本，流程含循环/条件/复杂变量时选用）。
+    parameters：可选对象；case_type=lowcode 时写入 LowCodeCase.parameters
+    （脚本中 ctx.parameters 的默认值），declarative 模式不使用。
     project_id 省略时使用页面左上角当前选择的项目。"""
     pid = ctx.deps.resolve_project_id(project_id)
     case = pb.TestCase(name=name, description=description, created_by="copilot")
-    if case_type == "lowcode":
+    kind = str(case_type or "declarative").strip().lower()
+    if kind == "lowcode":
         case.type = pb.TEST_CASE_TYPE_LOWCODE
         lc = pb.LowCodeCase()
         lc.source = render_lowcode_ui_source(start_url, steps)
         lc.entry = "run"
+        if parameters:
+            lc.parameters.update(parameters)
         case.lowcode.CopyFrom(lc)
-    elif case_type == "declarative":
+    elif kind == "declarative":
         case.type = pb.TEST_CASE_TYPE_DECLARATIVE
         case.declarative.CopyFrom(build_declarative_ui_case(start_url, steps))
     else:

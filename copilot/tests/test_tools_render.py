@@ -508,9 +508,45 @@ def test_render_lowcode_ui_source_rejects_bad_steps():
         render_lowcode_ui_source("/login", [{"action": "fill", "target": "#x"}])
     with pytest.raises(ValueError, match="毫秒整数"):
         render_lowcode_ui_source("/login", [{"action": "wait", "value": "1.5"}])
-    with pytest.raises(ValueError, match="不支持等待 selector"):
-        render_lowcode_ui_source(
-            "/login", [{"action": "wait", "target": "#x", "value": 1000}])
+    with pytest.raises(ValueError, match="无法转换表达式模板"):
+        render_lowcode_ui_source("/login", [
+            {"action": "wait", "value": "{{parameters.wait_ms / 1000}}"}])
+    with pytest.raises(ValueError, match="无法转换表达式模板"):
+        render_lowcode_ui_source("/login", [
+            {"action": "fill", "target": "#x", "value": "前缀 {{vars.items[0]}}"}])
+
+
+def test_render_lowcode_ui_source_hidden_and_selector_wait():
+    src = render_lowcode_ui_source("/login", [
+        {"action": "wait", "target": "#form", "value": 1500},
+        {"action": "expect_visible", "target": ".spinner", "value": "hidden"},
+        {"action": "download", "target": "#export", "value": "report.csv"},
+    ])
+    assert 'await ctx.page.wait_for_selector("#form", timeout_ms=1500)' in src
+    assert 'await ctx.page.expect_hidden(".spinner")' in src
+    assert 'await ctx.page.download("#export", name="report.csv")' in src
+    compile(src, "<ui-case>", "exec")
+
+
+def test_render_lowcode_ui_source_skips_duplicate_start_goto():
+    src = render_lowcode_ui_source("/login", [
+        {"action": "goto", "target": "/login"},
+        {"action": "click", "target": "#submit"},
+    ])
+    assert src.count("ctx.page.goto") == 1
+    assert 'await ctx.page.goto("/login")' in src
+    assert 'await ctx.page.click("#submit")' in src
+    compile(src, "<ui-case>", "exec")
+
+
+def test_build_declarative_ui_case_skips_duplicate_start_goto():
+    dc = build_declarative_ui_case("/login", [
+        {"action": "goto", "target": "/login"},
+        {"action": "click", "target": "#submit"},
+    ])
+    assert len(dc.steps) == 2  # goto + click，不再重复 start_url 导航
+    assert dc.steps[0].ui_action.action == pb.UI_ACTION_GOTO
+    assert dc.steps[1].ui_action.action == pb.UI_ACTION_CLICK
 
 
 def test_build_declarative_ui_case_steps_and_units():
@@ -571,12 +607,24 @@ def test_create_ui_test_case_builds_lowcode_request():
     asyncio.run(create_ui_test_case(
         SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p8")),
         name="登录脚本", start_url="/login", steps=_LOGIN_STEPS,
-        case_type="lowcode"))
+        case_type="lowcode", parameters={"wait_ms": 1500, "host": "https://example.com"}))
     req = stub.requests[0][1]
     assert req.case.type == pb.TEST_CASE_TYPE_LOWCODE
     assert req.case.lowcode.entry == "run"
+    assert req.case.lowcode.parameters["wait_ms"] == 1500
+    assert req.case.lowcode.parameters["host"] == "https://example.com"
     assert 'ctx.page.goto("/login")' in req.case.lowcode.source
     assert 'ctx.vars["username"]' in req.case.lowcode.source
+
+
+def test_create_ui_test_case_case_type_is_normalized():
+    stub = _RecordingStub(cpb.CreateTestCaseResponse())
+    asyncio.run(create_ui_test_case(
+        SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p10")),
+        name="登录脚本", start_url="/login", steps=[{"action": "click", "target": "#x"}],
+        case_type=" LOWCODE "))
+    req = stub.requests[0][1]
+    assert req.case.type == pb.TEST_CASE_TYPE_LOWCODE
 
 
 def test_build_declarative_ui_case_wait_template_converts_ms_to_seconds():

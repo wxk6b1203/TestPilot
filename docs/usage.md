@@ -147,9 +147,15 @@ async def run(ctx: Context):
     await page.goto("/form")
     await page.fill("#username", "neo")
     await page.click("#login-btn")
+    await page.wait_for_selector("#result", timeout_ms=5000)  # 等待元素出现
     await page.expect_text("#result", "Welcome, neo!")   # 不匹配 → 用例失败
     await page.screenshot()                               # 截图/trace/har 挂到步骤结果
 ```
+
+Page 方法除 `goto/click/fill/select/check/uncheck/hover/press` 外，还包括
+`expect_text/expect_visible/expect_hidden` 断言、`wait_for(ms)` 固定等待、
+`wait_for_selector(selector, timeout_ms)` 与 `download(selector, name)`；
+SDK 中所有等待单位统一为毫秒。
 
 ## UI 用例（Playwright）
 
@@ -208,10 +214,11 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 **Playwright UI 用例生成**：在 Copilot 页描述页面流程（如「打开 /login，输入
 {{vars.username}}，点击登录按钮，断言出现欢迎语」），Copilot 会调用
 `create_ui_test_case` 生成用例。支持动作 goto / click / fill / select / check /
-uncheck / hover / press / expect_text / expect_visible / wait / screenshot；
-`start_url` 相对路径基于环境 base_url。默认生成**声明式 UI_ACTION 步骤树**（可在
-用例页继续可视化编辑）；流程包含循环/条件/复杂变量时 Copilot 会选择
-`case_type=lowcode` 生成 `ctx.page` Python 脚本。两者均需 HITL 审批。
+uncheck / hover / press / expect_text / expect_visible / wait / screenshot /
+download；`start_url` 相对路径基于环境 base_url。默认生成**声明式 UI_ACTION
+步骤树**（可在用例页继续可视化编辑）；流程包含循环/条件/复杂变量时 Copilot
+会选择 `case_type=lowcode` 生成 `ctx.page` Python 脚本，并可用 `parameters`
+参数写入 `ctx.parameters` 默认值。两者均需 HITL 审批。
 
 写操作需 HITL 审批（前端按钮）；全部工具调用经 Scheduler gRPC 落审计（actor=copilot）。
 API：`POST :8100/api/chat`（Vercel AI SSE），需 Scheduler JWT。

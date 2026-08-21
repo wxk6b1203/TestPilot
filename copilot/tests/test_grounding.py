@@ -50,6 +50,7 @@ def test_grounding_sdk_documents_playwright_page_model():
     assert "## Page（Playwright UI 用例" in sdk_doc
     assert "ctx.page.fill" in sdk_doc
     assert "expect_text" in sdk_doc and "wait_for" in sdk_doc
+    assert "expect_hidden" in sdk_doc and "wait_for_selector" in sdk_doc
     # 防止 LLM 生成沙箱内不可用的 playwright import
     assert "禁止 `from playwright" in sdk_doc
 

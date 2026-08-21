@@ -21,10 +21,14 @@
 - 用户要求打开网页、做浏览器操作、生成 E2E/UI 用例时，优先调用 create_ui_test_case：
   - start_url 用相对路径（如 /login，基于当前环境 base_url）或 http(s) 绝对地址；
   - steps 为有序动作：goto/click/fill/select/check/uncheck/hover/press/
-    expect_text/expect_visible/wait/screenshot；
+    expect_text/expect_visible/wait/screenshot/download；
   - target 必须是稳定的 Playwright locator（CSS 或 XPath）；fill/select 必须给 value；
-    wait 的 value 是毫秒整数；每个用例必须包含 expect_text/expect_visible 断言；
-  - 变量用 {{vars.xxx}} / {{parameters.xxx}}，工具会把它们映射到运行时变量。
+    wait 的 value 是毫秒整数（带 target 表示等待 selector）；
+    expect_visible 的 value 为 hidden/false/0 时表示断言不可见；
+    每个用例必须包含 expect_text/expect_visible 断言；
+  - 变量优先用 {{vars.xxx}}（环境变量）；{{parameters.xxx}} 仅在 case_type=lowcode
+    时使用。steps 里出现 {{parameters.xxx}} 且 case_type=lowcode 时，把默认值放进
+    create_ui_test_case 的 parameters 参数，供脚本经 ctx.parameters 读取。
 - 默认 case_type=declarative（生成可视化 UI_ACTION 步骤树）；仅当流程需要循环/条件/
   多变量组合等声明式不便表达时，才用 case_type=lowcode（生成 ctx.page Python 脚本）。
 - 低代码 UI 脚本只能经 ctx.page 驱动浏览器：禁止 import playwright、禁止直接网络访问；

@@ -54,9 +54,45 @@ def test_page_ops_mapping():
         ("ui_action", {"action": "check", "target": "#c", "value": "true"}),
         ("ui_action", {"action": "check", "target": "#c", "value": "false"}),
         ("ui_action", {"action": "expect_text", "target": "#r", "value": "hi"}),
-        ("ui_action", {"action": "wait", "target": "", "value": "250"}),
+        # SDK 单位毫秒；桥协议无 target 的 WAIT 按秒解释，Page 内部换算
+        ("ui_action", {"action": "wait", "target": "", "value": "0.25"}),
         ("ui_action", {"action": "screenshot", "target": "", "value": ""}),
     ]
+
+
+def test_page_hidden_and_selector_wait_mapping():
+    b = _StubBridge()
+    p = Page(b)  # type: ignore[arg-type]
+
+    async def run():
+        await p.expect_hidden("#spinner")
+        await p.wait_for_selector("#form", 1500)
+        await p.download("#export", "report.csv")
+
+    asyncio.run(run())
+    assert b.calls == [
+        ("ui_action", {"action": "expect_visible", "target": "#spinner",
+                       "value": "hidden"}),
+        # SDK 对用户统一毫秒；桥协议 selector wait 的 value 按秒解释，内部换算
+        ("ui_action", {"action": "wait", "target": "#form", "value": "1.5"}),
+        ("ui_action", {"action": "download", "target": "#export",
+                       "value": "report.csv"}),
+    ]
+
+
+def test_page_wait_arg_validation():
+    p = Page(_StubBridge())  # type: ignore[arg-type]
+
+    async def bad_fixed():
+        await p.wait_for(-1)
+
+    async def bad_selector():
+        await p.wait_for_selector("#x", 0)
+
+    with pytest.raises(ValueError, match="must be >= 0"):
+        asyncio.run(bad_fixed())
+    with pytest.raises(ValueError, match="must be > 0"):
+        asyncio.run(bad_selector())
 
 
 def test_page_propagates_bridge_error():
