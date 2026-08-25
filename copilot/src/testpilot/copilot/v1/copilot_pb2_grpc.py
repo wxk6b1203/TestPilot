@@ -114,6 +114,11 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseResponse.FromString,
                 _registered_method=True)
+        self.UpdateTestCase = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/UpdateTestCase',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseResponse.FromString,
+                _registered_method=True)
         self.CreateTestPlan = channel.unary_unary(
                 '/testpilot.copilot.v1.CopilotToolService/CreateTestPlan',
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestPlanRequest.SerializeToString,
@@ -242,6 +247,12 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def UpdateTestCase(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CreateTestPlan(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -355,6 +366,11 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.CreateTestCase,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseResponse.SerializeToString,
+            ),
+            'UpdateTestCase': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateTestCase,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseResponse.SerializeToString,
             ),
             'CreateTestPlan': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateTestPlan,
@@ -814,6 +830,33 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/CreateTestCase',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateTestCaseResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateTestCase(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/UpdateTestCase',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateTestCaseResponse.FromString,
             options,
             channel_credentials,
             insecure,

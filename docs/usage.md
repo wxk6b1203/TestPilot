@@ -209,6 +209,7 @@ IdP → 回调签发本地 JWT。外部用户首次登录自动建档，默认 v
 有当前上下文提示条。
 新增工具：`create_project`（创建项目）、`query_api_directory`（接口目录问答）、
 `check_variable_refs`（检查接口/用例中的 `{{var}}` 引用是否已定义）、
+`update_api`（修改已有 HTTP/gRPC 接口）、`update_test_case`（修改已有用例）、
 `create_ui_test_case`（Playwright UI 用例生成）。
 
 **Playwright UI 用例生成**：在 Copilot 页描述页面流程（如「打开 /login，输入

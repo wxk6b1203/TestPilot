@@ -598,6 +598,67 @@ func (s *CopilotService) CreateTestCase(_ context.Context, req *copilotv1.Create
 	return &copilotv1.CreateTestCaseResponse{CaseId: idStr(m.ID)}, nil
 }
 
+func (s *CopilotService) UpdateTestCase(_ context.Context, req *copilotv1.UpdateTestCaseRequest) (*copilotv1.UpdateTestCaseResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	caseID := mustID(req.GetCaseId())
+	if caseID == 0 {
+		return nil, status.Error(codes.InvalidArgument, "case_id required")
+	}
+	c := req.GetCase()
+	if c == nil {
+		return nil, status.Error(codes.InvalidArgument, "case required")
+	}
+	tenant := tid(req.GetCtx())
+	var m model.TestCase
+	if err := s.db.Where("id = ? AND tenant_id = ?", caseID, tenant).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "case not found")
+	}
+	if c.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "case name required")
+	}
+	// Copilot 工具侧总是把当前 type 随合并后的完整定义传回；
+	// 显式不一致按错误处理，避免静默改变用例类型导致 definition 解析歧义。
+	if t := c.GetType(); t != commonv1.TestCaseType_TEST_CASE_TYPE_UNSPECIFIED &&
+		int16(t) != m.Type {
+		return nil, status.Error(codes.InvalidArgument,
+			"changing test case type is not supported; create a new case instead")
+	}
+	var raw []byte
+	switch d := c.GetDefinition().(type) {
+	case *commonv1.TestCase_Declarative:
+		if m.Type != int16(commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE) {
+			return nil, status.Error(codes.InvalidArgument, "definition kind does not match existing case type")
+		}
+		var err error
+		raw, err = protojson.Marshal(d.Declarative)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid declarative definition")
+		}
+	case *commonv1.TestCase_Lowcode:
+		if m.Type != int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE) {
+			return nil, status.Error(codes.InvalidArgument, "definition kind does not match existing case type")
+		}
+		var err error
+		raw, err = protojson.Marshal(d.Lowcode)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid lowcode definition")
+		}
+	default:
+		return nil, status.Error(codes.InvalidArgument, "case definition required")
+	}
+	m.Name = c.GetName()
+	m.Description = c.GetDescription()
+	m.Definition = model.JSON(raw)
+	if err := s.db.Save(&m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "update", "test_case", idStr(m.ID),
+		map[string]any{"name": m.Name, "type": m.Type})
+	return &copilotv1.UpdateTestCaseResponse{CaseId: idStr(m.ID)}, nil
+}
+
 func (s *CopilotService) CreateTestPlan(_ context.Context, req *copilotv1.CreateTestPlanRequest) (*copilotv1.CreateTestPlanResponse, error) {
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err

@@ -212,8 +212,9 @@ TestPilot 的 Copilot 基于 `pydantic-ai`，前端经 Vercel AI SDK 流式交�
   `list_test_cases`、`get_run`（含步骤明细）、`query_coverage`、
   `query_api_directory`、`check_variable_refs`、`get_current_context` 等。
 - **写 / 触发（必须 HITL 审批）**：`create_project`、`create_api`、
-  `create_grpc_api`、`create_test_case`、`create_test_plan`、`import_openapi`、
-  `apply_openapi_diff`、`trigger_run`、`trigger_stress` 等。
+  `update_api`、`create_grpc_api`、`create_test_case`、`update_test_case`、
+  `create_test_plan`、`import_openapi`、`apply_openapi_diff`、`trigger_run`、
+  `trigger_stress` 等。
 
 所有工具都经 Scheduler 的 gRPC 接口执行，请求带 `tenant_id + user_id` 上下文；
 因此**租户隔离、RBAC 和审计不是 Copilot 自己实现的，而是复用平台既有边界**。

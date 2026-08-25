@@ -39,6 +39,8 @@ from testpilot_copilot.tools import (
     list_apis,
     list_runs,
     render_lowcode_ui_source,
+    update_api,
+    update_test_case,
 )
 
 # ---------------------------------------------------------------------------
@@ -257,6 +259,71 @@ def test_create_test_case_lowcode_persists_api_refs():
         project_id="p1", name="refs-camel", case_type="lowcode",
         definition={"source": "", "entry": "run", "httpApiRefs": ["1001"]}))
     assert list(stub2.requests[0][1].case.lowcode.http_api_refs) == ["1001"]
+
+
+class _DictStub:
+    """按方法名返回固定响应的记录型 stub。"""
+
+    def __init__(self, responses: dict):
+        self.responses = responses
+        self.requests: list[tuple[str, object]] = []
+
+    def __getattr__(self, name):
+        async def call(req):
+            self.requests.append((name, req))
+            return self.responses[name]
+        return call
+
+
+def test_update_api_merges_partial_fields_and_preserves_headers():
+    resp = cpb.GetApiResponse(
+        http=pb.HttpApi(method=pb.HTTP_METHOD_GET, uri="/old",
+                        headers=[pb.KeyValue(key="Authorization", value="Bearer secret")],
+                        params=[pb.KeyValue(key="page", value="1")]))
+    stub = _DictStub({"GetApi": resp, "UpdateApi": cpb.UpdateApiResponse(api_id="100")})
+    out = asyncio.run(update_api(
+        SimpleNamespace(deps=_fake_deps(stub)), api_id="100",
+        api={"uri": "/new",
+             "params": [{"key": "page", "value": "2"}],
+             "headers": [{"key": "Authorization", "value": "***"}]}))
+    assert out == {"apiId": "100"}
+    assert [name for name, _ in stub.requests] == ["GetApi", "UpdateApi"]
+    _, req = stub.requests[1]
+    assert req.kind == cpb.API_KIND_HTTP
+    assert req.http.uri == "/new"
+    # 未在 api 中给出的字段保持原值；带 *** 的掩码值也会被忽略，
+    # 避免把 get_api 的脱敏结果写回真实定义
+    assert {h.key: h.value for h in req.http.headers} == {"Authorization": "Bearer secret"}
+    assert {p.key: p.value for p in req.http.params} == {"page": "2"}
+
+
+def test_update_api_rejects_bad_kind_before_rpc():
+    stub = _DictStub({})
+    with pytest.raises(ValueError, match="kind must be http or grpc"):
+        asyncio.run(update_api(
+            SimpleNamespace(deps=_fake_deps(stub)), api_id="100",
+            api={"uri": "/x"}, kind="ws"))
+
+
+def test_update_test_case_merges_definition_and_preserves_refs():
+    case = pb.TestCase(type=pb.TEST_CASE_TYPE_LOWCODE, name="echo case")
+    case.lowcode.CopyFrom(pb.LowCodeCase(
+        source="async def run(ctx):\n    await ctx.http_api(ECHO).run()\n",
+        entry="run", http_api_refs=["1001"]))
+    resp = cpb.GetTestCaseResponse(case=case)
+    stub = _DictStub({"GetTestCase": resp,
+                      "UpdateTestCase": cpb.UpdateTestCaseResponse(case_id="9")})
+    out = asyncio.run(update_test_case(
+        SimpleNamespace(deps=_fake_deps(stub)), case_id="9",
+        name="renamed", definition={"source": "async def run(ctx):\n    ctx.log('new')"}))
+    assert out == {"caseId": "9"}
+    assert [name for name, _ in stub.requests] == ["GetTestCase", "UpdateTestCase"]
+    _, req = stub.requests[1]
+    assert req.case_id == "9"
+    assert req.case.name == "renamed"
+    assert req.case.type == pb.TEST_CASE_TYPE_LOWCODE
+    assert req.case.lowcode.source.endswith("ctx.log('new')")
+    assert list(req.case.lowcode.http_api_refs) == ["1001"]  # 浅合并后未丢失
 
 
 def test_create_api_builds_proto_request():

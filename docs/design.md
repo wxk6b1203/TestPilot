@@ -591,6 +591,7 @@ Copilot 不止生成接口与脚本，其能力覆盖**生成、分析、调试�
 工具以 `FunctionToolset` 分组注册，按读写拆分以支持审批策略：
 - **只读工具**（免审批）：`list_projects` / `list_apis` / `list_environments` / `get_api` / `get_test_case` / `query_schema` / `list_runs` / `get_run` / `query_coverage` 等
 - **写工具**（默认 HITL 审批）：`create_api` / `update_api` / `create_test_case` /
+  `update_test_case` /
   `create_ui_test_case`（结构化步骤 → UI_ACTION 步骤树或 ctx.page 低代码脚本）/
   `create_test_plan` / `import_openapi` / `apply_openapi_diff` 等
 - **触发工具**（默认 HITL 审批）：`trigger_run` / `trigger_stress` 等

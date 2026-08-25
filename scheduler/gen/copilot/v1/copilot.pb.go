@@ -2330,6 +2330,116 @@ func (x *CreateTestCaseResponse) GetNodeId() string {
 	return ""
 }
 
+type UpdateTestCaseRequest struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	Ctx    *v1.RequestContext `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
+	CaseId string             `protobuf:"bytes,2,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+	Case   *v1.TestCase       `protobuf:"bytes,3,opt,name=case,proto3" json:"case,omitempty"` // 完整新定义（name/description/definition）
+}
+
+func (x *UpdateTestCaseRequest) Reset() {
+	*x = UpdateTestCaseRequest{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[34]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *UpdateTestCaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTestCaseRequest) ProtoMessage() {}
+
+func (x *UpdateTestCaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[34]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTestCaseRequest.ProtoReflect.Descriptor instead.
+func (*UpdateTestCaseRequest) Descriptor() ([]byte, []int) {
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *UpdateTestCaseRequest) GetCtx() *v1.RequestContext {
+	if x != nil {
+		return x.Ctx
+	}
+	return nil
+}
+
+func (x *UpdateTestCaseRequest) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
+func (x *UpdateTestCaseRequest) GetCase() *v1.TestCase {
+	if x != nil {
+		return x.Case
+	}
+	return nil
+}
+
+type UpdateTestCaseResponse struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	CaseId string `protobuf:"bytes,1,opt,name=case_id,json=caseId,proto3" json:"case_id,omitempty"`
+}
+
+func (x *UpdateTestCaseResponse) Reset() {
+	*x = UpdateTestCaseResponse{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[35]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *UpdateTestCaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateTestCaseResponse) ProtoMessage() {}
+
+func (x *UpdateTestCaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[35]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateTestCaseResponse.ProtoReflect.Descriptor instead.
+func (*UpdateTestCaseResponse) Descriptor() ([]byte, []int) {
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *UpdateTestCaseResponse) GetCaseId() string {
+	if x != nil {
+		return x.CaseId
+	}
+	return ""
+}
+
 type CreateTestPlanRequest struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -2344,7 +2454,7 @@ type CreateTestPlanRequest struct {
 func (x *CreateTestPlanRequest) Reset() {
 	*x = CreateTestPlanRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[34]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[36]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2357,7 +2467,7 @@ func (x *CreateTestPlanRequest) String() string {
 func (*CreateTestPlanRequest) ProtoMessage() {}
 
 func (x *CreateTestPlanRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[34]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[36]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2370,7 +2480,7 @@ func (x *CreateTestPlanRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTestPlanRequest.ProtoReflect.Descriptor instead.
 func (*CreateTestPlanRequest) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{34}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *CreateTestPlanRequest) GetCtx() *v1.RequestContext {
@@ -2413,7 +2523,7 @@ type CreateTestPlanResponse struct {
 func (x *CreateTestPlanResponse) Reset() {
 	*x = CreateTestPlanResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[35]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[37]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2426,7 +2536,7 @@ func (x *CreateTestPlanResponse) String() string {
 func (*CreateTestPlanResponse) ProtoMessage() {}
 
 func (x *CreateTestPlanResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[35]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[37]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2439,7 +2549,7 @@ func (x *CreateTestPlanResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTestPlanResponse.ProtoReflect.Descriptor instead.
 func (*CreateTestPlanResponse) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{35}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *CreateTestPlanResponse) GetPlanId() string {
@@ -2474,7 +2584,7 @@ type ImportOpenApiRequest struct {
 func (x *ImportOpenApiRequest) Reset() {
 	*x = ImportOpenApiRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[36]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[38]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2487,7 +2597,7 @@ func (x *ImportOpenApiRequest) String() string {
 func (*ImportOpenApiRequest) ProtoMessage() {}
 
 func (x *ImportOpenApiRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[36]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[38]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2500,7 +2610,7 @@ func (x *ImportOpenApiRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportOpenApiRequest.ProtoReflect.Descriptor instead.
 func (*ImportOpenApiRequest) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{36}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ImportOpenApiRequest) GetCtx() *v1.RequestContext {
@@ -2581,7 +2691,7 @@ type ImportOpenApiResponse struct {
 func (x *ImportOpenApiResponse) Reset() {
 	*x = ImportOpenApiResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[37]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[39]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2594,7 +2704,7 @@ func (x *ImportOpenApiResponse) String() string {
 func (*ImportOpenApiResponse) ProtoMessage() {}
 
 func (x *ImportOpenApiResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[37]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[39]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2607,7 +2717,7 @@ func (x *ImportOpenApiResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ImportOpenApiResponse.ProtoReflect.Descriptor instead.
 func (*ImportOpenApiResponse) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{37}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ImportOpenApiResponse) GetApiIds() []string {
@@ -2644,7 +2754,7 @@ type DiffEntry struct {
 func (x *DiffEntry) Reset() {
 	*x = DiffEntry{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[38]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[40]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2657,7 +2767,7 @@ func (x *DiffEntry) String() string {
 func (*DiffEntry) ProtoMessage() {}
 
 func (x *DiffEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[38]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[40]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2670,7 +2780,7 @@ func (x *DiffEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffEntry.ProtoReflect.Descriptor instead.
 func (*DiffEntry) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{38}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DiffEntry) GetApiId() string {
@@ -2708,7 +2818,7 @@ type ApplyOpenApiDiffRequest struct {
 func (x *ApplyOpenApiDiffRequest) Reset() {
 	*x = ApplyOpenApiDiffRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[39]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[41]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2721,7 +2831,7 @@ func (x *ApplyOpenApiDiffRequest) String() string {
 func (*ApplyOpenApiDiffRequest) ProtoMessage() {}
 
 func (x *ApplyOpenApiDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[39]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[41]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2734,7 +2844,7 @@ func (x *ApplyOpenApiDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyOpenApiDiffRequest.ProtoReflect.Descriptor instead.
 func (*ApplyOpenApiDiffRequest) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{39}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *ApplyOpenApiDiffRequest) GetCtx() *v1.RequestContext {
@@ -2778,7 +2888,7 @@ type ApplyOpenApiDiffResponse struct {
 func (x *ApplyOpenApiDiffResponse) Reset() {
 	*x = ApplyOpenApiDiffResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[40]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[42]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2791,7 +2901,7 @@ func (x *ApplyOpenApiDiffResponse) String() string {
 func (*ApplyOpenApiDiffResponse) ProtoMessage() {}
 
 func (x *ApplyOpenApiDiffResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[40]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[42]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2804,7 +2914,7 @@ func (x *ApplyOpenApiDiffResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ApplyOpenApiDiffResponse.ProtoReflect.Descriptor instead.
 func (*ApplyOpenApiDiffResponse) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{40}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ApplyOpenApiDiffResponse) GetDiffs() []*DiffEntry {
@@ -2841,7 +2951,7 @@ type TriggerRunRequest struct {
 func (x *TriggerRunRequest) Reset() {
 	*x = TriggerRunRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[41]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[43]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2854,7 +2964,7 @@ func (x *TriggerRunRequest) String() string {
 func (*TriggerRunRequest) ProtoMessage() {}
 
 func (x *TriggerRunRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[41]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[43]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2867,7 +2977,7 @@ func (x *TriggerRunRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerRunRequest.ProtoReflect.Descriptor instead.
 func (*TriggerRunRequest) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{41}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *TriggerRunRequest) GetCtx() *v1.RequestContext {
@@ -2902,7 +3012,7 @@ type TriggerRunResponse struct {
 func (x *TriggerRunResponse) Reset() {
 	*x = TriggerRunResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[42]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[44]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2915,7 +3025,7 @@ func (x *TriggerRunResponse) String() string {
 func (*TriggerRunResponse) ProtoMessage() {}
 
 func (x *TriggerRunResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[42]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[44]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2928,7 +3038,7 @@ func (x *TriggerRunResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerRunResponse.ProtoReflect.Descriptor instead.
 func (*TriggerRunResponse) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{42}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *TriggerRunResponse) GetRunId() string {
@@ -2951,7 +3061,7 @@ type TriggerStressRequest struct {
 func (x *TriggerStressRequest) Reset() {
 	*x = TriggerStressRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[43]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[45]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -2964,7 +3074,7 @@ func (x *TriggerStressRequest) String() string {
 func (*TriggerStressRequest) ProtoMessage() {}
 
 func (x *TriggerStressRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[43]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[45]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2977,7 +3087,7 @@ func (x *TriggerStressRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerStressRequest.ProtoReflect.Descriptor instead.
 func (*TriggerStressRequest) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{43}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *TriggerStressRequest) GetCtx() *v1.RequestContext {
@@ -3012,7 +3122,7 @@ type TriggerStressResponse struct {
 func (x *TriggerStressResponse) Reset() {
 	*x = TriggerStressResponse{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[44]
+		mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[46]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -3025,7 +3135,7 @@ func (x *TriggerStressResponse) String() string {
 func (*TriggerStressResponse) ProtoMessage() {}
 
 func (x *TriggerStressResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[44]
+	mi := &file_testpilot_copilot_v1_copilot_proto_msgTypes[46]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3038,7 +3148,7 @@ func (x *TriggerStressResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TriggerStressResponse.ProtoReflect.Descriptor instead.
 func (*TriggerStressResponse) Descriptor() ([]byte, []int) {
-	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{44}
+	return file_testpilot_copilot_v1_copilot_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *TriggerStressResponse) GetRunId() string {
@@ -3378,7 +3488,20 @@ var file_testpilot_copilot_v1_copilot_proto_rawDesc = []byte{
 	0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x17, 0x0a, 0x07, 0x63, 0x61, 0x73, 0x65, 0x5f,
 	0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x63, 0x61, 0x73, 0x65, 0x49, 0x64,
 	0x12, 0x17, 0x0a, 0x07, 0x6e, 0x6f, 0x64, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x09, 0x52, 0x06, 0x6e, 0x6f, 0x64, 0x65, 0x49, 0x64, 0x22, 0xc6, 0x01, 0x0a, 0x15, 0x43, 0x72,
+	0x09, 0x52, 0x06, 0x6e, 0x6f, 0x64, 0x65, 0x49, 0x64, 0x22, 0x9a, 0x01, 0x0a, 0x15, 0x55, 0x70,
+	0x64, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x52, 0x65, 0x71, 0x75,
+	0x65, 0x73, 0x74, 0x12, 0x35, 0x0a, 0x03, 0x63, 0x74, 0x78, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
+	0x32, 0x23, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x6d,
+	0x6d, 0x6f, 0x6e, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x43, 0x6f,
+	0x6e, 0x74, 0x65, 0x78, 0x74, 0x52, 0x03, 0x63, 0x74, 0x78, 0x12, 0x17, 0x0a, 0x07, 0x63, 0x61,
+	0x73, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x63, 0x61, 0x73,
+	0x65, 0x49, 0x64, 0x12, 0x31, 0x0a, 0x04, 0x63, 0x61, 0x73, 0x65, 0x18, 0x03, 0x20, 0x01, 0x28,
+	0x0b, 0x32, 0x1d, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f,
+	0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65,
+	0x52, 0x04, 0x63, 0x61, 0x73, 0x65, 0x22, 0x31, 0x0a, 0x16, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65,
+	0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65,
+	0x12, 0x17, 0x0a, 0x07, 0x63, 0x61, 0x73, 0x65, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
+	0x09, 0x52, 0x06, 0x63, 0x61, 0x73, 0x65, 0x49, 0x64, 0x22, 0xc6, 0x01, 0x0a, 0x15, 0x43, 0x72,
 	0x65, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x52, 0x65, 0x71, 0x75,
 	0x65, 0x73, 0x74, 0x12, 0x35, 0x0a, 0x03, 0x63, 0x74, 0x78, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b,
 	0x32, 0x23, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x6d,
@@ -3475,7 +3598,7 @@ var file_testpilot_copilot_v1_copilot_proto_rawDesc = []byte{
 	0x4b, 0x49, 0x4e, 0x44, 0x5f, 0x55, 0x4e, 0x53, 0x50, 0x45, 0x43, 0x49, 0x46, 0x49, 0x45, 0x44,
 	0x10, 0x00, 0x12, 0x11, 0x0a, 0x0d, 0x41, 0x50, 0x49, 0x5f, 0x4b, 0x49, 0x4e, 0x44, 0x5f, 0x48,
 	0x54, 0x54, 0x50, 0x10, 0x01, 0x12, 0x11, 0x0a, 0x0d, 0x41, 0x50, 0x49, 0x5f, 0x4b, 0x49, 0x4e,
-	0x44, 0x5f, 0x47, 0x52, 0x50, 0x43, 0x10, 0x02, 0x32, 0xfe, 0x10, 0x0a, 0x12, 0x43, 0x6f, 0x70,
+	0x44, 0x5f, 0x47, 0x52, 0x50, 0x43, 0x10, 0x02, 0x32, 0xeb, 0x11, 0x0a, 0x12, 0x43, 0x6f, 0x70,
 	0x69, 0x6c, 0x6f, 0x74, 0x54, 0x6f, 0x6f, 0x6c, 0x53, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x12,
 	0x65, 0x0a, 0x0c, 0x4c, 0x69, 0x73, 0x74, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x73, 0x12,
 	0x29, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69,
@@ -3578,46 +3701,53 @@ var file_testpilot_copilot_v1_copilot_proto_rawDesc = []byte{
 	0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2c, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c,
 	0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x72,
 	0x65, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70,
-	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x6b, 0x0a, 0x0e, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x65,
-	0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x12, 0x2b, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c,
-	0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x72,
-	0x65, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x52, 0x65, 0x71, 0x75,
+	0x6f, 0x6e, 0x73, 0x65, 0x12, 0x6b, 0x0a, 0x0e, 0x55, 0x70, 0x64, 0x61, 0x74, 0x65, 0x54, 0x65,
+	0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x12, 0x2b, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c,
+	0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x70,
+	0x64, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x52, 0x65, 0x71, 0x75,
 	0x65, 0x73, 0x74, 0x1a, 0x2c, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e,
+	0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x55, 0x70, 0x64, 0x61, 0x74,
+	0x65, 0x54, 0x65, 0x73, 0x74, 0x43, 0x61, 0x73, 0x65, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
+	0x65, 0x12, 0x6b, 0x0a, 0x0e, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x65, 0x73, 0x74, 0x50,
+	0x6c, 0x61, 0x6e, 0x12, 0x2b, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e,
 	0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x72, 0x65, 0x61, 0x74,
-	0x65, 0x54, 0x65, 0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x12, 0x68, 0x0a, 0x0d, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74, 0x4f, 0x70, 0x65, 0x6e, 0x41,
-	0x70, 0x69, 0x12, 0x2a, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63,
-	0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74,
-	0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2b,
-	0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c,
-	0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74, 0x4f, 0x70, 0x65, 0x6e,
-	0x41, 0x70, 0x69, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x71, 0x0a, 0x10, 0x41,
-	0x70, 0x70, 0x6c, 0x79, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69, 0x44, 0x69, 0x66, 0x66, 0x12,
-	0x2d, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69,
-	0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x41, 0x70, 0x70, 0x6c, 0x79, 0x4f, 0x70, 0x65, 0x6e,
-	0x41, 0x70, 0x69, 0x44, 0x69, 0x66, 0x66, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2e,
-	0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c,
-	0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x41, 0x70, 0x70, 0x6c, 0x79, 0x4f, 0x70, 0x65, 0x6e, 0x41,
-	0x70, 0x69, 0x44, 0x69, 0x66, 0x66, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x5f,
-	0x0a, 0x0a, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x52, 0x75, 0x6e, 0x12, 0x27, 0x2e, 0x74,
+	0x65, 0x54, 0x65, 0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74,
+	0x1a, 0x2c, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70,
+	0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x43, 0x72, 0x65, 0x61, 0x74, 0x65, 0x54, 0x65,
+	0x73, 0x74, 0x50, 0x6c, 0x61, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x68,
+	0x0a, 0x0d, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69, 0x12,
+	0x2a, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69,
+	0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74, 0x4f, 0x70, 0x65,
+	0x6e, 0x41, 0x70, 0x69, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2b, 0x2e, 0x74, 0x65,
+	0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e,
+	0x76, 0x31, 0x2e, 0x49, 0x6d, 0x70, 0x6f, 0x72, 0x74, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69,
+	0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x71, 0x0a, 0x10, 0x41, 0x70, 0x70, 0x6c,
+	0x79, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69, 0x44, 0x69, 0x66, 0x66, 0x12, 0x2d, 0x2e, 0x74,
 	0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74,
-	0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x52, 0x75, 0x6e, 0x52, 0x65,
-	0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x28, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f,
-	0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69,
-	0x67, 0x67, 0x65, 0x72, 0x52, 0x75, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12,
-	0x68, 0x0a, 0x0d, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53, 0x74, 0x72, 0x65, 0x73, 0x73,
-	0x12, 0x2a, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70,
-	0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53,
-	0x74, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2b, 0x2e, 0x74,
-	0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74,
-	0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53, 0x74, 0x72, 0x65, 0x73,
-	0x73, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x55, 0x0a, 0x18, 0x63, 0x6f, 0x6d,
-	0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c,
-	0x6f, 0x74, 0x2e, 0x76, 0x31, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e,
-	0x63, 0x6f, 0x6d, 0x2f, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2f, 0x74, 0x65,
-	0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2f, 0x67, 0x65, 0x6e, 0x2f, 0x63, 0x6f, 0x70, 0x69,
-	0x6c, 0x6f, 0x74, 0x2f, 0x76, 0x31, 0x3b, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x76, 0x31,
-	0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x2e, 0x76, 0x31, 0x2e, 0x41, 0x70, 0x70, 0x6c, 0x79, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69,
+	0x44, 0x69, 0x66, 0x66, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2e, 0x2e, 0x74, 0x65,
+	0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e,
+	0x76, 0x31, 0x2e, 0x41, 0x70, 0x70, 0x6c, 0x79, 0x4f, 0x70, 0x65, 0x6e, 0x41, 0x70, 0x69, 0x44,
+	0x69, 0x66, 0x66, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x5f, 0x0a, 0x0a, 0x54,
+	0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x52, 0x75, 0x6e, 0x12, 0x27, 0x2e, 0x74, 0x65, 0x73, 0x74,
+	0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31,
+	0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x52, 0x75, 0x6e, 0x52, 0x65, 0x71, 0x75, 0x65,
+	0x73, 0x74, 0x1a, 0x28, 0x2e, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63,
+	0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65,
+	0x72, 0x52, 0x75, 0x6e, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x12, 0x68, 0x0a, 0x0d,
+	0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53, 0x74, 0x72, 0x65, 0x73, 0x73, 0x12, 0x2a, 0x2e,
+	0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f,
+	0x74, 0x2e, 0x76, 0x31, 0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53, 0x74, 0x72, 0x65,
+	0x73, 0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x2b, 0x2e, 0x74, 0x65, 0x73, 0x74,
+	0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x76, 0x31,
+	0x2e, 0x54, 0x72, 0x69, 0x67, 0x67, 0x65, 0x72, 0x53, 0x74, 0x72, 0x65, 0x73, 0x73, 0x52, 0x65,
+	0x73, 0x70, 0x6f, 0x6e, 0x73, 0x65, 0x42, 0x55, 0x0a, 0x18, 0x63, 0x6f, 0x6d, 0x2e, 0x74, 0x65,
+	0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2e,
+	0x76, 0x31, 0x50, 0x01, 0x5a, 0x37, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d,
+	0x2f, 0x74, 0x65, 0x73, 0x74, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x2f, 0x74, 0x65, 0x73, 0x74, 0x70,
+	0x69, 0x6c, 0x6f, 0x74, 0x2f, 0x67, 0x65, 0x6e, 0x2f, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74,
+	0x2f, 0x76, 0x31, 0x3b, 0x63, 0x6f, 0x70, 0x69, 0x6c, 0x6f, 0x74, 0x76, 0x31, 0x62, 0x06, 0x70,
+	0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3633,7 +3763,7 @@ func file_testpilot_copilot_v1_copilot_proto_rawDescGZIP() []byte {
 }
 
 var file_testpilot_copilot_v1_copilot_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_testpilot_copilot_v1_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_testpilot_copilot_v1_copilot_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_testpilot_copilot_v1_copilot_proto_goTypes = []interface{}{
 	(ApiKind)(0),                      // 0: testpilot.copilot.v1.ApiKind
 	(*ListProjectsRequest)(nil),       // 1: testpilot.copilot.v1.ListProjectsRequest
@@ -3670,134 +3800,140 @@ var file_testpilot_copilot_v1_copilot_proto_goTypes = []interface{}{
 	(*UpdateApiResponse)(nil),         // 32: testpilot.copilot.v1.UpdateApiResponse
 	(*CreateTestCaseRequest)(nil),     // 33: testpilot.copilot.v1.CreateTestCaseRequest
 	(*CreateTestCaseResponse)(nil),    // 34: testpilot.copilot.v1.CreateTestCaseResponse
-	(*CreateTestPlanRequest)(nil),     // 35: testpilot.copilot.v1.CreateTestPlanRequest
-	(*CreateTestPlanResponse)(nil),    // 36: testpilot.copilot.v1.CreateTestPlanResponse
-	(*ImportOpenApiRequest)(nil),      // 37: testpilot.copilot.v1.ImportOpenApiRequest
-	(*ImportOpenApiResponse)(nil),     // 38: testpilot.copilot.v1.ImportOpenApiResponse
-	(*DiffEntry)(nil),                 // 39: testpilot.copilot.v1.DiffEntry
-	(*ApplyOpenApiDiffRequest)(nil),   // 40: testpilot.copilot.v1.ApplyOpenApiDiffRequest
-	(*ApplyOpenApiDiffResponse)(nil),  // 41: testpilot.copilot.v1.ApplyOpenApiDiffResponse
-	(*TriggerRunRequest)(nil),         // 42: testpilot.copilot.v1.TriggerRunRequest
-	(*TriggerRunResponse)(nil),        // 43: testpilot.copilot.v1.TriggerRunResponse
-	(*TriggerStressRequest)(nil),      // 44: testpilot.copilot.v1.TriggerStressRequest
-	(*TriggerStressResponse)(nil),     // 45: testpilot.copilot.v1.TriggerStressResponse
-	(*v1.RequestContext)(nil),         // 46: testpilot.common.v1.RequestContext
-	(*v1.PageRequest)(nil),            // 47: testpilot.common.v1.PageRequest
-	(*v1.Project)(nil),                // 48: testpilot.common.v1.Project
-	(*v1.PageResponse)(nil),           // 49: testpilot.common.v1.PageResponse
-	(*v1.HttpApi)(nil),                // 50: testpilot.common.v1.HttpApi
-	(*v1.GrpcApi)(nil),                // 51: testpilot.common.v1.GrpcApi
-	(*v1.Environment)(nil),            // 52: testpilot.common.v1.Environment
-	(*v1.TestCase)(nil),               // 53: testpilot.common.v1.TestCase
-	(v1.RunStatus)(0),                 // 54: testpilot.common.v1.RunStatus
-	(*v1.TestRun)(nil),                // 55: testpilot.common.v1.TestRun
-	(*v1.TestCaseResult)(nil),         // 56: testpilot.common.v1.TestCaseResult
-	(*v1.TestStepResult)(nil),         // 57: testpilot.common.v1.TestStepResult
-	(*structpb.Struct)(nil),           // 58: google.protobuf.Struct
-	(*v1.TestPlan)(nil),               // 59: testpilot.common.v1.TestPlan
+	(*UpdateTestCaseRequest)(nil),     // 35: testpilot.copilot.v1.UpdateTestCaseRequest
+	(*UpdateTestCaseResponse)(nil),    // 36: testpilot.copilot.v1.UpdateTestCaseResponse
+	(*CreateTestPlanRequest)(nil),     // 37: testpilot.copilot.v1.CreateTestPlanRequest
+	(*CreateTestPlanResponse)(nil),    // 38: testpilot.copilot.v1.CreateTestPlanResponse
+	(*ImportOpenApiRequest)(nil),      // 39: testpilot.copilot.v1.ImportOpenApiRequest
+	(*ImportOpenApiResponse)(nil),     // 40: testpilot.copilot.v1.ImportOpenApiResponse
+	(*DiffEntry)(nil),                 // 41: testpilot.copilot.v1.DiffEntry
+	(*ApplyOpenApiDiffRequest)(nil),   // 42: testpilot.copilot.v1.ApplyOpenApiDiffRequest
+	(*ApplyOpenApiDiffResponse)(nil),  // 43: testpilot.copilot.v1.ApplyOpenApiDiffResponse
+	(*TriggerRunRequest)(nil),         // 44: testpilot.copilot.v1.TriggerRunRequest
+	(*TriggerRunResponse)(nil),        // 45: testpilot.copilot.v1.TriggerRunResponse
+	(*TriggerStressRequest)(nil),      // 46: testpilot.copilot.v1.TriggerStressRequest
+	(*TriggerStressResponse)(nil),     // 47: testpilot.copilot.v1.TriggerStressResponse
+	(*v1.RequestContext)(nil),         // 48: testpilot.common.v1.RequestContext
+	(*v1.PageRequest)(nil),            // 49: testpilot.common.v1.PageRequest
+	(*v1.Project)(nil),                // 50: testpilot.common.v1.Project
+	(*v1.PageResponse)(nil),           // 51: testpilot.common.v1.PageResponse
+	(*v1.HttpApi)(nil),                // 52: testpilot.common.v1.HttpApi
+	(*v1.GrpcApi)(nil),                // 53: testpilot.common.v1.GrpcApi
+	(*v1.Environment)(nil),            // 54: testpilot.common.v1.Environment
+	(*v1.TestCase)(nil),               // 55: testpilot.common.v1.TestCase
+	(v1.RunStatus)(0),                 // 56: testpilot.common.v1.RunStatus
+	(*v1.TestRun)(nil),                // 57: testpilot.common.v1.TestRun
+	(*v1.TestCaseResult)(nil),         // 58: testpilot.common.v1.TestCaseResult
+	(*v1.TestStepResult)(nil),         // 59: testpilot.common.v1.TestStepResult
+	(*structpb.Struct)(nil),           // 60: google.protobuf.Struct
+	(*v1.TestPlan)(nil),               // 61: testpilot.common.v1.TestPlan
 }
 var file_testpilot_copilot_v1_copilot_proto_depIdxs = []int32{
-	46, // 0: testpilot.copilot.v1.ListProjectsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	47, // 1: testpilot.copilot.v1.ListProjectsRequest.page:type_name -> testpilot.common.v1.PageRequest
-	48, // 2: testpilot.copilot.v1.ListProjectsResponse.projects:type_name -> testpilot.common.v1.Project
-	49, // 3: testpilot.copilot.v1.ListProjectsResponse.page:type_name -> testpilot.common.v1.PageResponse
-	46, // 4: testpilot.copilot.v1.ListApisRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	47, // 5: testpilot.copilot.v1.ListApisRequest.page:type_name -> testpilot.common.v1.PageRequest
-	50, // 6: testpilot.copilot.v1.ListApisResponse.http_apis:type_name -> testpilot.common.v1.HttpApi
-	51, // 7: testpilot.copilot.v1.ListApisResponse.grpc_apis:type_name -> testpilot.common.v1.GrpcApi
-	49, // 8: testpilot.copilot.v1.ListApisResponse.page:type_name -> testpilot.common.v1.PageResponse
-	46, // 9: testpilot.copilot.v1.GetApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 0: testpilot.copilot.v1.ListProjectsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	49, // 1: testpilot.copilot.v1.ListProjectsRequest.page:type_name -> testpilot.common.v1.PageRequest
+	50, // 2: testpilot.copilot.v1.ListProjectsResponse.projects:type_name -> testpilot.common.v1.Project
+	51, // 3: testpilot.copilot.v1.ListProjectsResponse.page:type_name -> testpilot.common.v1.PageResponse
+	48, // 4: testpilot.copilot.v1.ListApisRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	49, // 5: testpilot.copilot.v1.ListApisRequest.page:type_name -> testpilot.common.v1.PageRequest
+	52, // 6: testpilot.copilot.v1.ListApisResponse.http_apis:type_name -> testpilot.common.v1.HttpApi
+	53, // 7: testpilot.copilot.v1.ListApisResponse.grpc_apis:type_name -> testpilot.common.v1.GrpcApi
+	51, // 8: testpilot.copilot.v1.ListApisResponse.page:type_name -> testpilot.common.v1.PageResponse
+	48, // 9: testpilot.copilot.v1.GetApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
 	0,  // 10: testpilot.copilot.v1.GetApiRequest.kind:type_name -> testpilot.copilot.v1.ApiKind
-	50, // 11: testpilot.copilot.v1.GetApiResponse.http:type_name -> testpilot.common.v1.HttpApi
-	51, // 12: testpilot.copilot.v1.GetApiResponse.grpc:type_name -> testpilot.common.v1.GrpcApi
-	46, // 13: testpilot.copilot.v1.ListEnvironmentsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	52, // 14: testpilot.copilot.v1.ListEnvironmentsResponse.environments:type_name -> testpilot.common.v1.Environment
-	46, // 15: testpilot.copilot.v1.ListTestCasesRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	47, // 16: testpilot.copilot.v1.ListTestCasesRequest.page:type_name -> testpilot.common.v1.PageRequest
-	53, // 17: testpilot.copilot.v1.ListTestCasesResponse.cases:type_name -> testpilot.common.v1.TestCase
-	49, // 18: testpilot.copilot.v1.ListTestCasesResponse.page:type_name -> testpilot.common.v1.PageResponse
-	46, // 19: testpilot.copilot.v1.GetTestCaseRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	53, // 20: testpilot.copilot.v1.GetTestCaseResponse.case:type_name -> testpilot.common.v1.TestCase
-	46, // 21: testpilot.copilot.v1.QuerySchemaRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	46, // 22: testpilot.copilot.v1.ListRunsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	54, // 23: testpilot.copilot.v1.ListRunsRequest.status:type_name -> testpilot.common.v1.RunStatus
-	47, // 24: testpilot.copilot.v1.ListRunsRequest.page:type_name -> testpilot.common.v1.PageRequest
-	55, // 25: testpilot.copilot.v1.ListRunsResponse.runs:type_name -> testpilot.common.v1.TestRun
-	49, // 26: testpilot.copilot.v1.ListRunsResponse.page:type_name -> testpilot.common.v1.PageResponse
-	46, // 27: testpilot.copilot.v1.GetRunRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	55, // 28: testpilot.copilot.v1.GetRunResponse.run:type_name -> testpilot.common.v1.TestRun
-	56, // 29: testpilot.copilot.v1.GetRunResponse.case_results:type_name -> testpilot.common.v1.TestCaseResult
-	57, // 30: testpilot.copilot.v1.GetRunResponse.step_results:type_name -> testpilot.common.v1.TestStepResult
-	46, // 31: testpilot.copilot.v1.QueryCoverageRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	46, // 32: testpilot.copilot.v1.QueryApiDirectoryRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	52, // 11: testpilot.copilot.v1.GetApiResponse.http:type_name -> testpilot.common.v1.HttpApi
+	53, // 12: testpilot.copilot.v1.GetApiResponse.grpc:type_name -> testpilot.common.v1.GrpcApi
+	48, // 13: testpilot.copilot.v1.ListEnvironmentsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	54, // 14: testpilot.copilot.v1.ListEnvironmentsResponse.environments:type_name -> testpilot.common.v1.Environment
+	48, // 15: testpilot.copilot.v1.ListTestCasesRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	49, // 16: testpilot.copilot.v1.ListTestCasesRequest.page:type_name -> testpilot.common.v1.PageRequest
+	55, // 17: testpilot.copilot.v1.ListTestCasesResponse.cases:type_name -> testpilot.common.v1.TestCase
+	51, // 18: testpilot.copilot.v1.ListTestCasesResponse.page:type_name -> testpilot.common.v1.PageResponse
+	48, // 19: testpilot.copilot.v1.GetTestCaseRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	55, // 20: testpilot.copilot.v1.GetTestCaseResponse.case:type_name -> testpilot.common.v1.TestCase
+	48, // 21: testpilot.copilot.v1.QuerySchemaRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 22: testpilot.copilot.v1.ListRunsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	56, // 23: testpilot.copilot.v1.ListRunsRequest.status:type_name -> testpilot.common.v1.RunStatus
+	49, // 24: testpilot.copilot.v1.ListRunsRequest.page:type_name -> testpilot.common.v1.PageRequest
+	57, // 25: testpilot.copilot.v1.ListRunsResponse.runs:type_name -> testpilot.common.v1.TestRun
+	51, // 26: testpilot.copilot.v1.ListRunsResponse.page:type_name -> testpilot.common.v1.PageResponse
+	48, // 27: testpilot.copilot.v1.GetRunRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	57, // 28: testpilot.copilot.v1.GetRunResponse.run:type_name -> testpilot.common.v1.TestRun
+	58, // 29: testpilot.copilot.v1.GetRunResponse.case_results:type_name -> testpilot.common.v1.TestCaseResult
+	59, // 30: testpilot.copilot.v1.GetRunResponse.step_results:type_name -> testpilot.common.v1.TestStepResult
+	48, // 31: testpilot.copilot.v1.QueryCoverageRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 32: testpilot.copilot.v1.QueryApiDirectoryRequest.ctx:type_name -> testpilot.common.v1.RequestContext
 	21, // 33: testpilot.copilot.v1.QueryApiDirectoryResponse.entries:type_name -> testpilot.copilot.v1.ApiDirectoryEntry
-	46, // 34: testpilot.copilot.v1.CheckVariableRefsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 34: testpilot.copilot.v1.CheckVariableRefsRequest.ctx:type_name -> testpilot.common.v1.RequestContext
 	24, // 35: testpilot.copilot.v1.CheckVariableRefsResponse.issues:type_name -> testpilot.copilot.v1.VariableRefIssue
-	46, // 36: testpilot.copilot.v1.CreateProjectRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	58, // 37: testpilot.copilot.v1.CreateProjectRequest.config:type_name -> google.protobuf.Struct
-	46, // 38: testpilot.copilot.v1.CreateApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	50, // 39: testpilot.copilot.v1.CreateApiRequest.http:type_name -> testpilot.common.v1.HttpApi
-	51, // 40: testpilot.copilot.v1.CreateApiRequest.grpc:type_name -> testpilot.common.v1.GrpcApi
-	46, // 41: testpilot.copilot.v1.UpdateApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 36: testpilot.copilot.v1.CreateProjectRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	60, // 37: testpilot.copilot.v1.CreateProjectRequest.config:type_name -> google.protobuf.Struct
+	48, // 38: testpilot.copilot.v1.CreateApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	52, // 39: testpilot.copilot.v1.CreateApiRequest.http:type_name -> testpilot.common.v1.HttpApi
+	53, // 40: testpilot.copilot.v1.CreateApiRequest.grpc:type_name -> testpilot.common.v1.GrpcApi
+	48, // 41: testpilot.copilot.v1.UpdateApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
 	0,  // 42: testpilot.copilot.v1.UpdateApiRequest.kind:type_name -> testpilot.copilot.v1.ApiKind
-	50, // 43: testpilot.copilot.v1.UpdateApiRequest.http:type_name -> testpilot.common.v1.HttpApi
-	51, // 44: testpilot.copilot.v1.UpdateApiRequest.grpc:type_name -> testpilot.common.v1.GrpcApi
-	46, // 45: testpilot.copilot.v1.CreateTestCaseRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	53, // 46: testpilot.copilot.v1.CreateTestCaseRequest.case:type_name -> testpilot.common.v1.TestCase
-	46, // 47: testpilot.copilot.v1.CreateTestPlanRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	59, // 48: testpilot.copilot.v1.CreateTestPlanRequest.plan:type_name -> testpilot.common.v1.TestPlan
-	46, // 49: testpilot.copilot.v1.ImportOpenApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	46, // 50: testpilot.copilot.v1.ApplyOpenApiDiffRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	39, // 51: testpilot.copilot.v1.ApplyOpenApiDiffResponse.diffs:type_name -> testpilot.copilot.v1.DiffEntry
-	46, // 52: testpilot.copilot.v1.TriggerRunRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	46, // 53: testpilot.copilot.v1.TriggerStressRequest.ctx:type_name -> testpilot.common.v1.RequestContext
-	1,  // 54: testpilot.copilot.v1.CopilotToolService.ListProjects:input_type -> testpilot.copilot.v1.ListProjectsRequest
-	3,  // 55: testpilot.copilot.v1.CopilotToolService.ListApis:input_type -> testpilot.copilot.v1.ListApisRequest
-	5,  // 56: testpilot.copilot.v1.CopilotToolService.GetApi:input_type -> testpilot.copilot.v1.GetApiRequest
-	7,  // 57: testpilot.copilot.v1.CopilotToolService.ListEnvironments:input_type -> testpilot.copilot.v1.ListEnvironmentsRequest
-	9,  // 58: testpilot.copilot.v1.CopilotToolService.ListTestCases:input_type -> testpilot.copilot.v1.ListTestCasesRequest
-	11, // 59: testpilot.copilot.v1.CopilotToolService.GetTestCase:input_type -> testpilot.copilot.v1.GetTestCaseRequest
-	13, // 60: testpilot.copilot.v1.CopilotToolService.QuerySchema:input_type -> testpilot.copilot.v1.QuerySchemaRequest
-	15, // 61: testpilot.copilot.v1.CopilotToolService.ListRuns:input_type -> testpilot.copilot.v1.ListRunsRequest
-	17, // 62: testpilot.copilot.v1.CopilotToolService.GetRun:input_type -> testpilot.copilot.v1.GetRunRequest
-	19, // 63: testpilot.copilot.v1.CopilotToolService.QueryCoverage:input_type -> testpilot.copilot.v1.QueryCoverageRequest
-	22, // 64: testpilot.copilot.v1.CopilotToolService.QueryApiDirectory:input_type -> testpilot.copilot.v1.QueryApiDirectoryRequest
-	25, // 65: testpilot.copilot.v1.CopilotToolService.CheckVariableRefs:input_type -> testpilot.copilot.v1.CheckVariableRefsRequest
-	27, // 66: testpilot.copilot.v1.CopilotToolService.CreateProject:input_type -> testpilot.copilot.v1.CreateProjectRequest
-	29, // 67: testpilot.copilot.v1.CopilotToolService.CreateApi:input_type -> testpilot.copilot.v1.CreateApiRequest
-	31, // 68: testpilot.copilot.v1.CopilotToolService.UpdateApi:input_type -> testpilot.copilot.v1.UpdateApiRequest
-	33, // 69: testpilot.copilot.v1.CopilotToolService.CreateTestCase:input_type -> testpilot.copilot.v1.CreateTestCaseRequest
-	35, // 70: testpilot.copilot.v1.CopilotToolService.CreateTestPlan:input_type -> testpilot.copilot.v1.CreateTestPlanRequest
-	37, // 71: testpilot.copilot.v1.CopilotToolService.ImportOpenApi:input_type -> testpilot.copilot.v1.ImportOpenApiRequest
-	40, // 72: testpilot.copilot.v1.CopilotToolService.ApplyOpenApiDiff:input_type -> testpilot.copilot.v1.ApplyOpenApiDiffRequest
-	42, // 73: testpilot.copilot.v1.CopilotToolService.TriggerRun:input_type -> testpilot.copilot.v1.TriggerRunRequest
-	44, // 74: testpilot.copilot.v1.CopilotToolService.TriggerStress:input_type -> testpilot.copilot.v1.TriggerStressRequest
-	2,  // 75: testpilot.copilot.v1.CopilotToolService.ListProjects:output_type -> testpilot.copilot.v1.ListProjectsResponse
-	4,  // 76: testpilot.copilot.v1.CopilotToolService.ListApis:output_type -> testpilot.copilot.v1.ListApisResponse
-	6,  // 77: testpilot.copilot.v1.CopilotToolService.GetApi:output_type -> testpilot.copilot.v1.GetApiResponse
-	8,  // 78: testpilot.copilot.v1.CopilotToolService.ListEnvironments:output_type -> testpilot.copilot.v1.ListEnvironmentsResponse
-	10, // 79: testpilot.copilot.v1.CopilotToolService.ListTestCases:output_type -> testpilot.copilot.v1.ListTestCasesResponse
-	12, // 80: testpilot.copilot.v1.CopilotToolService.GetTestCase:output_type -> testpilot.copilot.v1.GetTestCaseResponse
-	14, // 81: testpilot.copilot.v1.CopilotToolService.QuerySchema:output_type -> testpilot.copilot.v1.QuerySchemaResponse
-	16, // 82: testpilot.copilot.v1.CopilotToolService.ListRuns:output_type -> testpilot.copilot.v1.ListRunsResponse
-	18, // 83: testpilot.copilot.v1.CopilotToolService.GetRun:output_type -> testpilot.copilot.v1.GetRunResponse
-	20, // 84: testpilot.copilot.v1.CopilotToolService.QueryCoverage:output_type -> testpilot.copilot.v1.QueryCoverageResponse
-	23, // 85: testpilot.copilot.v1.CopilotToolService.QueryApiDirectory:output_type -> testpilot.copilot.v1.QueryApiDirectoryResponse
-	26, // 86: testpilot.copilot.v1.CopilotToolService.CheckVariableRefs:output_type -> testpilot.copilot.v1.CheckVariableRefsResponse
-	28, // 87: testpilot.copilot.v1.CopilotToolService.CreateProject:output_type -> testpilot.copilot.v1.CreateProjectResponse
-	30, // 88: testpilot.copilot.v1.CopilotToolService.CreateApi:output_type -> testpilot.copilot.v1.CreateApiResponse
-	32, // 89: testpilot.copilot.v1.CopilotToolService.UpdateApi:output_type -> testpilot.copilot.v1.UpdateApiResponse
-	34, // 90: testpilot.copilot.v1.CopilotToolService.CreateTestCase:output_type -> testpilot.copilot.v1.CreateTestCaseResponse
-	36, // 91: testpilot.copilot.v1.CopilotToolService.CreateTestPlan:output_type -> testpilot.copilot.v1.CreateTestPlanResponse
-	38, // 92: testpilot.copilot.v1.CopilotToolService.ImportOpenApi:output_type -> testpilot.copilot.v1.ImportOpenApiResponse
-	41, // 93: testpilot.copilot.v1.CopilotToolService.ApplyOpenApiDiff:output_type -> testpilot.copilot.v1.ApplyOpenApiDiffResponse
-	43, // 94: testpilot.copilot.v1.CopilotToolService.TriggerRun:output_type -> testpilot.copilot.v1.TriggerRunResponse
-	45, // 95: testpilot.copilot.v1.CopilotToolService.TriggerStress:output_type -> testpilot.copilot.v1.TriggerStressResponse
-	75, // [75:96] is the sub-list for method output_type
-	54, // [54:75] is the sub-list for method input_type
-	54, // [54:54] is the sub-list for extension type_name
-	54, // [54:54] is the sub-list for extension extendee
-	0,  // [0:54] is the sub-list for field type_name
+	52, // 43: testpilot.copilot.v1.UpdateApiRequest.http:type_name -> testpilot.common.v1.HttpApi
+	53, // 44: testpilot.copilot.v1.UpdateApiRequest.grpc:type_name -> testpilot.common.v1.GrpcApi
+	48, // 45: testpilot.copilot.v1.CreateTestCaseRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	55, // 46: testpilot.copilot.v1.CreateTestCaseRequest.case:type_name -> testpilot.common.v1.TestCase
+	48, // 47: testpilot.copilot.v1.UpdateTestCaseRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	55, // 48: testpilot.copilot.v1.UpdateTestCaseRequest.case:type_name -> testpilot.common.v1.TestCase
+	48, // 49: testpilot.copilot.v1.CreateTestPlanRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	61, // 50: testpilot.copilot.v1.CreateTestPlanRequest.plan:type_name -> testpilot.common.v1.TestPlan
+	48, // 51: testpilot.copilot.v1.ImportOpenApiRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 52: testpilot.copilot.v1.ApplyOpenApiDiffRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	41, // 53: testpilot.copilot.v1.ApplyOpenApiDiffResponse.diffs:type_name -> testpilot.copilot.v1.DiffEntry
+	48, // 54: testpilot.copilot.v1.TriggerRunRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	48, // 55: testpilot.copilot.v1.TriggerStressRequest.ctx:type_name -> testpilot.common.v1.RequestContext
+	1,  // 56: testpilot.copilot.v1.CopilotToolService.ListProjects:input_type -> testpilot.copilot.v1.ListProjectsRequest
+	3,  // 57: testpilot.copilot.v1.CopilotToolService.ListApis:input_type -> testpilot.copilot.v1.ListApisRequest
+	5,  // 58: testpilot.copilot.v1.CopilotToolService.GetApi:input_type -> testpilot.copilot.v1.GetApiRequest
+	7,  // 59: testpilot.copilot.v1.CopilotToolService.ListEnvironments:input_type -> testpilot.copilot.v1.ListEnvironmentsRequest
+	9,  // 60: testpilot.copilot.v1.CopilotToolService.ListTestCases:input_type -> testpilot.copilot.v1.ListTestCasesRequest
+	11, // 61: testpilot.copilot.v1.CopilotToolService.GetTestCase:input_type -> testpilot.copilot.v1.GetTestCaseRequest
+	13, // 62: testpilot.copilot.v1.CopilotToolService.QuerySchema:input_type -> testpilot.copilot.v1.QuerySchemaRequest
+	15, // 63: testpilot.copilot.v1.CopilotToolService.ListRuns:input_type -> testpilot.copilot.v1.ListRunsRequest
+	17, // 64: testpilot.copilot.v1.CopilotToolService.GetRun:input_type -> testpilot.copilot.v1.GetRunRequest
+	19, // 65: testpilot.copilot.v1.CopilotToolService.QueryCoverage:input_type -> testpilot.copilot.v1.QueryCoverageRequest
+	22, // 66: testpilot.copilot.v1.CopilotToolService.QueryApiDirectory:input_type -> testpilot.copilot.v1.QueryApiDirectoryRequest
+	25, // 67: testpilot.copilot.v1.CopilotToolService.CheckVariableRefs:input_type -> testpilot.copilot.v1.CheckVariableRefsRequest
+	27, // 68: testpilot.copilot.v1.CopilotToolService.CreateProject:input_type -> testpilot.copilot.v1.CreateProjectRequest
+	29, // 69: testpilot.copilot.v1.CopilotToolService.CreateApi:input_type -> testpilot.copilot.v1.CreateApiRequest
+	31, // 70: testpilot.copilot.v1.CopilotToolService.UpdateApi:input_type -> testpilot.copilot.v1.UpdateApiRequest
+	33, // 71: testpilot.copilot.v1.CopilotToolService.CreateTestCase:input_type -> testpilot.copilot.v1.CreateTestCaseRequest
+	35, // 72: testpilot.copilot.v1.CopilotToolService.UpdateTestCase:input_type -> testpilot.copilot.v1.UpdateTestCaseRequest
+	37, // 73: testpilot.copilot.v1.CopilotToolService.CreateTestPlan:input_type -> testpilot.copilot.v1.CreateTestPlanRequest
+	39, // 74: testpilot.copilot.v1.CopilotToolService.ImportOpenApi:input_type -> testpilot.copilot.v1.ImportOpenApiRequest
+	42, // 75: testpilot.copilot.v1.CopilotToolService.ApplyOpenApiDiff:input_type -> testpilot.copilot.v1.ApplyOpenApiDiffRequest
+	44, // 76: testpilot.copilot.v1.CopilotToolService.TriggerRun:input_type -> testpilot.copilot.v1.TriggerRunRequest
+	46, // 77: testpilot.copilot.v1.CopilotToolService.TriggerStress:input_type -> testpilot.copilot.v1.TriggerStressRequest
+	2,  // 78: testpilot.copilot.v1.CopilotToolService.ListProjects:output_type -> testpilot.copilot.v1.ListProjectsResponse
+	4,  // 79: testpilot.copilot.v1.CopilotToolService.ListApis:output_type -> testpilot.copilot.v1.ListApisResponse
+	6,  // 80: testpilot.copilot.v1.CopilotToolService.GetApi:output_type -> testpilot.copilot.v1.GetApiResponse
+	8,  // 81: testpilot.copilot.v1.CopilotToolService.ListEnvironments:output_type -> testpilot.copilot.v1.ListEnvironmentsResponse
+	10, // 82: testpilot.copilot.v1.CopilotToolService.ListTestCases:output_type -> testpilot.copilot.v1.ListTestCasesResponse
+	12, // 83: testpilot.copilot.v1.CopilotToolService.GetTestCase:output_type -> testpilot.copilot.v1.GetTestCaseResponse
+	14, // 84: testpilot.copilot.v1.CopilotToolService.QuerySchema:output_type -> testpilot.copilot.v1.QuerySchemaResponse
+	16, // 85: testpilot.copilot.v1.CopilotToolService.ListRuns:output_type -> testpilot.copilot.v1.ListRunsResponse
+	18, // 86: testpilot.copilot.v1.CopilotToolService.GetRun:output_type -> testpilot.copilot.v1.GetRunResponse
+	20, // 87: testpilot.copilot.v1.CopilotToolService.QueryCoverage:output_type -> testpilot.copilot.v1.QueryCoverageResponse
+	23, // 88: testpilot.copilot.v1.CopilotToolService.QueryApiDirectory:output_type -> testpilot.copilot.v1.QueryApiDirectoryResponse
+	26, // 89: testpilot.copilot.v1.CopilotToolService.CheckVariableRefs:output_type -> testpilot.copilot.v1.CheckVariableRefsResponse
+	28, // 90: testpilot.copilot.v1.CopilotToolService.CreateProject:output_type -> testpilot.copilot.v1.CreateProjectResponse
+	30, // 91: testpilot.copilot.v1.CopilotToolService.CreateApi:output_type -> testpilot.copilot.v1.CreateApiResponse
+	32, // 92: testpilot.copilot.v1.CopilotToolService.UpdateApi:output_type -> testpilot.copilot.v1.UpdateApiResponse
+	34, // 93: testpilot.copilot.v1.CopilotToolService.CreateTestCase:output_type -> testpilot.copilot.v1.CreateTestCaseResponse
+	36, // 94: testpilot.copilot.v1.CopilotToolService.UpdateTestCase:output_type -> testpilot.copilot.v1.UpdateTestCaseResponse
+	38, // 95: testpilot.copilot.v1.CopilotToolService.CreateTestPlan:output_type -> testpilot.copilot.v1.CreateTestPlanResponse
+	40, // 96: testpilot.copilot.v1.CopilotToolService.ImportOpenApi:output_type -> testpilot.copilot.v1.ImportOpenApiResponse
+	43, // 97: testpilot.copilot.v1.CopilotToolService.ApplyOpenApiDiff:output_type -> testpilot.copilot.v1.ApplyOpenApiDiffResponse
+	45, // 98: testpilot.copilot.v1.CopilotToolService.TriggerRun:output_type -> testpilot.copilot.v1.TriggerRunResponse
+	47, // 99: testpilot.copilot.v1.CopilotToolService.TriggerStress:output_type -> testpilot.copilot.v1.TriggerStressResponse
+	78, // [78:100] is the sub-list for method output_type
+	56, // [56:78] is the sub-list for method input_type
+	56, // [56:56] is the sub-list for extension type_name
+	56, // [56:56] is the sub-list for extension extendee
+	0,  // [0:56] is the sub-list for field type_name
 }
 
 func init() { file_testpilot_copilot_v1_copilot_proto_init() }
@@ -4215,7 +4351,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[34].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CreateTestPlanRequest); i {
+			switch v := v.(*UpdateTestCaseRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4227,7 +4363,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[35].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CreateTestPlanResponse); i {
+			switch v := v.(*UpdateTestCaseResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4239,7 +4375,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[36].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ImportOpenApiRequest); i {
+			switch v := v.(*CreateTestPlanRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4251,7 +4387,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[37].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ImportOpenApiResponse); i {
+			switch v := v.(*CreateTestPlanResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4263,7 +4399,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[38].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*DiffEntry); i {
+			switch v := v.(*ImportOpenApiRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4275,7 +4411,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[39].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ApplyOpenApiDiffRequest); i {
+			switch v := v.(*ImportOpenApiResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4287,7 +4423,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[40].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*ApplyOpenApiDiffResponse); i {
+			switch v := v.(*DiffEntry); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4299,7 +4435,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[41].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TriggerRunRequest); i {
+			switch v := v.(*ApplyOpenApiDiffRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4311,7 +4447,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[42].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TriggerRunResponse); i {
+			switch v := v.(*ApplyOpenApiDiffResponse); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4323,7 +4459,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[43].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*TriggerStressRequest); i {
+			switch v := v.(*TriggerRunRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -4335,6 +4471,30 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			}
 		}
 		file_testpilot_copilot_v1_copilot_proto_msgTypes[44].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TriggerRunResponse); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_testpilot_copilot_v1_copilot_proto_msgTypes[45].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*TriggerStressRequest); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_testpilot_copilot_v1_copilot_proto_msgTypes[46].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*TriggerStressResponse); i {
 			case 0:
 				return &v.state
@@ -4359,7 +4519,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 		(*UpdateApiRequest_Http)(nil),
 		(*UpdateApiRequest_Grpc)(nil),
 	}
-	file_testpilot_copilot_v1_copilot_proto_msgTypes[36].OneofWrappers = []interface{}{
+	file_testpilot_copilot_v1_copilot_proto_msgTypes[38].OneofWrappers = []interface{}{
 		(*ImportOpenApiRequest_OpenapiUrl)(nil),
 		(*ImportOpenApiRequest_OpenapiDocument)(nil),
 	}
@@ -4369,7 +4529,7 @@ func file_testpilot_copilot_v1_copilot_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_testpilot_copilot_v1_copilot_proto_rawDesc,
 			NumEnums:      1,
-			NumMessages:   45,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

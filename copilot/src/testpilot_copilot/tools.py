@@ -48,6 +48,13 @@ def _redact_cookies(cookies: Any) -> None:
             c["value"] = "***"
 
 
+def _contains_redacted(values: Any) -> bool:
+    """检测从 get_api 原样带回的掩码值：更新时不允许把 *** 写回接口定义。"""
+    if not isinstance(values, list):
+        return False
+    return any(isinstance(v, dict) and str(v.get("value")) == "***" for v in values)
+
+
 @dataclass
 class CopilotDeps:
     sched: SchedulerClient
@@ -410,6 +417,45 @@ async def create_grpc_api(ctx: RunContext[CopilotDeps],
 
 
 @writes.tool(requires_approval=True)
+async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
+                     kind: str = "http") -> dict:
+    """修改已有接口。kind: http|grpc；api 为需要变更的字段（camelCase，如
+    {"uri": "/v2/echo", "headers": {...}, "body": {...}}），未提供的字段保持原值。
+    建议先 get_api 获取完整定义再改；敏感 header/cookie 未修改时不会被覆盖。"""
+    k = str(kind or "http").strip().lower()
+    if k not in ("http", "grpc"):
+        raise ValueError(f"kind must be http or grpc, got {kind!r}")
+    api_kind = cpb.API_KIND_HTTP if k == "http" else cpb.API_KIND_GRPC
+    cur = await ctx.deps.sched.stub.GetApi(
+        cpb.GetApiRequest(ctx=ctx.deps.ctx(), api_id=str(api_id), kind=api_kind))
+    cur_d = await to_dict_async(cur)
+    base = cur_d.get("http") if k == "http" else cur_d.get("grpc")
+    if not isinstance(base, dict):
+        raise ValueError(f"{k} api {api_id} not found")
+    merged = {**base}
+    for field, value in (api or {}).items():
+        if value is None:
+            continue
+        if field in ("headers", "cookies") and _contains_redacted(value):
+            continue  # get_api 返回的掩码值不能原样写回
+        merged[field] = value
+
+    if k == "http":
+        h = pb.HttpApi()
+        json_format_parse(merged, h)
+        r = await ctx.deps.sched.stub.UpdateApi(
+            cpb.UpdateApiRequest(ctx=ctx.deps.ctx(), api_id=str(api_id),
+                                 kind=api_kind, http=h))
+    else:
+        g = pb.GrpcApi()
+        json_format_parse(merged, g)
+        r = await ctx.deps.sched.stub.UpdateApi(
+            cpb.UpdateApiRequest(ctx=ctx.deps.ctx(), api_id=str(api_id),
+                                 kind=api_kind, grpc=g))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
 async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
                            definition: dict, case_type: str = "declarative",
                            project_id: str | None = None,
@@ -441,6 +487,55 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
         case.declarative.CopyFrom(dc)
     r = await ctx.deps.sched.stub.CreateTestCase(
         cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def update_test_case(ctx: RunContext[CopilotDeps], case_id: str,
+                           name: str | None = None,
+                           description: str | None = None,
+                           definition: dict | None = None) -> dict:
+    """修改已有测试用例。只更新显式传入的字段；definition 与现有定义浅合并，
+    因此只改 lowcode source / declarative steps 时无需重复 httpApiRefs 等字段。
+    不能修改用例 type（要换类型请新建用例）。"""
+    cur = await ctx.deps.sched.stub.GetTestCase(
+        cpb.GetTestCaseRequest(ctx=ctx.deps.ctx(), case_id=str(case_id)))
+    cur_d = await to_dict_async(cur)
+    current = cur_d.get("case")
+    if not isinstance(current, dict):
+        raise ValueError(f"test case {case_id} not found")
+
+    try:
+        case_type = pb.TestCaseType.Value(current.get("type", "TEST_CASE_TYPE_UNSPECIFIED"))
+    except ValueError:
+        case_type = pb.TEST_CASE_TYPE_UNSPECIFIED
+    if case_type not in (pb.TEST_CASE_TYPE_DECLARATIVE, pb.TEST_CASE_TYPE_LOWCODE):
+        raise ValueError(f"unsupported test case type: {current.get('type')!r}")
+
+    if name is None:
+        name = current.get("name") or ""
+    if description is None:
+        description = current.get("description") or ""
+    # GetTestCaseResponse 的 oneof 在 JSON 中键为 lowcode / declarative
+    base_def = current.get("lowcode") if case_type == pb.TEST_CASE_TYPE_LOWCODE \
+        else current.get("declarative")
+    if definition is None:
+        merged_def = base_def or {}
+    else:
+        merged_def = {**(base_def or {}), **(definition or {})}
+
+    case = pb.TestCase(type=case_type, name=name, description=description)
+    if case_type == pb.TEST_CASE_TYPE_LOWCODE:
+        lc = pb.LowCodeCase()
+        json_format_parse(merged_def, lc)
+        case.lowcode.CopyFrom(lc)
+    else:
+        dc = pb.DeclarativeCase()
+        json_format_parse(merged_def, dc)
+        case.declarative.CopyFrom(dc)
+
+    r = await ctx.deps.sched.stub.UpdateTestCase(
+        cpb.UpdateTestCaseRequest(ctx=ctx.deps.ctx(), case_id=str(case_id), case=case))
     return await to_dict_async(r)
 
 

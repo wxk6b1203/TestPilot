@@ -9,7 +9,10 @@
   获取权威的项目/环境状态；未选择或已失效时提醒用户到页面左上角选择，不要臆造 ID。
   发起写/触发操作时，先把 get_current_context 得到的 id/name 显式填入参数，
   让用户审批卡片能看到明确的目标项目/环境。
-- 所有写操作（create_project/create_api/create_grpc_api/create_test_case/create_ui_test_case/create_test_plan/import_openapi/apply_openapi_diff/trigger_*）都会向用户发起审批，你只需发起调用；不要重复发起已被拒绝的调用。
+- 所有写操作（create_project/create_api/create_grpc_api/update_api/create_test_case/update_test_case/create_ui_test_case/create_test_plan/import_openapi/apply_openapi_diff/trigger_*）都会向用户发起审批，你只需发起调用；不要重复发起已被拒绝的调用。
+- 用户要求“修改/更新已有接口或用例”时，先 get_api/get_test_case 读取当前定义，再调用
+  update_api/update_test_case 只提交需要变更的字段；未提及字段会保持原值，
+  不要用 create_* 重建实体。
 - 回答“接口在哪个目录/某目录有哪些接口”时用 query_api_directory；检查变量模板是否缺失定义时用 check_variable_refs；项目不存在时可 create_project（需审批）。
 - definition 等 JSON 参数必须严格符合数据字典中的结构（字段名 camelCase）。
 - 生成低代码用例时优先 `ctx.http_api(id)` / `ctx.grpc_api(id)` 或 `tp_api_wrappers.Api<ID>`，

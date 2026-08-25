@@ -33,6 +33,7 @@ service CopilotToolService {
   rpc CreateApi(CreateApiRequest) returns (CreateApiResponse);
   rpc UpdateApi(UpdateApiRequest) returns (UpdateApiResponse);
   rpc CreateTestCase(CreateTestCaseRequest) returns (CreateTestCaseResponse);
+  rpc UpdateTestCase(UpdateTestCaseRequest) returns (UpdateTestCaseResponse);
   rpc CreateTestPlan(CreateTestPlanRequest) returns (CreateTestPlanResponse);
   rpc ImportOpenApi(ImportOpenApiRequest) returns (ImportOpenApiResponse);
   rpc ApplyOpenApiDiff(ApplyOpenApiDiffRequest) returns (ApplyOpenApiDiffResponse);
@@ -260,6 +261,15 @@ message CreateTestCaseRequest {
 message CreateTestCaseResponse {
   string case_id = 1;
   string node_id = 2;
+}
+
+message UpdateTestCaseRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string case_id = 2;
+  testpilot.common.v1.TestCase case = 3;   // 完整新定义（name/description/definition）
+}
+message UpdateTestCaseResponse {
+  string case_id = 1;
 }
 
 message CreateTestPlanRequest {

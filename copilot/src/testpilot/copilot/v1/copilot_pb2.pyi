@@ -366,6 +366,22 @@ class CreateTestCaseResponse(_message.Message):
     node_id: str
     def __init__(self, case_id: _Optional[str] = ..., node_id: _Optional[str] = ...) -> None: ...
 
+class UpdateTestCaseRequest(_message.Message):
+    __slots__ = ("ctx", "case_id", "case")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    CASE_ID_FIELD_NUMBER: _ClassVar[int]
+    CASE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    case_id: str
+    case: _types_pb2.TestCase
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., case_id: _Optional[str] = ..., case: _Optional[_Union[_types_pb2.TestCase, _Mapping]] = ...) -> None: ...
+
+class UpdateTestCaseResponse(_message.Message):
+    __slots__ = ("case_id",)
+    CASE_ID_FIELD_NUMBER: _ClassVar[int]
+    case_id: str
+    def __init__(self, case_id: _Optional[str] = ...) -> None: ...
+
 class CreateTestPlanRequest(_message.Message):
     __slots__ = ("ctx", "project_id", "plan", "parent_node_id")
     CTX_FIELD_NUMBER: _ClassVar[int]

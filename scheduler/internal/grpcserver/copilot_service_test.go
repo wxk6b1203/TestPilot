@@ -395,6 +395,86 @@ func TestCreateApiInvalidArgument(t *testing.T) {
 	}
 }
 
+// UpdateTestCase：更新 name/description/definition + 审计；类型不可改、跨租户不可改。
+func TestUpdateTestCase(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+
+	created, err := cli.CreateTestCase(ctx, &copilotv1.CreateTestCaseRequest{
+		Ctx: copilotCtx(1, "u-8"), ProjectId: "100",
+		Case: &commonv1.TestCase{
+			Type: commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE,
+			Name: "old-name",
+			Definition: &commonv1.TestCase_Lowcode{Lowcode: &commonv1.LowCodeCase{
+			Entry: "run",
+			Script: &commonv1.LowCodeCase_Source{
+				Source: "async def run(ctx):\n    ctx.log('old')",
+			},
+		}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := cli.UpdateTestCase(ctx, &copilotv1.UpdateTestCaseRequest{
+		Ctx:    copilotCtx(1, "u-8"),
+		CaseId: created.GetCaseId(),
+		Case: &commonv1.TestCase{
+			Type:        commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE,
+			Name:        "new-name",
+			Description: "updated by copilot",
+			Definition: &commonv1.TestCase_Lowcode{Lowcode: &commonv1.LowCodeCase{
+				Entry: "run",
+				Script: &commonv1.LowCodeCase_Source{
+					Source: "async def run(ctx):\n    ctx.log('new')",
+				},
+			}},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.GetCaseId() != created.GetCaseId() {
+		t.Fatalf("case id changed: %q -> %q", created.GetCaseId(), updated.GetCaseId())
+	}
+	var m model.TestCase
+	if err := d.First(&m, "id = ?", created.GetCaseId()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if m.Name != "new-name" || m.Description != "updated by copilot" ||
+		!strings.Contains(string(m.Definition), "ctx.log('new')") {
+		t.Fatalf("updated case mismatch: %+v definition=%s", m, m.Definition)
+	}
+	var logs []model.AuditLog
+	if err := d.Where("tenant_id = 1 AND actor = 2 AND action = 'update' AND resource_type = 'test_case' AND resource_id = ?",
+		created.GetCaseId()).Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 || logs[0].ApprovedBy != "u-8" {
+		t.Fatalf("audit rows mismatch: %+v", logs)
+	}
+
+	// 跨租户不可改
+	if _, err := cli.UpdateTestCase(ctx, &copilotv1.UpdateTestCaseRequest{
+		Ctx: copilotCtx(2, "u-2"), CaseId: created.GetCaseId(),
+		Case: &commonv1.TestCase{Type: commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE, Name: "x",
+			Definition: &commonv1.TestCase_Lowcode{Lowcode: &commonv1.LowCodeCase{
+				Script: &commonv1.LowCodeCase_Source{Source: "pass"}}}},
+	}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant update: want NotFound, got %v", err)
+	}
+
+	// 类型不可改
+	if _, err := cli.UpdateTestCase(ctx, &copilotv1.UpdateTestCaseRequest{
+		Ctx: copilotCtx(1, "u-8"), CaseId: created.GetCaseId(),
+		Case: &commonv1.TestCase{Type: commonv1.TestCaseType_TEST_CASE_TYPE_DECLARATIVE, Name: "x",
+			Definition: &commonv1.TestCase_Declarative{Declarative: &commonv1.DeclarativeCase{}}},
+	}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("type change: want InvalidArgument, got %v", err)
+	}
+}
+
 // QuerySchema 返回内嵌 domain schema。
 func TestQuerySchema(t *testing.T) {
 	cli, _ := newCopilotClient(t)

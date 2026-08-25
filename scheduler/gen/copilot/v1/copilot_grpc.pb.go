@@ -40,6 +40,7 @@ type CopilotToolServiceClient interface {
 	CreateApi(ctx context.Context, in *CreateApiRequest, opts ...grpc.CallOption) (*CreateApiResponse, error)
 	UpdateApi(ctx context.Context, in *UpdateApiRequest, opts ...grpc.CallOption) (*UpdateApiResponse, error)
 	CreateTestCase(ctx context.Context, in *CreateTestCaseRequest, opts ...grpc.CallOption) (*CreateTestCaseResponse, error)
+	UpdateTestCase(ctx context.Context, in *UpdateTestCaseRequest, opts ...grpc.CallOption) (*UpdateTestCaseResponse, error)
 	CreateTestPlan(ctx context.Context, in *CreateTestPlanRequest, opts ...grpc.CallOption) (*CreateTestPlanResponse, error)
 	ImportOpenApi(ctx context.Context, in *ImportOpenApiRequest, opts ...grpc.CallOption) (*ImportOpenApiResponse, error)
 	ApplyOpenApiDiff(ctx context.Context, in *ApplyOpenApiDiffRequest, opts ...grpc.CallOption) (*ApplyOpenApiDiffResponse, error)
@@ -200,6 +201,15 @@ func (c *copilotToolServiceClient) CreateTestCase(ctx context.Context, in *Creat
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) UpdateTestCase(ctx context.Context, in *UpdateTestCaseRequest, opts ...grpc.CallOption) (*UpdateTestCaseResponse, error) {
+	out := new(UpdateTestCaseResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/UpdateTestCase", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *copilotToolServiceClient) CreateTestPlan(ctx context.Context, in *CreateTestPlanRequest, opts ...grpc.CallOption) (*CreateTestPlanResponse, error) {
 	out := new(CreateTestPlanResponse)
 	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateTestPlan", in, out, opts...)
@@ -267,6 +277,7 @@ type CopilotToolServiceServer interface {
 	CreateApi(context.Context, *CreateApiRequest) (*CreateApiResponse, error)
 	UpdateApi(context.Context, *UpdateApiRequest) (*UpdateApiResponse, error)
 	CreateTestCase(context.Context, *CreateTestCaseRequest) (*CreateTestCaseResponse, error)
+	UpdateTestCase(context.Context, *UpdateTestCaseRequest) (*UpdateTestCaseResponse, error)
 	CreateTestPlan(context.Context, *CreateTestPlanRequest) (*CreateTestPlanResponse, error)
 	ImportOpenApi(context.Context, *ImportOpenApiRequest) (*ImportOpenApiResponse, error)
 	ApplyOpenApiDiff(context.Context, *ApplyOpenApiDiffRequest) (*ApplyOpenApiDiffResponse, error)
@@ -327,6 +338,9 @@ func (UnimplementedCopilotToolServiceServer) UpdateApi(context.Context, *UpdateA
 }
 func (UnimplementedCopilotToolServiceServer) CreateTestCase(context.Context, *CreateTestCaseRequest) (*CreateTestCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTestCase not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) UpdateTestCase(context.Context, *UpdateTestCaseRequest) (*UpdateTestCaseResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateTestCase not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) CreateTestPlan(context.Context, *CreateTestPlanRequest) (*CreateTestPlanResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTestPlan not implemented")
@@ -644,6 +658,24 @@ func _CopilotToolService_CreateTestCase_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_UpdateTestCase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateTestCaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).UpdateTestCase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/UpdateTestCase",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).UpdateTestCase(ctx, req.(*UpdateTestCaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CopilotToolService_CreateTestPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateTestPlanRequest)
 	if err := dec(in); err != nil {
@@ -804,6 +836,10 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateTestCase",
 			Handler:    _CopilotToolService_CreateTestCase_Handler,
+		},
+		{
+			MethodName: "UpdateTestCase",
+			Handler:    _CopilotToolService_UpdateTestCase_Handler,
 		},
 		{
 			MethodName: "CreateTestPlan",
