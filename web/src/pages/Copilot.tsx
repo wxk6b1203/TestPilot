@@ -1,5 +1,6 @@
 // Copilot 对话页：Vercel AI SDK v7（ai + @ai-sdk/react useChat）消费 SSE + 写操作 HITL 审批。
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { Button, Input, Popconfirm, Space, Tag, Typography } from 'antd'
 import {
   ArrowLeftOutlined, ClockCircleOutlined, CopyOutlined, DeleteOutlined, EnvironmentOutlined,
@@ -152,6 +153,18 @@ export default function Copilot() {
   const [trash, setTrash] = useState<TrashSession[]>([])
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
+  // 多行输入框：修饰键换行时手工插 \n，随后恢复光标位置
+  const inputRef = useRef<any>(null)
+  const pendingCursorRef = useRef<number | null>(null)
+  useLayoutEffect(() => {
+    const pos = pendingCursorRef.current
+    if (pos == null) return
+    pendingCursorRef.current = null
+    const el = inputRef.current?.nativeElement ?? inputRef.current
+    if (el instanceof HTMLTextAreaElement) {
+      el.selectionStart = el.selectionEnd = pos
+    }
+  }, [input])
 
   const loadSessions = () =>
     get<ListResp<Session>>('/api/v1/copilot/sessions?page_size=50').then((r) => setSessions(r.items))
@@ -400,6 +413,23 @@ export default function Copilot() {
 
   const submit = () => submitText(input)
 
+  // Enter 发送；Shift/Cmd/Ctrl + Enter 手动插入换行并保持光标位置。
+  // 中文输入法组合态（isComposing）下的 Enter 不处理，避免误发送。
+  const handleChatKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+    if (e.shiftKey || e.metaKey || e.ctrlKey) {
+      e.preventDefault()
+      const el = (inputRef.current?.nativeElement ?? inputRef.current ?? e.currentTarget)
+      const start = el.selectionStart ?? input.length
+      const end = el.selectionEnd ?? input.length
+      pendingCursorRef.current = start + 1
+      setInput(`${input.slice(0, start)}\n${input.slice(end)}`)
+      return
+    }
+    e.preventDefault()
+    submit()
+  }
+
   // HITL：批准/拒绝 → 补审批回执，sendAutomaticallyWhen 命中后 SDK 自动续发
   // useCallback 保持引用稳定：PartView 用 memo 后，未变化的工具卡不会随文本流重渲染
   const respond = useCallback((part: any, approved: boolean) => {
@@ -597,19 +627,23 @@ export default function Copilot() {
           </div>
           <div style={{ padding: '8px 12px', borderTop: `1px solid ${PALETTE.border}`, flexShrink: 0 }}>
             {busy && <BusyIndicator idleTimeoutLabel={STREAM_IDLE_TIMEOUT_LABEL} />}
-            <Space.Compact style={{ width: '100%' }}>
-              <Input
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
+              <Input.TextArea
+                ref={inputRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onPressEnter={submit}
-                placeholder="输入消息，Enter 发送"
+                onKeyDown={handleChatKeyDown}
+                autoSize={{ minRows: 1, maxRows: 8 }}
+                placeholder="输入消息，Enter 发送；Shift/Cmd/Ctrl + Enter 换行"
+                style={{ flex: 1, resize: 'none' }}
               />
               {busy ? (
-                <Button danger icon={<StopOutlined />} onClick={stop} title="停止生成" />
+                <Button danger icon={<StopOutlined />} onClick={stop} title="停止生成" style={{ flexShrink: 0 }} />
               ) : (
-                <Button type="primary" icon={<SendOutlined />} onClick={submit} disabled={!input.trim()} />
+                <Button type="primary" icon={<SendOutlined />} onClick={submit}
+                  disabled={!input.trim()} style={{ flexShrink: 0 }} />
               )}
-            </Space.Compact>
+            </div>
           </div>
         </div>
       )}
