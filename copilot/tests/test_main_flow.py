@@ -42,6 +42,74 @@ def test_attach_auth_stream_non_stream_noop():
     attach_auth_stream(r, "t")  # 不应抛错
 
 
+def test_idle_timeout_stream_passthrough_when_chunks_flow():
+    from testpilot_copilot.main import attach_idle_timeout_stream
+
+    async def inner():
+        yield b"a"
+        yield b"b"
+
+    class FakeResp:
+        def __init__(self):
+            self.body_iterator = inner()
+
+    resp = FakeResp()
+    attach_idle_timeout_stream(resp, 0.2)
+
+    async def consume():
+        return [c async for c in resp.body_iterator]
+
+    assert asyncio.run(consume()) == [b"a", b"b"]
+
+
+def test_idle_timeout_stream_emits_error_done_when_stalled():
+    import json
+    from testpilot_copilot.main import attach_idle_timeout_stream
+
+    async def inner():
+        yield b"a"
+        await asyncio.sleep(0.2)  # 模拟 LLM/tool 卡住
+        yield b"never"
+
+    class FakeResp:
+        def __init__(self):
+            self.body_iterator = inner()
+
+    resp = FakeResp()
+    attach_idle_timeout_stream(resp, 0.02)
+
+    async def consume():
+        out = []
+        async for c in resp.body_iterator:
+            out.append(c)
+        return out
+
+    out = asyncio.run(consume())
+    assert out[0] == b"a"
+    assert out[1].startswith(b"data: ")
+    payload = json.loads(out[1].decode("utf-8").removeprefix("data: ").strip())
+    assert payload["type"] == "error"
+    assert "未产生新输出" in payload["errorText"]
+    assert json.loads(out[2].decode("utf-8").removeprefix("data: ").strip()) == {
+        "type": "done"}
+
+
+def test_idle_timeout_stream_disabled_when_non_positive():
+    from testpilot_copilot.main import attach_idle_timeout_stream
+
+    async def inner():
+        yield b"a"
+
+    class FakeResp:
+        def __init__(self):
+            self.body_iterator = inner()
+
+    resp = FakeResp()
+    it = resp.body_iterator
+    attach_idle_timeout_stream(resp, 0)
+    assert resp.body_iterator is it
+
+
 async def _async_ret(cd, r):
     return cd
 

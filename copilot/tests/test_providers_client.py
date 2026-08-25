@@ -25,6 +25,17 @@ def test_deepseek_default_endpoint():
     assert str(m.client.base_url).rstrip("/") == "https://api.deepseek.com"
 
 
+def test_model_timeout_applied_to_openai_client():
+    """流式 token 卡住时，OpenAI 客户端 read 超时会把异常冒泡成 SSE error。"""
+    m = build_model(Settings(api_key="test-key", model_timeout=45))
+    t = m.client.timeout
+    assert t.as_dict()["read"] == 45
+    assert t.as_dict()["connect"] == 10  # 建连超时不随 model_timeout 放大
+
+    m2 = build_model(Settings(api_key="test-key", model_timeout=0))
+    assert m2.client.timeout is None  # 0=禁用模型读超时
+
+
 def test_deepseek_base_url_override():
     m = build_model(Settings(api_key="test-key", base_url="http://gw.local:9000/v1"))
     assert str(m.client.base_url).rstrip("/") == "http://gw.local:9000/v1"

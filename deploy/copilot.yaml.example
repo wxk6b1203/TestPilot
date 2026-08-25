@@ -18,6 +18,8 @@ scheduler_grpc: 127.0.0.1:9090  # CopilotToolService
 scheduler_rest: http://127.0.0.1:8080  # 会话持久化 / /me 解析
 http_addr: 0.0.0.0:8100         # 对外 SSE 服务
 http_timeout: 15                # 调 Scheduler REST 超时（秒）
+model_timeout: 120              # LLM 首 token / token 间读超时（秒）；0=不限
+stream_idle_timeout: 300        # SSE 空闲兜底（秒）；0=禁用
 
 otel_exporter: ""               # "" 关闭 | stdout | otlp
 otel_endpoint: 127.0.0.1:4317

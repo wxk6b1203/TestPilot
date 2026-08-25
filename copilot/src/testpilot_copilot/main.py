@@ -3,10 +3,13 @@
 - 鉴权：透传用户 Bearer token → Scheduler /api/v1/me 解析租户/用户
 - 会话：X-Session-Id 头；缺失则创建新会话（X-Session-Id 响应头返回）
 - 持久化：on_complete 将本轮新消息经 Scheduler REST 落库
+- 流控：model_timeout 限制 LLM 首 token/流式 token 间读超时；
+  stream_idle_timeout 对整条 SSE 做空闲兜底（超时发 error + done）
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from contextlib import asynccontextmanager
@@ -101,6 +104,39 @@ def attach_auth_stream(response, token: str) -> None:
     response.body_iterator = _resume(it, token)
 
 
+def _sse_json(obj: dict) -> bytes:
+    """Vercel AI data-stream 协议的 SSE 事件帧（data: {json}\n\n）。"""
+    return ("data: " + json.dumps(obj, ensure_ascii=False) + "\n\n").encode("utf-8")
+
+
+def attach_idle_timeout_stream(response, timeout: float) -> None:
+    """SSE 空闲兜底：任意环节（LLM 流/工具/持久化回调）超过 timeout 无输出，
+    主动发 error + done 结束连接，避免浏览器一直停在 streaming 状态。"""
+    if timeout <= 0:
+        return
+    it = getattr(response, "body_iterator", None)
+    if it is None:
+        return
+
+    async def _guard(inner):
+        while True:
+            try:
+                chunk = await asyncio.wait_for(inner.__anext__(), timeout)
+            except StopAsyncIteration:
+                return
+            except asyncio.TimeoutError:
+                log.warning("copilot sse idle timeout: no chunk for %gs", timeout)
+                error_text = (
+                    f"Copilot 超过 {timeout:g} 秒未产生新输出，服务端已主动结束本次请求。"
+                    "请缩短输入或稍后重试。")
+                yield _sse_json({"type": "error", "errorText": error_text})
+                yield _sse_json({"type": "done"})
+                return
+            yield chunk
+
+    response.body_iterator = _guard(it)
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     # span 覆盖鉴权/会话/持久化 + 流式 agent 运行全程（body 迭代器收尾时 end）
@@ -180,6 +216,7 @@ async def _chat_inner(request: Request):
     # agent 在 body 迭代时才执行（async generator 不继承创建时的 contextvar），
     # handler 内 set/reset 会让工具调用读不到 token → 401。
     attach_auth_stream(response, token)
+    attach_idle_timeout_stream(response, app.state.settings.stream_idle_timeout)
     response.headers["X-Session-Id"] = session_id
     return response
 

@@ -46,6 +46,8 @@ def test_defaults_equal_settings_dataclass():
     assert s.context_window == 64000
     assert s.http_timeout == 15.0
     assert isinstance(s.http_timeout, float)
+    assert s.model_timeout == 120.0
+    assert s.stream_idle_timeout == 300.0
     assert s.api_key == ""  # 默认无 key
     assert s.system_prompt_file == ""  # 空 = 包内置 prompt 模板
     assert s.summarizer_prompt_file == ""
@@ -162,6 +164,16 @@ def test_http_timeout_float_conversion_from_env():
 def test_http_timeout_invalid_exits():
     with pytest.raises(SystemExit):
         _resolve(env={"TP_COPILOT_HTTP_TIMEOUT": "abc"})
+
+
+def test_model_timeout_and_stream_idle_timeout_from_env():
+    s = _resolve(env={"TP_COPILOT_MODEL_TIMEOUT": "90",
+                      "TP_COPILOT_STREAM_IDLE_TIMEOUT": "0"})
+    assert s.model_timeout == 90.0
+    assert isinstance(s.model_timeout, float)
+    assert s.stream_idle_timeout == 0.0  # 0=禁用 SSE 空闲兜底
+    with pytest.raises(SystemExit):
+        _resolve(env={"TP_COPILOT_MODEL_TIMEOUT": "abc"})
 
 
 def test_context_window_invalid_env_exits():

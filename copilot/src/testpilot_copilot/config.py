@@ -55,6 +55,10 @@ _FIELDS: dict[str, tuple[str, str, object, type, bool]] = {
     "scheduler_rest":   ("scheduler_rest", "TP_SCHEDULER_REST", "http://127.0.0.1:8080", str, True),
     "http_addr":        ("http_addr", "TP_COPILOT_ADDR", "0.0.0.0:8100", str, True),
     "http_timeout":     ("http_timeout", "TP_COPILOT_HTTP_TIMEOUT", 15.0, float, True),  # 调 Scheduler REST 超时（秒）
+    # LLM 读超时（秒）：控制首 token 与流式 token 间最长等待；过大请求/供应商卡住时快速失败
+    "model_timeout":    ("model_timeout", "TP_COPILOT_MODEL_TIMEOUT", 120.0, float, True),
+    # SSE 空闲兜底（秒）：任意环节超过该时长无输出则主动结束流；0=禁用
+    "stream_idle_timeout": ("stream_idle_timeout", "TP_COPILOT_STREAM_IDLE_TIMEOUT", 300.0, float, True),
     "otel_exporter":    ("otel_exporter", "TP_OTEL_EXPORTER", "", str, True),  # ""|stdout|otlp
     "otel_endpoint":    ("otel_endpoint", "TP_OTEL_ENDPOINT", "127.0.0.1:4317", str, True),
 }
@@ -74,6 +78,8 @@ class Settings:
     scheduler_rest: str = "http://127.0.0.1:8080"
     http_addr: str = "0.0.0.0:8100"
     http_timeout: float = 15.0
+    model_timeout: float = 120.0
+    stream_idle_timeout: float = 300.0
     otel_exporter: str = ""
     otel_endpoint: str = "127.0.0.1:4317"
 

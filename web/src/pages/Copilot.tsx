@@ -1,9 +1,9 @@
 // Copilot 对话页：Vercel AI SDK v7（ai + @ai-sdk/react useChat）消费 SSE + 写操作 HITL 审批。
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Popconfirm, Space, Tag, Typography } from 'antd'
 import {
-  ArrowLeftOutlined, DeleteOutlined, EnvironmentOutlined, PlusOutlined,
-  ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
+  ArrowLeftOutlined, ClockCircleOutlined, DeleteOutlined, EnvironmentOutlined, LoadingOutlined,
+  PlusOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
 } from '@ant-design/icons'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai'
@@ -35,6 +35,16 @@ const SUGGESTIONS = [
   '帮我分析最近一次失败的运行',
   '生成一个打开当前环境首页并断言欢迎语的 Playwright UI 用例',
 ]
+
+// 前端流空闲看门狗：SSE 长时间无任何增量（首 token 慢 / 供应商卡住）时
+// 主动 abort，避免 busy 状态永久占用页面。HITL 等待审批期间不启动该计时。
+const STREAM_IDLE_TIMEOUT_MS = 120_000
+const STREAM_IDLE_TIMEOUT_LABEL = '2 分钟'
+// 流式 UI 更新节流：长回复按 100ms 批量渲染，降低 Markdown 反复解析的卡顿
+const STREAM_UI_THROTTLE_MS = 100
+// 与 Copilot 后端 _MAX_CHAT_BODY 对齐：发送前按 UTF-8 字节数预检，避免
+// 大会话历史先扣 AI 配额再被 413 拒绝
+const MAX_CHAT_BODY_BYTES = 1 << 20
 
 // 按 pydantic-ai VercelAIAdapter 的请求 schema（extra=forbid）重建 part：
 // SDK v7 序列化会带 id/providerMetadata 等字段，后端不接受，逐字段裁剪
@@ -73,6 +83,24 @@ const sanitizePart = (p: any): any => {
 }
 const sanitizeMessages = (msgs: any[]) =>
   msgs.map((m) => ({ id: m.id, role: m.role, parts: (m.parts || []).map(sanitizePart) }))
+
+// AI SDK 对非流式错误（如 413）会直接把响应体原样放进 message，
+// 这里把常见错误转成用户可读的中文提示。
+function describeChatError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e)
+  if (raw.includes('body too large') || raw.includes('> 1048576')) {
+    return '对话历史过长，已超过 Copilot 请求上限（1MB），请点击「新会话」开始新的对话'
+  }
+  try {
+    const obj = JSON.parse(raw)
+    if (typeof obj?.error === 'string') return obj.error
+    if (typeof obj?.error?.message === 'string') return obj.error.message
+    if (typeof obj?.errorText === 'string') return obj.errorText
+  } catch {
+    // 不是 JSON，按原文展示
+  }
+  return raw
+}
 
 export default function Copilot() {
   // 页面左上角全局选择的项目/环境：随每次 chat 请求经 X-TP-Project-Id /
@@ -142,10 +170,17 @@ export default function Copilot() {
         }),
         body: () => ({ trigger: 'submit-message' }), // 后端要求 trigger=submit-message
         // 裁剪 parts 为后端 schema 允许的字段（SDK 序列化多出的 id 等会被 extra=forbid 拒绝）
-        prepareSendMessagesRequest: ({ id, messages, body, headers }) => ({
-          headers,
-          body: { ...body, id, messages: sanitizeMessages(messages) },
-        }),
+        prepareSendMessagesRequest: ({ id, messages, body, headers }) => {
+          const nextBody = { ...body, id, messages: sanitizeMessages(messages) }
+          // 与后端 1MB 限制对齐：超限直接本地报错，不走网络/不扣 AI 配额
+          const bytes = new TextEncoder().encode(JSON.stringify(nextBody)).length
+          if (bytes > MAX_CHAT_BODY_BYTES) {
+            throw new Error(
+              `对话历史过长（${Math.ceil(bytes / 1024)}KB > 1MB），无法继续发送。请点击「新会话」开始新的对话`,
+            )
+          }
+          return { headers, body: nextBody }
+        },
         // 拦截响应头：首次响应携带 X-Session-Id，记下后续续聊沿用
         fetch: async (url, init) => {
           const res = await globalThis.fetch(url, init)
@@ -170,12 +205,44 @@ export default function Copilot() {
     status,
   } = useChat({
     transport,
+    throttle: STREAM_UI_THROTTLE_MS,
     sendAutomaticallyWhen: ({ messages: ms }) =>
       lastAssistantMessageIsCompleteWithApprovalResponses({ messages: ms }),
-    onError: (e) => message.error(e instanceof Error ? e.message : String(e)),
+    onError: (e) => message.error(describeChatError(e)),
   })
 
   const busy = status === 'submitted' || status === 'streaming'
+
+  // 等待 HITL 审批时停表：这不是「卡住」，由用户决定何时批准/拒绝
+  const waitingApproval = useMemo(() => {
+    const last = messages[messages.length - 1]
+    return last?.role === 'assistant' &&
+      last.parts.some((p: any) => p.state === 'approval-requested')
+  }, [messages])
+
+  // 空闲看门狗：busy 期间超过 STREAM_IDLE_TIMEOUT_MS 没有任何消息增量，
+  // 主动 stop() 让页面回到可操作状态（stop 会 abort fetch，SDK 按取消处理）。
+  // 只写 ref，不 setState：避免秒级计时让整个 Copilot 页反复重渲染。
+  const lastActivityAtRef = useRef(Date.now())
+  const watchdogFiredRef = useRef(false)
+  useEffect(() => {
+    lastActivityAtRef.current = Date.now()
+  }, [messages])
+  useEffect(() => {
+    if (!busy || waitingApproval) return
+    watchdogFiredRef.current = false
+    const timer = window.setInterval(() => {
+      if (!watchdogFiredRef.current &&
+          Date.now() - lastActivityAtRef.current >= STREAM_IDLE_TIMEOUT_MS) {
+        watchdogFiredRef.current = true
+        stop()
+        message.error(
+          `Copilot 超过 ${STREAM_IDLE_TIMEOUT_LABEL}没有新输出，已自动停止，请缩短请求或重试`,
+        )
+      }
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [busy, waitingApproval, stop])
 
   // 相邻同角色消息合成一个外框：一次 Agent 往返产生的多个 UIMessage
   // （文本 + 工具卡 + 审批后的续接）在流式与刷新后的历史里都显示为同一气泡
@@ -197,7 +264,16 @@ export default function Copilot() {
     loadSessions()
   }, [])
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    // 流式期间按帧滚动；用户向上翻阅历史（离底部 >120px）时不抢滚动位置
+    const frame = window.requestAnimationFrame(() => {
+      const el = bottomRef.current
+      const scroller = el?.parentElement
+      if (scroller && scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight > 120) {
+        return
+      }
+      el?.scrollIntoView({ block: 'end', behavior: 'auto' })
+    })
+    return () => window.cancelAnimationFrame(frame)
   }, [messages])
 
   // 加载历史会话（仅展示：user/assistant 文本 + 工具摘要）
@@ -257,10 +333,11 @@ export default function Copilot() {
   const submit = () => submitText(input)
 
   // HITL：批准/拒绝 → 补审批回执，sendAutomaticallyWhen 命中后 SDK 自动续发
-  const respond = (part: any, approved: boolean) => {
+  // useCallback 保持引用稳定：PartView 用 memo 后，未变化的工具卡不会随文本流重渲染
+  const respond = useCallback((part: any, approved: boolean) => {
     if (!part.approval?.id) return
     addToolApprovalResponse({ id: part.approval.id, approved })
-  }
+  }, [addToolApprovalResponse])
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
@@ -420,6 +497,7 @@ export default function Copilot() {
             <div ref={bottomRef} />
           </div>
           <div style={{ padding: '8px 12px', borderTop: `1px solid ${PALETTE.border}`, flexShrink: 0 }}>
+            {busy && <BusyIndicator idleTimeoutLabel={STREAM_IDLE_TIMEOUT_LABEL} />}
             <Space.Compact style={{ width: '100%' }}>
               <Input
                 value={input}
@@ -447,6 +525,31 @@ function formatTime(v: string) {
   return d.toLocaleString('zh-CN', { hour12: false })
 }
 
+// busy 期间的状态条：计时状态放在独立组件里，避免每秒触发 Copilot 整页重渲染
+function BusyIndicator({ idleTimeoutLabel }: { idleTimeoutLabel: string }) {
+  const [seconds, setSeconds] = useState(0)
+  useEffect(() => {
+    const startedAt = Date.now()
+    const timer = window.setInterval(() => {
+      setSeconds(Math.floor((Date.now() - startedAt) / 1000))
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [])
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 8,
+      padding: '2px 0 6px', fontSize: 12, color: PALETTE.textSecondary,
+    }}>
+      <LoadingOutlined spin style={{ color: PALETTE.primary }} />
+      <span>Copilot 正在处理，已等待 {seconds}s</span>
+      <span style={{ color: PALETTE.textTertiary }}>
+        · 连续 {idleTimeoutLabel}无新输出会自动停止
+      </span>
+      <ClockCircleOutlined />
+    </div>
+  )
+}
+
 
 // 整段 JSON 检测：工具返回/模型直接输出的 JSON 保持 pre + prettify，
 // 避免被 Markdown 当段落渲染后丢失缩进与换行
@@ -464,17 +567,29 @@ function parseJSONObject(text: string): object | null {
   return null
 }
 
+// 工具返回/模型输出可能非常大：显示层先截断再做 JSON 解析/Markdown，
+// 避免一次 JSON.stringify/DOMPurify 把主线程卡死。完整数据仍由服务端持久化。
+const MAX_TOOL_VALUE_CHARS = 20_000
+const MAX_RICH_TEXT_CHARS = 200_000
+
+function truncateForDisplay(text: string, max: number): string {
+  if (text.length <= max) return text
+  return `${text.slice(0, max)}\n…[内容过长，显示已截断，共 ${text.length} 字符]`
+}
+
 // 工具卡 input/output 的显示值：
 // - JSON 字符串（常见于 Vercel AI 工具 args/result）→ parse 后按 1 空格缩进 prettify
 // - 普通字符串（错误信息等）→ 原文
 // - 对象/数组 → JSON.stringify prettify
 function stringifyToolValue(value: unknown): string {
   if (typeof value === 'string') {
+    if (value.length > MAX_TOOL_VALUE_CHARS) return truncateForDisplay(value, MAX_TOOL_VALUE_CHARS)
     const parsed = parseJSONObject(value)
     if (parsed !== null) return JSON.stringify(parsed, null, 1)
     return value
   }
-  return JSON.stringify(value, null, 1) ?? String(value)
+  const text = JSON.stringify(value, null, 1) ?? String(value)
+  return truncateForDisplay(text, MAX_TOOL_VALUE_CHARS)
 }
 
 function prettifyJSONText(text: string): string | null {
@@ -482,8 +597,9 @@ function prettifyJSONText(text: string): string | null {
   return value === null ? null : JSON.stringify(value, null, 2)
 }
 
-// 单条 UIMessagePart 渲染：text / reasoning / tool（含审批态）
-function PartView({ part, role, onRespond }: {
+// 单条 UIMessagePart 渲染：text / reasoning / tool（含审批态）。
+// memo：文本流每个 delta 都会产生新 message 快照，但未变化的工具卡应跳过重渲染。
+const PartView = memo(function PartView({ part, role, onRespond }: {
   part: any
   role: string
   onRespond: (p: any, ok: boolean) => void
@@ -491,17 +607,18 @@ function PartView({ part, role, onRespond }: {
   if (part.type === 'text') {
     const text = String(part.text ?? '')
     if (role === 'assistant') {
+      const preStyle = {
+        margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+        fontFamily: MONO, fontSize: 12, textAlign: 'left',
+      } as const
+      // 超长回复不再走 marked/DOMPurify（同步解析会冻结主线程），直接按纯文本展示
+      if (text.length > MAX_RICH_TEXT_CHARS) {
+        return <pre style={preStyle}>{text}</pre>
+      }
       // 整段 JSON：沿用工具返回的 pre/prettify 呈现；否则 LLM 文本按 Markdown 渲染
       const pretty = prettifyJSONText(text)
       if (pretty !== null) {
-        return (
-          <pre style={{
-            margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-            fontFamily: MONO, fontSize: 12, textAlign: 'left',
-          }}>
-            {pretty}
-          </pre>
-        )
+        return <pre style={preStyle}>{pretty}</pre>
       }
       return <MarkdownView text={text} />
     }
@@ -547,7 +664,7 @@ function PartView({ part, role, onRespond }: {
     )
   }
   return null
-}
+})
 
 function StateTag({ state }: { state?: string }) {
   const map: Record<string, [string, string]> = {
