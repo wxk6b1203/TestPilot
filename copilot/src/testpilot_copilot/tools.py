@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -18,7 +19,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot.copilot.v1 import copilot_pb2 as cpb
 
-from .scheduler_client import SchedulerClient, parse_struct, to_dict
+from .scheduler_client import SchedulerClient, parse_struct, to_dict_async
 
 log = logging.getLogger("testpilot.copilot")
 
@@ -78,7 +79,7 @@ class CopilotDeps:
             return
         h = {"Authorization": f"Bearer {self.token}"}
 
-        if self.ui_project_id:
+        async def load_project() -> None:
             try:
                 r = await self.http.get(f"/api/v1/projects/{self.ui_project_id}", headers=h)
                 if r.status_code == 200:
@@ -88,10 +89,8 @@ class CopilotDeps:
                                 self.ui_project_id, r.status_code)
             except (httpx.HTTPError, ValueError) as e:
                 log.warning("hydrate copilot ui project failed: %s", e)
-        if self.ui_project is None:
-            self.ui_project_id = ""
 
-        if self.ui_project_id and self.ui_env_id:
+        async def load_environment() -> None:
             try:
                 r = await self.http.get(
                     f"/api/v1/environments?project_id={self.ui_project_id}&page_size=200",
@@ -105,6 +104,15 @@ class CopilotDeps:
                                 self.ui_env_id, self.ui_project_id)
             except (httpx.HTTPError, ValueError) as e:
                 log.warning("hydrate copilot ui environment failed: %s", e)
+
+        # 项目详情与环境列表互不依赖：并行拉取，每个 chat 请求少一个串行 RTT
+        if self.ui_project_id:
+            if self.ui_env_id:
+                await asyncio.gather(load_project(), load_environment())
+            else:
+                await load_project()
+        if self.ui_project is None:
+            self.ui_project_id = ""
         if self.ui_environment is None:
             self.ui_env_id = ""
 
@@ -145,7 +153,7 @@ async def list_projects(ctx: RunContext[CopilotDeps], query: str = "") -> list[d
     r = await ctx.deps.sched.stub.ListProjects(
         cpb.ListProjectsRequest(ctx=ctx.deps.ctx(), query=query,
                                 page=pb.PageRequest(page_size=100)))
-    return to_dict(r).get("projects", [])
+    return (await to_dict_async(r)).get("projects", [])
 
 
 def _project_context(data: dict | None) -> dict | None:
@@ -217,7 +225,7 @@ async def list_apis(ctx: RunContext[CopilotDeps], project_id: str | None = None,
     r = await ctx.deps.sched.stub.ListApis(
         cpb.ListApisRequest(ctx=ctx.deps.ctx(), project_id=pid, query=query,
                             page=pb.PageRequest(page_size=200)))
-    apis = to_dict(r).get("httpApis", [])
+    apis = (await to_dict_async(r)).get("httpApis", [])
     for a in apis:
         _redact_headers(a.get("headers"))
         _redact_cookies(a.get("cookies"))
@@ -229,7 +237,7 @@ async def get_api(ctx: RunContext[CopilotDeps], api_id: str) -> dict:
     """获取单个接口详情。"""
     r = await ctx.deps.sched.stub.GetApi(
         cpb.GetApiRequest(ctx=ctx.deps.ctx(), api_id=api_id, kind=cpb.API_KIND_HTTP))
-    d = to_dict(r)
+    d = await to_dict_async(r)
     _redact_headers(d.get("http", {}).get("headers"))
     _redact_cookies(d.get("http", {}).get("cookies"))
     return d
@@ -242,7 +250,7 @@ async def list_environments(ctx: RunContext[CopilotDeps],
     pid = ctx.deps.resolve_project_id(project_id)
     r = await ctx.deps.sched.stub.ListEnvironments(
         cpb.ListEnvironmentsRequest(ctx=ctx.deps.ctx(), project_id=pid))
-    return to_dict(r).get("environments", [])
+    return (await to_dict_async(r)).get("environments", [])
 
 
 @readonly.tool
@@ -253,7 +261,7 @@ async def list_test_cases(ctx: RunContext[CopilotDeps],
     r = await ctx.deps.sched.stub.ListTestCases(
         cpb.ListTestCasesRequest(ctx=ctx.deps.ctx(), project_id=pid, query=query,
                                  page=pb.PageRequest(page_size=200)))
-    return to_dict(r).get("cases", [])
+    return (await to_dict_async(r)).get("cases", [])
 
 
 @readonly.tool
@@ -261,7 +269,7 @@ async def get_test_case(ctx: RunContext[CopilotDeps], case_id: str) -> dict:
     """获取用例完整定义（步骤树/低代码脚本）。"""
     r = await ctx.deps.sched.stub.GetTestCase(
         cpb.GetTestCaseRequest(ctx=ctx.deps.ctx(), case_id=case_id))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @readonly.tool
@@ -269,7 +277,7 @@ async def query_schema(ctx: RunContext[CopilotDeps], topic: str = "") -> dict:
     """查询领域 schema（数据字典：实体/字段/枚举），写用例前先查。"""
     r = await ctx.deps.sched.stub.QuerySchema(
         cpb.QuerySchemaRequest(ctx=ctx.deps.ctx(), topic=topic))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @readonly.tool
@@ -282,7 +290,7 @@ async def list_runs(ctx: RunContext[CopilotDeps], project_id: str | None = None,
     r = await ctx.deps.sched.stub.ListRuns(
         cpb.ListRunsRequest(ctx=ctx.deps.ctx(), project_id=pid, plan_id=plan_id,
                             status=st, page=pb.PageRequest(page_size=50)))
-    return to_dict(r).get("runs", [])
+    return (await to_dict_async(r)).get("runs", [])
 
 
 @readonly.tool
@@ -290,7 +298,7 @@ async def get_run(ctx: RunContext[CopilotDeps], run_id: str, include_steps: bool
     """获取运行详情（含用例结果；include_steps=true 含步骤级明细，用于失败根因分析）。"""
     r = await ctx.deps.sched.stub.GetRun(
         cpb.GetRunRequest(ctx=ctx.deps.ctx(), run_id=run_id, include_steps=include_steps))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @readonly.tool
@@ -301,7 +309,7 @@ async def query_coverage(ctx: RunContext[CopilotDeps],
     pid = ctx.deps.resolve_project_id(project_id)
     r = await ctx.deps.sched.stub.QueryCoverage(
         cpb.QueryCoverageRequest(ctx=ctx.deps.ctx(), project_id=pid))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @readonly.tool
@@ -315,7 +323,7 @@ async def query_api_directory(ctx: RunContext[CopilotDeps],
     r = await ctx.deps.sched.stub.QueryApiDirectory(
         cpb.QueryApiDirectoryRequest(ctx=ctx.deps.ctx(), project_id=pid,
                                      query=query, parent_node_id=parent_node_id))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @readonly.tool
@@ -330,7 +338,7 @@ async def check_variable_refs(ctx: RunContext[CopilotDeps],
     r = await ctx.deps.sched.stub.CheckVariableRefs(
         cpb.CheckVariableRefsRequest(ctx=ctx.deps.ctx(), project_id=pid,
                                      environment_id=eid))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 # ---------------------------------------------------------------------------
@@ -348,7 +356,7 @@ async def create_project(ctx: RunContext[CopilotDeps], name: str,
     if config:
         req.config.update(config)
     r = await ctx.deps.sched.stub.CreateProject(req)
-    return to_dict(r)
+    return await to_dict_async(r)
 
 _METHODS = {"GET": pb.HTTP_METHOD_GET, "POST": pb.HTTP_METHOD_POST, "PUT": pb.HTTP_METHOD_PUT,
             "DELETE": pb.HTTP_METHOD_DELETE, "PATCH": pb.HTTP_METHOD_PATCH,
@@ -374,7 +382,7 @@ async def create_api(ctx: RunContext[CopilotDeps], method: str, uri: str,
         api.body.raw = body
     r = await ctx.deps.sched.stub.CreateApi(
         cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, http=api))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -398,7 +406,7 @@ async def create_grpc_api(ctx: RunContext[CopilotDeps],
         g.deadline.FromMilliseconds(deadline_ms)
     r = await ctx.deps.sched.stub.CreateApi(
         cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, grpc=g))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -424,7 +432,7 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
         case.declarative.CopyFrom(dc)
     r = await ctx.deps.sched.stub.CreateTestCase(
         cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 def json_format_parse(d: dict, msg) -> None:
@@ -708,7 +716,7 @@ async def create_ui_test_case(ctx: RunContext[CopilotDeps], name: str,
         raise ValueError("case_type 只能是 declarative 或 lowcode")
     r = await ctx.deps.sched.stub.CreateTestCase(
         cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -729,7 +737,7 @@ async def create_test_plan(ctx: RunContext[CopilotDeps], name: str,
         item.enabled = True
     r = await ctx.deps.sched.stub.CreateTestPlan(
         cpb.CreateTestPlanRequest(ctx=ctx.deps.ctx(), project_id=pid, plan=plan))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -748,7 +756,7 @@ async def import_openapi(ctx: RunContext[CopilotDeps],
     else:
         raise ValueError("openapi_document 与 openapi_url 需提供一个")
     r = await ctx.deps.sched.stub.ImportOpenApi(req)
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -764,7 +772,7 @@ async def apply_openapi_diff(ctx: RunContext[CopilotDeps],
     r = await ctx.deps.sched.stub.ApplyOpenApiDiff(cpb.ApplyOpenApiDiffRequest(
         ctx=ctx.deps.ctx(), project_id=pid,
         openapi_document=openapi_document, auto_update_cases=auto_update_cases))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -775,7 +783,7 @@ async def trigger_run(ctx: RunContext[CopilotDeps], plan_id: str,
     eid = ctx.deps.resolve_env_id(env_id, required=False)
     r = await ctx.deps.sched.stub.TriggerRun(
         cpb.TriggerRunRequest(ctx=ctx.deps.ctx(), plan_id=plan_id, env_id=eid))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 @writes.tool(requires_approval=True)
@@ -786,7 +794,7 @@ async def trigger_stress(ctx: RunContext[CopilotDeps], stress_plan_id: str,
     r = await ctx.deps.sched.stub.TriggerStress(
         cpb.TriggerStressRequest(ctx=ctx.deps.ctx(), stress_plan_id=stress_plan_id,
                                  env_id=eid))
-    return to_dict(r)
+    return await to_dict_async(r)
 
 
 # parse_struct 占位引用（部分响应含 Struct 时备用）

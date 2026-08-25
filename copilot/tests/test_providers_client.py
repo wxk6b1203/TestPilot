@@ -7,12 +7,19 @@ scheduler_client：ctx/to_dict/parse_struct 为纯 proto 转换，全程离线�
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot_copilot.config import Settings
 from testpilot_copilot.providers import build_model
-from testpilot_copilot.scheduler_client import SchedulerClient, parse_struct, to_dict
+from testpilot_copilot.scheduler_client import (
+    SchedulerClient,
+    parse_struct,
+    to_dict,
+    to_dict_async,
+)
 
 # ---------------------------------------------------------------------------
 # build_model
@@ -102,6 +109,11 @@ def test_to_dict_enum_rendered_as_name():
     d = to_dict(api)
     assert d["method"] == "HTTP_METHOD_POST"
     assert d["uri"] == "/x"
+
+
+def test_to_dict_async_matches_sync():
+    msg = pb.RequestContext(tenant_id=7, user_id="u1", actor="copilot")
+    assert asyncio.run(to_dict_async(msg)) == to_dict(msg)
 
 
 def test_parse_struct_roundtrip():

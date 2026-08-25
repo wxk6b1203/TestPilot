@@ -69,8 +69,7 @@ async def lifespan(app: FastAPI):
                                        timeout=settings.http_timeout)
     log.info("copilot ready: provider=%s model=%s", settings.provider, settings.model)
     yield
-    await app.state.sched.close()
-    await app.state.http.aclose()
+    await asyncio.gather(app.state.sched.close(), app.state.http.aclose())
 
 
 app = FastAPI(title="TestPilot Copilot", lifespan=lifespan)
@@ -172,7 +171,8 @@ async def _chat_inner(request: Request):
         return JSONResponse({"error": f"body too large (> {_MAX_CHAT_BODY} bytes)"},
                             status_code=413)
     try:
-        body = json.loads(raw) if raw else {}
+        # 最大 1MB 的 JSON 解析放线程池，避免长 body 阻塞 SSE 事件循环
+        body = await asyncio.to_thread(json.loads, raw) if raw else {}
     except ValueError:
         return JSONResponse({"error": "invalid json body"}, status_code=400)
 
@@ -194,11 +194,12 @@ async def _chat_inner(request: Request):
                            request.headers.get("x-tp-project-id")),
                        ui_env_id=_context_id_header(
                            request.headers.get("x-tp-env-id")))
-    # 校验页面上下文并加载权威详情：失效的项目/环境 ID 会被清空，
-    # 工具缺省参数不会拿着失效 ID 反复调用 Scheduler。
-    await deps.hydrate_ui_context()
-
-    await _persist_incoming_user(app, session_id, token, body)
+    # 校验页面上下文与用户消息去重落库互不依赖：并行执行，
+    # 每个续聊请求少等一次「GET 历史消息」的 RTT。
+    await asyncio.gather(
+        deps.hydrate_ui_context(),
+        _persist_incoming_user(app, session_id, token, body),
+    )
 
     async def on_complete(result):
         await _persist_turn(app, session_id, token, result)
@@ -247,7 +248,7 @@ async def _persist_incoming_user(app: FastAPI, session_id: str, token: str, body
 async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> None:
     """把本轮新增消息落库（user / assistant / tool 三种角色）。"""
     try:
-        rows = _render_rows(result.new_messages())
+        rows = await asyncio.to_thread(_render_rows, result.new_messages())
     except Exception:
         log.exception("render transcript failed")
         return
@@ -255,6 +256,8 @@ async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> No
         return
     http: httpx.AsyncClient = app.state.http
     h = {"Authorization": f"Bearer {token}"}
+    # 逐条串行落库：消息行按插入顺序拿 snowflake ID，并发会打乱
+    # user/tool-call/tool-result 的 transcript 顺序（前端历史加载按 ID 排序）。
     for row in rows:
         try:
             r = await http.post(f"/api/v1/copilot/sessions/{session_id}/messages", json=row,
@@ -277,7 +280,8 @@ def _render_rows(messages: list[ModelMessage]) -> list[dict[str, Any]]:
                     rows.append({"role": 1, "content": part.content})
                 elif isinstance(part, ToolReturnPart):
                     rows.append({"role": 3, "content": "", "tool_calls": json.dumps(
-                        [{"name": part.tool_name, "result": _short(part.content)}],
+                        [{"name": part.tool_name, "result": _short(part.content),
+                          "tool_call_id": part.tool_call_id}],
                         ensure_ascii=False)})
         elif isinstance(m, ModelResponse):
             text: list[str] = []
@@ -286,7 +290,11 @@ def _render_rows(messages: list[ModelMessage]) -> list[dict[str, Any]]:
                 if isinstance(part, TextPart):
                     text.append(part.content)
                 elif isinstance(part, ToolCallPart):
-                    calls.append({"name": part.tool_name, "args": part.args_as_json_str()})
+                    # 落库时保留 tool_call_id：前端重载历史后必须按同一 ID
+                    # 重建 call/result 配对，否则多工具调用会被拍平成重复 ID
+                    calls.append({"name": part.tool_name,
+                                  "args": part.args_as_json_str(),
+                                  "tool_call_id": part.tool_call_id})
             if text or calls:
                 row: dict[str, Any] = {"role": 2, "content": "\n".join(text)}
                 if calls:

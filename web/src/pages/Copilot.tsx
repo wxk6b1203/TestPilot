@@ -276,36 +276,72 @@ export default function Copilot() {
     return () => window.cancelAnimationFrame(frame)
   }, [messages])
 
-  // 加载历史会话（仅展示：user/assistant 文本 + 工具摘要）
+  // 加载历史会话（这些 UIMessage 既用于展示，也会作为下一次请求的对话上下文）
   const openSession = async (sid: string) => {
     if (busy) stop() // 流式中直接覆盖 messages 会与 SDK 写入竞争，先中止
     setView('chat')
     try {
       const r = await get<ListResp<any>>(`/api/v1/copilot/sessions/${sid}/messages`)
       const msgs: UIMessage[] = []
+      // 持久化把 assistant 的工具调用与其结果分成 role=2 / role=3 两行；
+      // 这里按 tool_call_id（旧数据无 id 时按工具名 FIFO）合并回同一个
+      // dynamic-tool part。绝不能把行 ID 当 toolCallId：一行多个工具调用会
+      // 产生重复 tool_call_id，第二次发消息时 DeepSeek 直接 400。
+      const pendingCalls = new Map<string, any>()
+      const pendingByName = new Map<string, any[]>()
+      const mergeResult = (tc: any) => {
+        const part = (tc.tool_call_id && pendingCalls.get(tc.tool_call_id)) ||
+          pendingByName.get(tc.name)?.shift()
+        if (part) {
+          part.state = 'output-available'
+          part.output = tc.result
+          return true
+        }
+        return false
+      }
       for (const m of r.items) {
+        const calls = JSON.parse(m.tool_calls || '[]')
         if (m.role === 1) {
           msgs.push({ id: String(m.id), role: 'user', parts: [{ type: 'text', text: m.content }] })
-        } else {
-          const parts: any[] = []
-          if (m.content) parts.push({ type: 'text', text: m.content })
-          for (const tc of JSON.parse(m.tool_calls || '[]')) {
-            // 后端 schema：output-available 的 input/output 均必填；
-            // 无 result 的调用用 input-available（input 必填、无 output 字段）
-            if (tc.result === undefined || tc.result === null) {
-              parts.push({
-                type: 'dynamic-tool', toolName: tc.name, toolCallId: String(m.id),
-                state: 'input-available', input: tc.args ?? null,
-              })
-            } else {
-              parts.push({
-                type: 'dynamic-tool', toolName: tc.name, toolCallId: String(m.id),
-                state: 'output-available', input: tc.args ?? null, output: tc.result,
-              })
-            }
-          }
-          msgs.push({ id: String(m.id), role: 'assistant', parts })
+          continue
         }
+        if (m.role === 3) {
+          // 工具结果行：合并回前面待输出的调用；找不到配对（旧数据孤行）才单独展示
+          const tc = calls[0]
+          if (tc && !mergeResult(tc)) {
+            msgs.push({
+              id: String(m.id), role: 'assistant',
+              parts: [{
+                type: 'dynamic-tool', toolName: tc.name, toolCallId: `${m.id}:0`,
+                state: 'output-available', input: null, output: tc.result,
+              }],
+            })
+          }
+          continue
+        }
+        const parts: any[] = []
+        if (m.content) parts.push({ type: 'text', text: m.content })
+        calls.forEach((tc: any, idx: number) => {
+          const toolCallId = tc.tool_call_id || `${m.id}:${idx}`
+          if (tc.result === undefined || tc.result === null) {
+            // 后端 schema：input-available 只需要 input；result 稍后按 ID 合并
+            const part = {
+              type: 'dynamic-tool', toolName: tc.name, toolCallId,
+              state: 'input-available', input: tc.args ?? null,
+            }
+            parts.push(part)
+            pendingCalls.set(toolCallId, part)
+            if (!tc.tool_call_id) {
+              pendingByName.set(tc.name, [...(pendingByName.get(tc.name) || []), part])
+            }
+          } else {
+            parts.push({
+              type: 'dynamic-tool', toolName: tc.name, toolCallId,
+              state: 'output-available', input: tc.args ?? null, output: tc.result,
+            })
+          }
+        })
+        msgs.push({ id: String(m.id), role: 'assistant', parts })
       }
       sessionIdRef.current = sid
       setSessionId(sid)

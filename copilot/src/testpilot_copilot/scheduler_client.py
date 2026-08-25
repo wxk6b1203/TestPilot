@@ -7,6 +7,7 @@ RequestContext 与 JWT claims 一致。本客户端从 contextvar 读取当前�
 
 from __future__ import annotations
 
+import asyncio
 import contextvars
 
 import grpc
@@ -77,6 +78,12 @@ def to_dict(msg) -> dict:
     return json_format.MessageToDict(
         msg, preserving_proto_field_name=False,
         use_integers_for_enums=False, always_print_fields_with_no_presence=False)
+
+
+async def to_dict_async(msg) -> dict:
+    """to_dict 的线程池版：大列表响应（接口/用例/运行/数据字典）的
+    MessageToDict 属于 CPU 密集操作，放默认线程池避免阻塞 SSE 事件循环。"""
+    return await asyncio.to_thread(to_dict, msg)
 
 
 def parse_struct(d: dict):

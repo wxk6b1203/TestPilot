@@ -111,7 +111,8 @@ def test_render_assistant_tool_call():
     assert row["role"] == 2
     assert row["content"] == "我来查一下"
     calls = json.loads(row["tool_calls"])
-    assert calls == [{"name": "list_projects", "args": '{"query":"demo"}'}]
+    assert calls == [{"name": "list_projects", "args": '{"query":"demo"}',
+                      "tool_call_id": "t1"}]
 
 
 def test_render_assistant_tool_call_only_no_text():
@@ -122,6 +123,7 @@ def test_render_assistant_tool_call_only_no_text():
     assert rows[0]["role"] == 2
     assert rows[0]["content"] == ""
     assert json.loads(rows[0]["tool_calls"])[0]["args"] == '{"run_id":"r1"}'
+    assert json.loads(rows[0]["tool_calls"])[0]["tool_call_id"] == "t2"
 
 
 def test_render_empty_response_skipped():
@@ -140,6 +142,7 @@ def test_render_tool_return():
     calls = json.loads(row["tool_calls"])
     assert calls[0]["name"] == "get_run"
     assert calls[0]["result"] == '{"status": "ok"}'
+    assert calls[0]["tool_call_id"] == "t1"
 
 
 def test_render_tool_return_truncates_result():
@@ -397,13 +400,20 @@ def test_hydrate_ui_context_keeps_valid_project_and_env():
 
 
 def test_hydrate_ui_context_clears_stale_or_mismatched_ids():
-    # 项目失效 → 项目和环境下发 ID 都清空，且不再请求环境列表
-    http = _FakeHTTP({"/api/v1/projects/p-gone": (404, {})})
+    # 项目失效 → 项目和环境下发 ID 都清空。项目/环境已改为并行拉取，
+    # 所以环境列表也会被请求（结果 404，随后一并清空）。
+    http = _FakeHTTP({
+        "/api/v1/projects/p-gone": (404, {}),
+        "/api/v1/environments?project_id=p-gone&page_size=200": (404, {}),
+    })
     deps = _ctx_deps(project_id="p-gone", env_id="e1", http=http)
     asyncio.run(deps.hydrate_ui_context())
     assert deps.ui_project_id == "" and deps.ui_project is None
     assert deps.ui_env_id == "" and deps.ui_environment is None
-    assert http.calls == ["/api/v1/projects/p-gone"]
+    assert set(http.calls) == {
+        "/api/v1/projects/p-gone",
+        "/api/v1/environments?project_id=p-gone&page_size=200",
+    }
 
     # 项目有效但环境不属于该项目 → 仅清环境
     http = _FakeHTTP({
