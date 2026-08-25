@@ -2,8 +2,8 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Input, Popconfirm, Space, Tag, Typography } from 'antd'
 import {
-  ArrowLeftOutlined, ClockCircleOutlined, DeleteOutlined, EnvironmentOutlined, LoadingOutlined,
-  PlusOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
+  ArrowLeftOutlined, ClockCircleOutlined, CopyOutlined, DeleteOutlined, EnvironmentOutlined,
+  LoadingOutlined, PlusOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
 } from '@ant-design/icons'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai'
@@ -100,6 +100,38 @@ function describeChatError(e: unknown): string {
     // 不是 JSON，按原文展示
   }
   return raw
+}
+
+// 一个消息组（相邻同角色消息合成一个气泡）可复制的纯文本：
+// 只取 text parts，reasoning/工具卡不混入，用户复制到的就是对话正文。
+function copyableTextOfGroup(group: { items: UIMessage[] }): string {
+  return group.items
+    .flatMap((m) => m.parts)
+    .filter((p: any) => p.type === 'text')
+    .map((p: any) => String(p.text ?? ''))
+    .filter((s) => s.trim())
+    .join('\n\n')
+}
+
+// Clipboard API 优先；非安全上下文或写入失败时退回 execCommand 方案
+async function copyText(text: string): Promise<void> {
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text)
+      return
+    } catch {
+      // fallthrough
+    }
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  const ok = document.execCommand('copy')
+  document.body.removeChild(ta)
+  if (!ok) throw new Error('copy failed')
 }
 
 export default function Copilot() {
@@ -375,6 +407,15 @@ export default function Copilot() {
     addToolApprovalResponse({ id: part.approval.id, approved })
   }, [addToolApprovalResponse])
 
+  const handleCopy = async (text: string) => {
+    try {
+      await copyText(text)
+      message.success('已复制')
+    } catch {
+      message.error('复制失败，请手动选择文本')
+    }
+  }
+
   return (
     <div style={{ display: 'flex', height: '100%' }}>
       {/* 会话列表：常驻左栏，全高，内部滚动 */}
@@ -505,6 +546,7 @@ export default function Copilot() {
             )}
             {messageGroups.map((group) => {
               const isUser = group.role === 'user'
+              const copyableText = copyableTextOfGroup(group)
               return (
                 <div
                   key={group.items[0].id}
@@ -513,19 +555,40 @@ export default function Copilot() {
                     marginBottom: 12,
                   }}>
                   <div style={{
+                    display: 'flex', flexDirection: 'column',
+                    alignItems: isUser ? 'flex-end' : 'flex-start',
                     maxWidth: '78%',
-                    padding: '8px 12px',
-                    borderRadius: 10,
-                    background: isUser ? PALETTE.primary : '#FFFFFF',
-                    color: isUser ? '#FFFFFF' : PALETTE.text,
-                    border: isUser ? undefined : `1px solid ${PALETTE.border}`,
-                    boxShadow: '0 1px 2px rgba(0,0,0,.04)',
                   }}>
-                    {group.items.map((m) => (
-                      m.parts.map((p: any, i: number) => (
-                        <PartView key={`${m.id}:${i}`} part={p} role={group.role} onRespond={respond} />
-                      ))
-                    ))}
+                    <div style={{
+                      padding: '8px 12px',
+                      borderRadius: 10,
+                      background: isUser ? PALETTE.primary : '#FFFFFF',
+                      color: isUser ? '#FFFFFF' : PALETTE.text,
+                      border: isUser ? undefined : `1px solid ${PALETTE.border}`,
+                      boxShadow: '0 1px 2px rgba(0,0,0,.04)',
+                    }}>
+                      {group.items.map((m) => (
+                        m.parts.map((p: any, i: number) => (
+                          <PartView key={`${m.id}:${i}`} part={p} role={group.role} onRespond={respond} />
+                        ))
+                      ))}
+                    </div>
+                    {copyableText && (
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        aria-label="复制消息"
+                        title="复制消息"
+                        onClick={() => void handleCopy(copyableText)}
+                        style={{
+                          marginTop: 4, height: 22, padding: '0 4px',
+                          fontSize: 12, color: PALETTE.textTertiary,
+                        }}
+                      >
+                        复制
+                      </Button>
+                    )}
                   </div>
                 </div>
               )
