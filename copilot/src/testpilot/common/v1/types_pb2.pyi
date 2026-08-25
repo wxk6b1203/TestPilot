@@ -752,16 +752,20 @@ class DeclarativeCase(_message.Message):
     def __init__(self, steps: _Optional[_Iterable[_Union[TestStep, _Mapping]]] = ...) -> None: ...
 
 class LowCodeCase(_message.Message):
-    __slots__ = ("script_ref", "source", "entry", "parameters")
+    __slots__ = ("script_ref", "source", "entry", "parameters", "http_api_refs", "grpc_api_refs")
     SCRIPT_REF_FIELD_NUMBER: _ClassVar[int]
     SOURCE_FIELD_NUMBER: _ClassVar[int]
     ENTRY_FIELD_NUMBER: _ClassVar[int]
     PARAMETERS_FIELD_NUMBER: _ClassVar[int]
+    HTTP_API_REFS_FIELD_NUMBER: _ClassVar[int]
+    GRPC_API_REFS_FIELD_NUMBER: _ClassVar[int]
     script_ref: str
     source: str
     entry: str
     parameters: _struct_pb2.Struct
-    def __init__(self, script_ref: _Optional[str] = ..., source: _Optional[str] = ..., entry: _Optional[str] = ..., parameters: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
+    http_api_refs: _containers.RepeatedScalarFieldContainer[str]
+    grpc_api_refs: _containers.RepeatedScalarFieldContainer[str]
+    def __init__(self, script_ref: _Optional[str] = ..., source: _Optional[str] = ..., entry: _Optional[str] = ..., parameters: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., http_api_refs: _Optional[_Iterable[str]] = ..., grpc_api_refs: _Optional[_Iterable[str]] = ...) -> None: ...
 
 class TestCase(_message.Message):
     __slots__ = ("id", "tenant_id", "project_id", "type", "name", "description", "declarative", "lowcode", "tags", "created_by")

@@ -32,6 +32,7 @@ if ! git diff --exit-code -- \
     buf.yaml \
     scheduler/gen \
     worker/src/testpilot \
+    copilot/src/testpilot \
     scheduler/internal/grpcserver/schema.json \
     copilot/src/testpilot_copilot/grounding; then
   echo "✗ proto 生成产物与提交内容不一致：请运行 scripts/proto-gen.sh 并提交结果" >&2

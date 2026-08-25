@@ -415,7 +415,8 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
                            project_id: str | None = None,
                            description: str = "") -> dict:
     """创建测试用例。case_type: declarative（definition=DeclarativeCase 的 JSON：{"steps":[...]}）
-    或 lowcode（definition={"source": "...", "entry": "run"}）。
+    或 lowcode（definition={"source": "...", "entry": "run",
+    "http_api_refs": ["接口ID", ...], "grpc_api_refs": [...]}）。
     project_id 省略时使用页面左上角当前选择的项目。"""
     pid = ctx.deps.resolve_project_id(project_id)
     case = pb.TestCase(name=name, description=description, created_by="copilot")
@@ -424,6 +425,14 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
         lc = pb.LowCodeCase()
         lc.source = definition.get("source", "")
         lc.entry = definition.get("entry", "run")
+        # 依赖声明必须透传（此前只拷 source/entry，显式 refs 会被静默丢弃，
+        # 运行时才报 "not in http_api_refs"）。兼容 camelCase 前端命名。
+        lc.http_api_refs.extend(
+            str(x) for x in definition.get("http_api_refs")
+            or definition.get("httpApiRefs") or [])
+        lc.grpc_api_refs.extend(
+            str(x) for x in definition.get("grpc_api_refs")
+            or definition.get("grpcApiRefs") or [])
         case.lowcode.CopyFrom(lc)
     else:
         case.type = pb.TEST_CASE_TYPE_DECLARATIVE

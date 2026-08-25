@@ -172,7 +172,7 @@ cd web && pnpm lint && pnpm build
 ### proto 契约治理
 
 - proto 位于 `proto/`，是 Go / Python / Copilot 三方的单一事实源。
-- 生成入口：`scripts/proto-gen.sh`（Go gRPC + Python gRPC + Copilot grounding）。
+- 生成入口：`scripts/proto-gen.sh`（Go gRPC + Worker/Copilot Python gRPC + grounding）。
 - 校验入口：`scripts/proto-check.sh`（`buf lint` / `buf breaking` + 生成零漂移检查）。
 - 生成产物随仓库提交以支持离线构建，修改 proto 后必须同步提交生成结果。
 

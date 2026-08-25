@@ -74,7 +74,8 @@ async def run(ctx):
 `.eq(v) .ne(v) .gt(n) .ge(n) .lt(n) .le(n) .contains(x) .matches(regex) .exists() .type_is("object|array|string|number|boolean|null")`
 
 ## 接口依赖声明（LowCodeCase）
-- definition.httpApiRefs / grpcApiRefs 显式声明依赖；脚本中的字面量 ID 会在派发时被静态提取；
+- definition.httpApiRefs / grpcApiRefs 显式声明依赖；脚本中的字面量 ID 与简单常量
+  （如 `API_ID = "123"` 后 `ctx.http_api(API_ID)`）会在派发时被静态提取；
 - 动态拼接 ID（getattr/f-string）必须显式声明，否则运行时报未声明错误；
 - `from tp_api_wrappers import ...` 且无任何 refs 时，Scheduler 会兜底包含本项目全部接口（上限 200）。
 

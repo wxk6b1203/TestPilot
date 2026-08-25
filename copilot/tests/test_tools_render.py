@@ -31,6 +31,7 @@ from testpilot_copilot.tools import (
     build_declarative_ui_case,
     check_variable_refs,
     create_api,
+    create_test_case,
     create_test_plan,
     create_ui_test_case,
     get_current_context,
@@ -227,6 +228,35 @@ class _RecordingStub:
             self.requests.append((name, req))
             return self.response
         return call
+
+
+def test_create_test_case_lowcode_persists_api_refs():
+    """回归：definition 里的 http_api_refs/grpc_api_refs 必须随 LowCodeCase 下发，
+    否则运行时 ctx.http_api() 会报 not in http_api_refs。"""
+    stub = _RecordingStub(cpb.CreateTestCaseResponse())
+    out = asyncio.run(create_test_case(
+        SimpleNamespace(deps=_fake_deps(stub)),
+        project_id="p1", name="refs", case_type="lowcode",
+        definition={
+            "source": "async def run(ctx):\n    await ctx.http_api(A).run()\n",
+            "entry": "run",
+            "http_api_refs": ["1001"],
+            "grpc_api_refs": [2002],
+        }))
+    assert out == {}
+    name, req = stub.requests[0]
+    assert name == "CreateTestCase"
+    assert list(req.case.lowcode.http_api_refs) == ["1001"]
+    assert list(req.case.lowcode.grpc_api_refs) == ["2002"]
+    assert req.case.lowcode.source.startswith("async def run")
+
+    # 前端编辑器使用 camelCase 键，也应被接受
+    stub2 = _RecordingStub(cpb.CreateTestCaseResponse())
+    asyncio.run(create_test_case(
+        SimpleNamespace(deps=_fake_deps(stub2)),
+        project_id="p1", name="refs-camel", case_type="lowcode",
+        definition={"source": "", "entry": "run", "httpApiRefs": ["1001"]}))
+    assert list(stub2.requests[0][1].case.lowcode.http_api_refs) == ["1001"]
 
 
 def test_create_api_builds_proto_request():

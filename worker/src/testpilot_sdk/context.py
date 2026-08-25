@@ -81,14 +81,22 @@ class Context:
         """按 HTTP 接口 ID 获得可执行封装（接口快照由 Scheduler 派发时解析）。"""
         sid = str(api_id)
         if sid not in self.http_api_ids:
-            raise ValueError(f"http api {sid} not in this case's http_api_refs")
+            raise ValueError(
+                f"http api {sid} not in this case's http_api_refs "
+                f"(available: {sorted(self.http_api_ids) or 'none'}). "
+                "请在用例 definition.httpApiRefs 中声明该接口；"
+                "动态拼接的 ID 也必须显式声明")
         return HttpAPI(api_id=sid)
 
     def grpc_api(self, api_id: str | int) -> GrpcAPI:
         """按 gRPC 接口 ID 获得可执行封装。"""
         sid = str(api_id)
         if sid not in self.grpc_api_ids:
-            raise ValueError(f"grpc api {sid} not in this case's grpc_api_refs")
+            raise ValueError(
+                f"grpc api {sid} not in this case's grpc_api_refs "
+                f"(available: {sorted(self.grpc_api_ids) or 'none'}). "
+                "请在用例 definition.grpcApiRefs 中声明该接口；"
+                "动态拼接的 ID 也必须显式声明")
         return GrpcAPI(api_id=sid)
 
     def api(self, api_id: str | int) -> HttpAPI | GrpcAPI:

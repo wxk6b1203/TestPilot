@@ -58,6 +58,11 @@ PROTO_FILES=(
   "$ROOT/proto/testpilot/worker/v1/worker.proto"
   "$ROOT/proto/testpilot/copilot/v1/copilot.proto"
 )
+# Copilot 只依赖 common/copilot 两个包；与 worker 分开生成，避免引入 worker pb。
+COPILOT_PROTO_FILES=(
+  "$ROOT/proto/testpilot/common/v1/types.proto"
+  "$ROOT/proto/testpilot/copilot/v1/copilot.proto"
+)
 
 echo "→ Go codegen"
 "$PROTOC" -I "$ROOT/proto" \
@@ -65,11 +70,17 @@ echo "→ Go codegen"
   --go-grpc_out="$ROOT/scheduler/gen" --go-grpc_opt=module=github.com/testpilot/testpilot/gen \
   "${PROTO_FILES[@]}"
 
-echo "→ Python codegen"
+echo "→ Python codegen (worker)"
 "$PYTHON" -m grpc_tools.protoc -I "$ROOT/proto" \
   --python_out="$ROOT/worker/src" --pyi_out="$ROOT/worker/src" \
   --grpc_python_out="$ROOT/worker/src" \
   "${PROTO_FILES[@]}"
+
+echo "→ Python codegen (copilot)"
+"$PYTHON" -m grpc_tools.protoc -I "$ROOT/proto" \
+  --python_out="$ROOT/copilot/src" --pyi_out="$ROOT/copilot/src" \
+  --grpc_python_out="$ROOT/copilot/src" \
+  "${COPILOT_PROTO_FILES[@]}"
 
 echo "→ grounding"
 "$PYTHON" "$ROOT/scripts/gen_grounding.py"

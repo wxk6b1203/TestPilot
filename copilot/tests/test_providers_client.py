@@ -94,6 +94,13 @@ def test_ctx_fields_and_defaults():
 # ---------------------------------------------------------------------------
 
 
+def test_copilot_proto_lowcode_has_api_ref_fields():
+    """回归：copilot/src/testpilot 的 proto 必须与 worker 同版本；
+    LowCodeCase.http_api_refs 缺失会让 Copilot 工具静默丢弃依赖声明。"""
+    assert "http_api_refs" in pb.LowCodeCase.DESCRIPTOR.fields_by_name
+    assert "grpc_api_refs" in pb.LowCodeCase.DESCRIPTOR.fields_by_name
+
+
 def test_to_dict_camel_case_and_int64_stringified():
     d = to_dict(pb.RequestContext(tenant_id=7, user_id="u1", actor="copilot"))
     assert d == {"tenantId": "7", "userId": "u1", "actor": "copilot"}

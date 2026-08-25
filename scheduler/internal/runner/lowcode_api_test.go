@@ -37,12 +37,21 @@ func TestScanLowCodeAPIRefs(t *testing.T) {
 	src := `
 from testpilot_sdk import HttpAPI, assert_that
 
+ECHO_HTTP = "12"
+ECHO_GRPC = '34'
+ECHO_ANY = "56"
+ECHO_HTTP_CTOR = "78"
+
 async def run(ctx):
     await ctx.http_api("12").run()
     await ctx.grpc_api('34').run()
     await ctx.api("56").run()
     a = HttpAPI(api_id="78")
     b = GrpcAPI(api_id="90")
+    await ctx.http_api(ECHO_HTTP).run()
+    await ctx.grpc_api(ECHO_GRPC).run()
+    await ctx.api(ECHO_ANY).run()
+    c = HttpAPI(api_id=ECHO_HTTP_CTOR)
 `
 	httpIDs, grpcIDs, anyIDs, uses := scanLowCodeAPIRefs(src)
 	if strings.Join(httpIDs, ",") != "12,78" {
@@ -203,6 +212,24 @@ async def run(ctx):
 	}
 	if len(am.HTTPApis) != 1 || len(am.GrpcApis) != 0 {
 		t.Fatalf("ctx.api resolution: http=%v grpc=%v", am.HTTPApis, am.GrpcApis)
+	}
+
+	// 常量形式（ECHO_API = "id"; ctx.http_api(ECHO_API)）同样静态提取，
+	// 不依赖 definition 显式 http_api_refs。
+	constLC := model.TestCase{
+		ID: model.NextID(), TenantID: 1, ProjectID: 11,
+		Type: int16(commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE),
+		Name: "lc-const",
+		Definition: model.JSON(fmt.Sprintf(
+			`{"source": %q, "entry": "run"}`,
+			fmt.Sprintf("ECHO_API = %q\n\nasync def run(ctx):\n    await ctx.http_api(ECHO_API).run()\n", fmt.Sprint(httpAPI.ID)))),
+	}
+	cm, err := r.materializeCaseEx(&constLC)
+	if err != nil {
+		t.Fatalf("const materialize: %v", err)
+	}
+	if len(cm.HTTPApis) != 1 || cm.HTTPApis[fmt.Sprint(httpAPI.ID)] == nil {
+		t.Fatalf("const ctx.http_api resolution: http=%v", cm.HTTPApis)
 	}
 
 	// 缺失 / 非法 / 跨租户

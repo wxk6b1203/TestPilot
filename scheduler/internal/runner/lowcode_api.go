@@ -17,13 +17,21 @@ import (
 const maxProjectWrapperAPIs = 200 // 项目全量兜底生成上限；超限要求显式声明 refs
 
 var (
-	reCtxHTTPAPI   = regexp.MustCompile(`ctx\.http_api\(\s*["'](\d+)["']`)
-	reCtxGRPCAPI   = regexp.MustCompile(`ctx\.grpc_api\(\s*["'](\d+)["']`)
-	reCtxAnyAPI    = regexp.MustCompile(`ctx\.api\(\s*["'](\d+)["']`)
-	reHTTPCtor     = regexp.MustCompile(`\bHttpAPI\(\s*api_id\s*=\s*["'](\d+)["']`)
-	reGRPCCtor     = regexp.MustCompile(`\bGrpcAPI\(\s*api_id\s*=\s*["'](\d+)["']`)
-	reWrappersUse  = regexp.MustCompile(`(?m)^\s*(?:from\s+tp_api_wrappers\s+import|import\s+tp_api_wrappers)\b`)
-	reWrapperClass = regexp.MustCompile(`\bApi(\d+)\b`)
+	reCtxHTTPAPI      = regexp.MustCompile(`ctx\.http_api\(\s*["'](\d+)["']`)
+	reCtxGRPCAPI      = regexp.MustCompile(`ctx\.grpc_api\(\s*["'](\d+)["']`)
+	reCtxAnyAPI       = regexp.MustCompile(`ctx\.api\(\s*["'](\d+)["']`)
+	reHTTPCtor        = regexp.MustCompile(`\bHttpAPI\(\s*api_id\s*=\s*["'](\d+)["']`)
+	reGRPCCtor        = regexp.MustCompile(`\bGrpcAPI\(\s*api_id\s*=\s*["'](\d+)["']`)
+	reWrappersUse     = regexp.MustCompile(`(?m)^\s*(?:from\s+tp_api_wrappers\s+import|import\s+tp_api_wrappers)\b`)
+	reWrapperClass    = regexp.MustCompile(`\bApi(\d+)\b`)
+	// 常量形式：ECHO_API = "347..." 后再 ctx.http_api(ECHO_API)。
+	// 这是 LLM/用户重构脚本时最常见的写法，派发期同样按静态引用解析。
+	reAPIConst          = regexp.MustCompile(`(?m)^[ \t]*([A-Za-z_][A-Za-z0-9_]*)[ \t]*=[ \t]*["'](\d+)["'][ \t]*(?:#.*)?$`)
+	reCtxHTTPAPIVar     = regexp.MustCompile(`ctx\.http_api\(\s*(?:api_id\s*=\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)`)
+	reCtxGRPCAPIVar     = regexp.MustCompile(`ctx\.grpc_api\(\s*(?:api_id\s*=\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)`)
+	reCtxAnyAPIVar      = regexp.MustCompile(`ctx\.api\(\s*(?:api_id\s*=\s*)?([A-Za-z_][A-Za-z0-9_]*)\s*\)`)
+	reHTTPCtorVar       = regexp.MustCompile(`\bHttpAPI\(\s*api_id\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*`)
+	reGRPCCtorVar       = regexp.MustCompile(`\bGrpcAPI\(\s*api_id\s*=\s*([A-Za-z_][A-Za-z0-9_]*)\s*`)
 )
 
 type lowCodeRefs struct {
@@ -79,9 +87,22 @@ func scanLowCodeAPIRefs(source string) (httpIDs, grpcIDs, anyIDs []string, usesW
 	httpSet := map[string]bool{}
 	grpcSet := map[string]bool{}
 	anySet := map[string]bool{}
+	consts := map[string]string{}
+	for _, m := range reAPIConst.FindAllStringSubmatch(source, -1) {
+		if len(m) == 3 && m[2] != "" {
+			consts[m[1]] = m[2]
+		}
+	}
 	add := func(set map[string]bool, matches [][]string) {
 		for _, m := range matches {
 			set[m[1]] = true
+		}
+	}
+	addVar := func(set map[string]bool, matches [][]string) {
+		for _, m := range matches {
+			if id := consts[m[1]]; id != "" {
+				set[id] = true
+			}
 		}
 	}
 	add(httpSet, reCtxHTTPAPI.FindAllStringSubmatch(source, -1))
@@ -89,6 +110,11 @@ func scanLowCodeAPIRefs(source string) (httpIDs, grpcIDs, anyIDs []string, usesW
 	add(anySet, reCtxAnyAPI.FindAllStringSubmatch(source, -1))
 	add(httpSet, reHTTPCtor.FindAllStringSubmatch(source, -1))
 	add(grpcSet, reGRPCCtor.FindAllStringSubmatch(source, -1))
+	addVar(httpSet, reCtxHTTPAPIVar.FindAllStringSubmatch(source, -1))
+	addVar(grpcSet, reCtxGRPCAPIVar.FindAllStringSubmatch(source, -1))
+	addVar(anySet, reCtxAnyAPIVar.FindAllStringSubmatch(source, -1))
+	addVar(httpSet, reHTTPCtorVar.FindAllStringSubmatch(source, -1))
+	addVar(grpcSet, reGRPCCtorVar.FindAllStringSubmatch(source, -1))
 	if usesWrappers {
 		add(anySet, reWrapperClass.FindAllStringSubmatch(source, -1))
 	}
