@@ -33,6 +33,8 @@ import KvEditor from '../components/KvEditor'
 import type { Kv } from '../components/KvEditor'
 import { PALETTE, SPACING } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
+import { useShortcut } from '../hooks/useShortcut'
+import { SHORTCUTS } from '../shortcuts'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { useStableRows } from '../hooks/useStableRows'
 import { useLayout } from '../hooks/useLayout'
@@ -1158,6 +1160,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
 
   // 运行当前用例：未保存/有改动时先持久化，再触发单用例运行。
   const runNow = async () => {
+    if (runningCase) return
     const needPersist = isNew || dirty
     const cid = needPersist ? await persist() : id
     if (!cid) return
@@ -1182,6 +1185,8 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     }
   }
   useSaveShortcut(() => { void save() })
+  // Ctrl/Cmd + Enter 运行当前用例（按键定义集中在 src/shortcuts.ts）
+  useShortcut(SHORTCUTS.send, () => { void runNow() })
 
   // 运行结果抽屉打开且运行中 → SSE 实时刷新，结束事件也会推送到位
   useEventStream(
