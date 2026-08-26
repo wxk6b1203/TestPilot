@@ -19,8 +19,8 @@ function MessageBridge() {
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <ConfigProvider locale={zhCN} theme={themeConfig}>
-      {/* antd App：让 message/Modal 走 context（消除 v6 静态调用警告） */}
-      <AntdApp>
+      {/* antd App：让 message/Modal 走 context（消除 v6 静态调用警告）；stack 开启消息堆叠 */}
+      <AntdApp message={{ stack: true }}>
         <MessageBridge />
         <App />
       </AntdApp>
