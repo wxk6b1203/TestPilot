@@ -612,12 +612,10 @@ export default function Copilot() {
                         title="复制消息"
                         onClick={() => void handleCopy(copyableText)}
                         style={{
-                          marginTop: 4, height: 22, padding: '0 4px',
+                          marginTop: 4, height: 22, width: 22, padding: 0,
                           fontSize: 12, color: PALETTE.textTertiary,
                         }}
-                      >
-                        复制
-                      </Button>
+                      />
                     )}
                   </div>
                 </div>
