@@ -353,6 +353,9 @@ function SchedulesTab() {
   const [plans, setPlans] = useState<TestPlan[]>([])
   const [envs, setEnvs] = useState<Environment[]>([])
   const [modal, setModal] = useState(false)
+  // null = 新建；非 null = 编辑该条
+  const [editing, setEditing] = useState<Schedule | null>(null)
+  const [saving, setSaving] = useState(false)
   const [form] = Form.useForm()
   const load = () =>
     get<{ items: Schedule[] }>('/api/v1/schedules').then((r) => setItems(r.items))
@@ -364,27 +367,80 @@ function SchedulesTab() {
     get<ListResp<Environment>>(projectId ? `/api/v1/environments?project_id=${projectId}&page_size=100` : '/api/v1/environments?page_size=100')
       .then((r) => setEnvs(r.items)).catch(() => {})
   }, [projectId])
+
+  const planOf = (id: string) => plans.find((p) => p.id === id)
+  const envName = (id?: string) =>
+    id && id !== '0' ? envs.find((e) => e.id === id)?.name : undefined
+  // 实际运行环境：调度指定 env 优先，否则回落计划默认 env（与 runner.Trigger 语义一致）
+  const envOf = (row: Schedule) => envName(row.env_id) ?? envName(planOf(row.plan_id)?.env_id)
+  const fmtTime = (v?: string) => (v ? new Date(v).toLocaleString() : '—')
+
+  const openCreate = () => {
+    setEditing(null)
+    form.resetFields()
+    setModal(true)
+  }
+  const openEdit = (row: Schedule) => {
+    setEditing(row)
+    form.setFieldsValue({
+      plan_id: row.plan_id,
+      env_id: envName(row.env_id) ? row.env_id : undefined,
+      name: row.name,
+      cron_expr: row.cron_expr,
+      overlap_policy: row.overlap_policy,
+    })
+    setModal(true)
+  }
+  const save = async () => {
+    const v = await form.validateFields()
+    setSaving(true)
+    try {
+      if (editing) {
+        // 后端语义：env_id "0" = 取消指定环境（回落计划默认）；name 空串 = 保持不变
+        await put(`/api/v1/schedules/${editing.id}`, { ...v, env_id: v.env_id ?? '0' })
+      } else {
+        await post('/api/v1/schedules', v)
+      }
+      setModal(false)
+      form.resetFields()
+      load()
+    } catch (e: any) {
+      message.error(e.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+  const toggle = async (row: Schedule) => {
+    try {
+      await put(`/api/v1/schedules/${row.id}`, { enabled: !row.enabled })
+      load()
+    } catch (e: any) { message.error(e.message) }
+  }
+
   return (
     <div>
       <Space style={{ marginBottom: 12 }}>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setModal(true)}>新建定时任务</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建定时任务</Button>
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          按 Cron 表达式到点自动运行所选测试计划，等同手动点击运行；运行历史可在「测试运行」页按触发方式筛选
+        </Typography.Text>
       </Space>
       <Table
         size="small" rowKey="id" dataSource={items} pagination={false}
         columns={[
-          { title: '计划', dataIndex: 'plan_id', render: (v: string) => plans.find((p) => p.id === v)?.name ?? v },
+          { title: '名称', dataIndex: 'name', render: (v: string) => v || '—' },
+          { title: '计划', dataIndex: 'plan_id', render: (v: string) => planOf(v)?.name ?? v },
+          { title: '环境', render: (_, row) => envOf(row) ?? '—' },
           { title: 'Cron', dataIndex: 'cron_expr' },
           { title: '重叠策略', dataIndex: 'overlap_policy', render: (v: number) => (v === 1 ? '跳过' : '并发') },
+          { title: '上次运行', dataIndex: 'last_run_at', render: fmtTime },
+          { title: '下次运行', dataIndex: 'next_run_at', render: fmtTime },
           { title: '启用', dataIndex: 'enabled', render: (v: boolean) => (v ? '✓' : '—') },
           {
             title: '操作', render: (_, row) => (
               <Space>
-                <Button size="small" onClick={async () => {
-                  try {
-                    await put(`/api/v1/schedules/${row.id}`, { enabled: !row.enabled })
-                    load()
-                  } catch (e: any) { message.error(e.message) }
-                }}>
+                <Button size="small" onClick={() => openEdit(row)}>编辑</Button>
+                <Button size="small" onClick={() => toggle(row)}>
                   {row.enabled ? '停用' : '启用'}
                 </Button>
                 <Popconfirm title="删除？" onConfirm={async () => {
@@ -399,31 +455,46 @@ function SchedulesTab() {
         ]}
       />
       <Modal
-        title="新建定时任务" open={modal} onCancel={() => setModal(false)}
-        onOk={async () => {
-          const v = await form.validateFields()
-          try {
-            await post('/api/v1/schedules', v)
-            setModal(false); form.resetFields(); load()
-          } catch (e: any) { message.error(e.message) }
-        }}
+        title={editing ? '编辑定时任务' : '新建定时任务'} open={modal}
+        onCancel={() => setModal(false)} onOk={save} confirmLoading={saving}
+        okText={editing ? '保存' : '创建'}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="plan_id" label="计划" rules={[{ required: true }]}>
-            <Select options={plans.map((p) => ({ value: p.id, label: p.name }))} />
+          <Form.Item
+            name="plan_id" label="计划" rules={[{ required: true }]}
+            extra={plans.length === 0 ? '当前项目暂无测试计划：请先到「测试计划」页创建，或用顶栏切换项目' : undefined}
+          >
+            <Select
+              placeholder={plans.length === 0 ? '无可选计划' : '选择要定期运行的测试计划'}
+              options={plans.map((p) => ({ value: p.id, label: p.name }))}
+            />
           </Form.Item>
-          <Form.Item name="env_id" label="环境">
+          <Form.Item
+            name="env_id" label="环境" extra="不选则使用计划默认环境"
+          >
             <Select allowClear options={envs.map((e) => ({ value: e.id, label: e.name }))} />
           </Form.Item>
-          <Form.Item name="cron_expr" label="Cron 表达式" rules={[{ required: true }]}>
+          <Form.Item name="name" label="名称">
+            <Input placeholder="如：工作日冒烟回归" maxLength={100} />
+          </Form.Item>
+          <Form.Item
+            name="cron_expr" label="Cron 表达式"
+            rules={[{ required: true }]}
+            extra="5 段标准表达式：分 时 日 月 周，如 0 9 * * 1-5 表示工作日每天 9:00"
+          >
             <Input placeholder="0 9 * * 1-5" />
           </Form.Item>
-          <Form.Item name="overlap_policy" label="重叠策略" initialValue={1}>
+          <Form.Item
+            name="overlap_policy" label="重叠策略" initialValue={1}
+            extra="到点时上一轮还没跑完：跳过本轮，或允许并发"
+          >
             <Select options={[{ value: 1, label: '跳过' }, { value: 2, label: '并发' }]} />
           </Form.Item>
-          <Form.Item name="enabled" label="启用" initialValue={true} valuePropName="checked">
-            <Switch />
-          </Form.Item>
+          {!editing && (
+            <Form.Item name="enabled" label="启用" initialValue={true} valuePropName="checked">
+              <Switch />
+            </Form.Item>
+          )}
         </Form>
       </Modal>
     </div>

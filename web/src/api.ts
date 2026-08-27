@@ -198,9 +198,12 @@ export interface Schedule {
   id: string
   plan_id: string
   env_id: string
+  name: string
   cron_expr: string
   overlap_policy: number
   enabled: boolean
+  last_run_at?: string
+  next_run_at?: string
 }
 export interface NotificationChannel {
   id: string
