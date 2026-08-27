@@ -761,9 +761,9 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         <Button size="small" onClick={() => setCurlOpen(true)}>导入 curl</Button>
         <Button size="small" onClick={() => setOasOpen(true)}>导入 OpenAPI</Button>
         <Button size="small" onClick={() => setPmOpen(true)}>导入 Postman</Button>
-        <Button type="link" size="small" onClick={() => exportAs('openapi')}>导出 OpenAPI</Button>
-        <Button type="link" size="small" onClick={() => exportAs('postman')}>导出 Postman</Button>
-        <Button type="link" size="small" onClick={() => exportAs('curl')}>导出 curl</Button>
+        <Button size="small" onClick={() => exportAs('openapi')}>导出 OpenAPI</Button>
+        <Button size="small" onClick={() => exportAs('postman')}>导出 Postman</Button>
+        <Button size="small" onClick={() => exportAs('curl')}>导出 curl</Button>
       </div>
 
       {/* 树空白区右键菜单：手工定位（节点处菜单由各自 Dropdown 承载） */}
