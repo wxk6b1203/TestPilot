@@ -47,6 +47,11 @@ _FIELDS: dict[str, tuple[str, str, object, type, bool]] = {
     "model":            ("model", "TP_COPILOT_MODEL", "deepseek-v4-flash", str, True),
     # 摘要器（上下文压缩用）默认同主模型；可配更便宜的小模型
     "summarizer_model": ("summarizer_model", "TP_COPILOT_SUMMARIZER_MODEL", "", str, True),
+    # 采样参数：None = 不传该字段、按 Provider 端默认（仅显式配置才随请求下发）
+    "temperature":            ("temperature", "TP_COPILOT_TEMPERATURE", None, float, True),
+    "top_p":                  ("top_p", "TP_COPILOT_TOP_P", None, float, True),
+    "summarizer_temperature": ("summarizer_temperature", "TP_COPILOT_SUMMARIZER_TEMPERATURE", None, float, True),
+    "summarizer_top_p":       ("summarizer_top_p", "TP_COPILOT_SUMMARIZER_TOP_P", None, float, True),
     # Prompt 模板路径：空 = 使用包内置 prompts/system.md / prompts/summarizer.md
     "system_prompt_file":     ("system_prompt_file", "TP_COPILOT_SYSTEM_PROMPT_FILE", "", str, True),
     "summarizer_prompt_file": ("summarizer_prompt_file", "TP_COPILOT_SUMMARIZER_PROMPT_FILE", "", str, True),
@@ -71,6 +76,10 @@ class Settings:
     base_url: str = ""
     model: str = "deepseek-v4-flash"
     summarizer_model: str = ""
+    temperature: float | None = None
+    top_p: float | None = None
+    summarizer_temperature: float | None = None
+    summarizer_top_p: float | None = None
     system_prompt_file: str = ""
     summarizer_prompt_file: str = ""
     context_window: int = 64000
@@ -86,6 +95,12 @@ class Settings:
     def validate(self) -> None:
         if not self.api_key:
             raise RuntimeError("TP_COPILOT_API_KEY 未设置（见 copilot/.env.example）")
+        for name, t, p in (("temperature", self.temperature, self.top_p),
+                           ("summarizer", self.summarizer_temperature, self.summarizer_top_p)):
+            if t is not None and not 0 <= t <= 2:
+                raise SystemExit(f"config {name}: {t} 应在 [0, 2]")
+            if p is not None and not 0 < p <= 1:
+                raise SystemExit(f"config {name} top_p: {p} 应在 (0, 1]")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -133,7 +148,7 @@ def resolve(args: argparse.Namespace, env: dict[str, str] | None = None,
         cli = getattr(args, dest, None)
         if cli is not None:
             v = cli
-        if typ is not str:
+        if typ is not str and v is not None:
             try:
                 v = typ(v)
             except (TypeError, ValueError):
@@ -155,4 +170,7 @@ def apply_environ(s: Settings) -> None:
     for dest, (_key, env_key, _default, _typ, _cli) in _FIELDS.items():
         if env_key == "TP_COPILOT_API_KEY":
             continue
-        os.environ[env_key] = str(getattr(s, dest))
+        v = getattr(s, dest)
+        if v is None:
+            continue  # 可选参数未设置时不写 env，保留进程原有值
+        os.environ[env_key] = str(v)

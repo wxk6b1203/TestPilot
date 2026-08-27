@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pydantic_ai import Agent, DeferredToolRequests
+from pydantic_ai import Agent, DeferredToolRequests, ModelSettings
 from pydantic_ai_extensions import ContextCompression
 
 from .config import Settings
@@ -58,12 +58,23 @@ def build_summarizer_instructions(prompt_file: str = "") -> str:
     return _read_prompt(prompt_file, _SUMMARIZER_PROMPT_FILE, "summarizer").strip()
 
 
+def _model_settings(temperature: float | None, top_p: float | None) -> ModelSettings | None:
+    """采样参数只包含显式配置的键；全未配置时返回 None（请求不带字段，按 Provider 默认）。"""
+    ms: ModelSettings = {}
+    if temperature is not None:
+        ms["temperature"] = temperature
+    if top_p is not None:
+        ms["top_p"] = top_p
+    return ms or None
+
+
 def build_agent(settings: Settings) -> Agent[CopilotDeps, str]:
     summarizer_model = build_model(settings, model=settings.summarizer_model or settings.model)
     summarizer = Agent(
         summarizer_model,
         instructions=build_summarizer_instructions(settings.summarizer_prompt_file),
         output_type=str,
+        model_settings=_model_settings(settings.summarizer_temperature, settings.summarizer_top_p),
     )
     return Agent(
         build_model(settings),
@@ -71,6 +82,7 @@ def build_agent(settings: Settings) -> Agent[CopilotDeps, str]:
         deps_type=CopilotDeps,
         output_type=[str, DeferredToolRequests],  # 审批型工具 → 挂起交前端 HITL
         toolsets=[readonly, writes],
+        model_settings=_model_settings(settings.temperature, settings.top_p),
         capabilities=[
             ContextCompression(
                 summarizer,

@@ -8,6 +8,12 @@ api_key: ""                     # 建议用 TP_COPILOT_API_KEY 或 copilot/.env
 base_url: ""                    # 空 = provider 默认端点
 model: deepseek-v4-flash
 summarizer_model: ""            # 上下文压缩摘要器；空=同主模型
+# 采样参数：删除该键或置 null = 不随请求下发、按 Provider 端默认；
+# 工具调用场景建议主 agent temperature 0~0.3；summarizer 可稍高
+# temperature: 0.2
+# top_p: 0.95
+# summarizer_temperature: 0.3
+# summarizer_top_p:
 # Prompt 模板：空 = 包内置 prompts/system.md 与 prompts/summarizer.md。
 # 自定义文件支持 {{schema}} / {{sdk_doc}} 占位符（相对路径按进程 CWD 解析）。
 system_prompt_file: ""

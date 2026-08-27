@@ -230,3 +230,50 @@ def test_load_end_to_end(tmp_path):
     assert s.http_timeout == 1.5       # CLI 覆盖 YAML
     assert s.api_key == "env-key"      # env 覆盖 .env
     s.validate()                       # 有 key，通过
+
+
+# ---------------------------------------------------------------------------
+# 采样参数（temperature/top_p）：None = 不传、按 Provider 默认
+# ---------------------------------------------------------------------------
+
+def test_sampling_default_none():
+    s = _resolve()
+    for f in ("temperature", "top_p", "summarizer_temperature", "summarizer_top_p"):
+        assert getattr(s, f) is None
+
+
+def test_sampling_env_and_cli_resolution():
+    s = _resolve(["--top-p", "0.9"], env={"TP_COPILOT_TEMPERATURE": "0.2"})
+    assert s.temperature == 0.2                      # env → float 强制转换
+    assert s.top_p == 0.9                            # CLI 优先
+
+
+def test_sampling_yaml_null_stays_none(tmp_path):
+    cfg = _write_yaml(tmp_path, "temperature: null\nsummarizer_temperature: 0.4\n")
+    s = _resolve(["--config", cfg])
+    assert s.temperature is None                     # 显式 null = 不下发
+    assert s.summarizer_temperature == 0.4
+
+
+def test_sampling_range_validation():
+    kw = {"TP_COPILOT_API_KEY": "k"}
+    s = _resolve(env={**kw, "TP_COPILOT_TEMPERATURE": "2.5"})
+    with pytest.raises(SystemExit):
+        s.validate()
+    s = _resolve(env={**kw, "TP_COPILOT_TOP_P": "0"})
+    with pytest.raises(SystemExit):
+        s.validate()
+    _resolve(env={**kw, "TP_COPILOT_TEMPERATURE": "0",
+                  "TP_COPILOT_SUMMARIZER_TOP_P": "1"}).validate()
+
+
+def test_apply_environ_skips_none(monkeypatch):
+    monkeypatch.setenv("TP_COPILOT_TEMPERATURE", "0.7")
+    s = _resolve(env={"TP_COPILOT_TEMPERATURE": "0.2"})
+    config.apply_environ(s)
+    import os
+    assert os.environ["TP_COPILOT_TEMPERATURE"] == "0.2"
+    s2 = _resolve()                                   # temperature 未配置 → 不写 env
+    monkeypatch.setenv("TP_COPILOT_TEMPERATURE", "keep-me")
+    config.apply_environ(s2)
+    assert os.environ["TP_COPILOT_TEMPERATURE"] == "keep-me"
