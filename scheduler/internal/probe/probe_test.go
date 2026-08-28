@@ -189,3 +189,19 @@ func (h *Hub) workerOfForTest(sessionID string) string {
 	defer h.mu.Unlock()
 	return h.sessions[sessionID].WorkerID
 }
+
+func TestRunPassthrough(t *testing.T) {
+	d := dispatch.New(nil)
+	h := New(d, testCfg())
+	fakeWorker(t, d, h, "w1", true)
+
+	if _, err := h.Run(context.Background(), 7, "s1", "async def run(ctx): pass"); err == nil {
+		t.Fatal("run on unknown session must fail")
+	}
+
+	mustOpen(t, h, 7, "s1")
+	// fakeWorker 对非 close 一律回 state（无 run_result）→ probeFailure(PROBE_FAILED)
+	if _, err := h.Run(context.Background(), 7, "s1", "async def run(ctx): pass"); err == nil {
+		t.Fatal("run without run_result payload must surface failure")
+	}
+}

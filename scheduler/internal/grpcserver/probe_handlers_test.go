@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
+	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
 	"github.com/testpilot/testpilot/internal/dispatch"
 	"github.com/testpilot/testpilot/internal/grpcserver"
 	"github.com/testpilot/testpilot/internal/probe"
@@ -71,4 +71,36 @@ func TestOpenProbeInvalidURL(t *testing.T) {
 		t.Fatalf("want InvalidArgument, got %v", err)
 	}
 	_ = dispatch.New(nil)
+}
+
+func TestRunProbeValidation(t *testing.T) {
+	hub := probe.New(nil, probe.Config{
+		IdleTTL: time.Minute, MaxLifetime: time.Hour,
+		MaxPerWorker: 2, MaxPerTenant: 1, CmdTimeout: time.Second,
+		SnapshotMaxBytes: 4096, EvalMaxBytes: 1024,
+	})
+	cli := probeClient(t, hub)
+	rc := &commonv1.RequestContext{TenantId: 1, UserId: "u"}
+
+	// 空 source → InvalidArgument（hub 调用前拦截）
+	_, err := cli.RunProbe(context.Background(), &copilotv1.RunProbeRequest{
+		Ctx: rc, SessionId: "s1", Source: "   "})
+	if status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("empty source: want InvalidArgument, got %v", err)
+	}
+
+	// 超限 source → InvalidArgument
+	big := strings.Repeat("x", 17*1024)
+	_, err = cli.RunProbe(context.Background(), &copilotv1.RunProbeRequest{
+		Ctx: rc, SessionId: "s1", Source: big})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(err.Error(), "PROBE_LIMIT") {
+		t.Fatalf("big source: want InvalidArgument PROBE_LIMIT, got %v", err)
+	}
+
+	// 合法 source → 无会话 → NotFound
+	_, err = cli.RunProbe(context.Background(), &copilotv1.RunProbeRequest{
+		Ctx: rc, SessionId: "nope", Source: "async def run(ctx): pass"})
+	if status.Code(err) != codes.NotFound {
+		t.Fatalf("unknown session: want NotFound, got %v", err)
+	}
 }

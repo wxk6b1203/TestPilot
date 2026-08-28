@@ -195,6 +195,27 @@ func (h *Hub) Eval(ctx context.Context, tenantID int64, sessionID, expression st
 	return res, nil
 }
 
+// Run 在会话常驻沙箱中执行一段 Python（v2 run_py；约定入口 async def run(ctx)）。
+func (h *Hub) Run(ctx context.Context, tenantID int64, sessionID, source string) (*workerv1.ProbeRunResult, error) {
+	s, err := h.require(tenantID, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	cmd := &workerv1.ProbeCommand{SessionId: sessionID, TenantId: s.TenantID}
+	cmd.Op = &workerv1.ProbeCommand_Run{Run: &workerv1.ProbeRun{
+		Source: source, ResultMaxBytes: h.cfg.EvalMaxBytes,
+	}}
+	reply, err := h.roundTrip(ctx, sessionID, cmd)
+	if err != nil {
+		return nil, err
+	}
+	res := reply.GetRunResult()
+	if res == nil {
+		return nil, probeFailure(reply)
+	}
+	return res, nil
+}
+
 // Close 关闭会话（幂等：会话不存在视为已释放）。
 func (h *Hub) Close(tenantID int64, sessionID, reason string) error {
 	h.mu.Lock()

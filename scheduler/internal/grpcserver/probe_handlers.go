@@ -124,6 +124,34 @@ func (s *CopilotService) CloseProbe(ctx context.Context, req *copilotv1.ClosePro
 	return &copilotv1.CloseProbeResponse{Ok: true}, nil
 }
 
+const probeRunMaxBytes = 16 * 1024 // run_py 源码上限（Worker 另有 32KB 绝对顶）
+
+// RunProbe 常驻沙箱执行 Python（v2 run_py；写类：等同脚本执行，HITL 审批后调用）。
+func (s *CopilotService) RunProbe(ctx context.Context, req *copilotv1.RunProbeRequest) (*copilotv1.RunProbeResponse, error) {
+	rc := req.GetCtx()
+	if !s.probeReady() {
+		return nil, status.Error(codes.FailedPrecondition, "PROBE_DISABLED: probe disabled (probe_enabled=false)")
+	}
+	source := req.GetSource()
+	if strings.TrimSpace(source) == "" {
+		return nil, status.Error(codes.InvalidArgument, "PROBE_FAILED: source is required")
+	}
+	if len(source) > probeRunMaxBytes {
+		return nil, status.Errorf(codes.InvalidArgument, "PROBE_LIMIT: source exceeds %d bytes", probeRunMaxBytes)
+	}
+	res, err := s.probe.Run(ctx, tid(rc), req.GetSessionId(), source)
+	if err != nil {
+		return nil, probeErrToStatus(err)
+	}
+	detail := source
+	if len(detail) > 1024 {
+		detail = detail[:1024] + "…"
+	}
+	s.audit(rc, "probe.run", "probe_session", req.GetSessionId(),
+		map[string]any{"source": detail})
+	return &copilotv1.RunProbeResponse{Repr: res.GetRepr(), Logs: res.GetLogs(), Truncated: res.GetTruncated()}, nil
+}
+
 // ActProbe 执行单步 UI 动作（写类：对被测系统有潜在副作用，HITL 审批后调用）。
 func (s *CopilotService) ActProbe(ctx context.Context, req *copilotv1.ActProbeRequest) (*copilotv1.ActProbeResponse, error) {
 	rc := req.GetCtx()
