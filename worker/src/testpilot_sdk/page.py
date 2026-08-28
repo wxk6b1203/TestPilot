@@ -20,6 +20,32 @@ class Page:
         return await self._bridge.call("ui_action", {
             "action": action, "target": target, "value": value})
 
+    async def _call(self, method: str, *args: Any) -> Any:
+        """通用页面调用（op=ui_call）：Worker 侧白名单转发 Playwright（v2 探测）。"""
+        r = await self._bridge.call("ui_call", {"method": method, "args": list(args)})
+        return r.get("result") if isinstance(r, dict) else r
+
+    # ---- v2 探测方法（机械枚举/状态检查；动作类仍走 _act）----
+
+    async def evaluate(self, expression: str) -> Any:
+        """页面上下文执行 JS，返回 JSON 可序列化结果。"""
+        return await self._call("evaluate", expression)
+
+    async def content(self) -> str:
+        return await self._call("content")
+
+    async def title(self) -> str:
+        return await self._call("title")
+
+    async def current_url(self) -> str:
+        return await self._call("url")
+
+    async def wait_for_selector(self, selector: str, timeout_ms: int = 15000) -> None:
+        await self._call("wait_for_selector", selector, timeout_ms)
+
+    async def aria_snapshot(self) -> str:
+        return await self._call("aria_snapshot")
+
     async def goto(self, url: str) -> None:
         """导航到 url（相对路径基于环境 base_url）。"""
         await self._act("goto", target=url)

@@ -13,6 +13,7 @@ import json
 import os
 import sys
 import traceback
+from typing import Any
 
 
 def _apply_rlimits_from_env() -> None:
@@ -154,8 +155,64 @@ async def _amain() -> int:
     return 0 if ok else 1
 
 
+async def _repl_main() -> int:
+    """常驻模式（--mode repl，UI 探测 v2）：循环执行 Worker 下发的 exec 帧。
+
+    协议（stdin 帧）：{"type":"exec","id":N,"source":"..."}；
+    响应（stdout 帧）：{"type":"done","id":N,"ok":bool,"repr"|"error","logs":[...]}。
+    - namespace 跨帧持久（前一次 exec 定义的 helper 可复用）；ctx 每帧新建（vars 快照）；
+    - 约定入口 async def run(ctx)；print 经 redirect_stdout 捕获随帧回传；
+    - 超时/崩溃由 Worker 侧强杀并重启沙箱（Python 无法打断任意用户代码）。
+    """
+    _apply_rlimits_from_env()
+    import contextlib
+    import io
+    from . import assertions as _assert_mod
+    from .bridge import Bridge, set_bridge, set_current_context, clear_current_context
+    from .context import Context
+
+    sys.stdout = sys.stderr  # fd 1 保留协议帧；裸 print（帧外）进日志通道
+    q: asyncio.Queue = asyncio.Queue()
+    bridge = Bridge(0, 1, push_queue=q)
+    bridge.start(asyncio.get_running_loop())
+    set_bridge(bridge)
+
+    ns: dict[str, Any] = {"__name__": "tp_probe_repl"}
+    while True:
+        msg = await q.get()
+        call_id = int(msg.get("id", 0))
+        source = str(msg.get("source") or "")
+        logs_buf = io.StringIO()
+        ok, repr_text, err = True, "", ""
+        _assert_mod.reset_records()
+        ctx = Context(bridge, {"vars": {}, "parameters": {}})
+        set_current_context(ctx)
+        try:
+            ns.pop("run", None)  # 每帧显式定义 run，不继承上一帧的入口
+            code = compile(source, "<probe-exec>", "exec")
+            exec(code, ns)  # noqa: S102  # 沙箱内受控执行（rlimit+净隔离+env scrub）
+            fn = ns.get("run")
+            if fn is None or not inspect.iscoroutinefunction(fn):
+                raise RuntimeError("probe exec 必须定义 async def run(ctx)")
+            with contextlib.redirect_stdout(logs_buf):
+                result = await fn(ctx)
+            repr_text = repr(result)
+        except AssertionError as e:
+            ok, err = False, f"assertion failed: {e}"
+        except BaseException as e:
+            ok, err = False, "".join(traceback.format_exception_only(type(e), e)).strip()
+        finally:
+            clear_current_context()
+        logs = [ln for ln in logs_buf.getvalue().splitlines() if ln.strip()][:200]
+        bridge.emit({"type": "done", "id": call_id, "ok": ok,
+                     "repr": repr_text if ok else "", "error": err, "logs": logs})
+
+
 def main() -> None:
     try:
+        if "--mode" in sys.argv and sys.argv[sys.argv.index("--mode") + 1] == "repl":
+            code = asyncio.run(_repl_main())
+            return
         code = asyncio.run(_amain())
     except Exception:
         # 入口自身故障（如桥断裂）：尽力经 stdout 报告

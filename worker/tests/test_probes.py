@@ -304,3 +304,171 @@ def test_client_probe_reply_dropped_after_disconnect():
 
     asyncio.run(run())
     assert c.outbox.qsize() == 0
+
+
+# ---------------------------------------------------------------------------
+# v2 run_py：ui_call 白名单 / ProbeSandbox 常驻沙箱 / run 频率闸
+# ---------------------------------------------------------------------------
+
+def test_ui_call_whitelist_and_arity():
+    from testpilot_worker.probes import bridge_ui_call_handler
+
+    class _P:
+        url = "https://aut.test/x"
+
+        async def evaluate(self, expr):
+            return 42
+
+        async def content(self, extra=None):  # 错误参数个数
+            return "<html/>"
+
+    class _S:
+        def __init__(self):
+            self.page = _P()
+
+        async def ensure(self):
+            pass
+
+    h = bridge_ui_call_handler(lambda: _S())
+
+    async def run():
+        ok = await h({"method": "evaluate", "args": ["1+1"]})
+        assert ok["result"] == 42
+        ok = await h({"method": "url", "args": []})
+        assert ok["result"] == "https://aut.test/x"
+        for bad in ({"method": " keyboard", "args": []},
+                    {"method": "evaluate", "args": []},
+                    {"method": "content", "args": ["x"]}):
+            try:
+                await h(bad)
+                raise AssertionError(f"must reject: {bad}")
+            except ValueError:
+                pass
+
+    asyncio.run(run())
+
+
+def test_ui_call_without_session_rejected():
+    from testpilot_worker.probes import bridge_ui_call_handler
+    h = bridge_ui_call_handler(lambda: None)
+
+    async def run():
+        await h({"method": "evaluate", "args": ["1"]})
+
+    try:
+        asyncio.run(run())
+        raise AssertionError("must reject when session has no browser")
+    except ValueError as e:
+        assert "open first" in str(e)
+
+
+def test_probe_sandbox_exec_roundtrip_and_restart():
+    """真子进程回环：spawn repl → exec（经 ui_call 桥取值）→ 超时强杀 → 自动重启。"""
+    from testpilot_worker.probes import ProbeSandbox, bridge_ui_call_handler
+
+    class _FakeUi:
+        def __init__(self):
+            self.page = None
+
+        async def ensure(self):
+            if self.page is None:
+                self.page = _FakePage(eval_result=2)
+
+    ui = _FakeUi()
+    sb = ProbeSandbox(extra_ops={"ui_call": bridge_ui_call_handler(lambda: ui)})
+
+    src = "async def run(ctx):\n    return await ctx.page.evaluate('1+1')\n"
+    out1 = asyncio.run(sb.exec(src, timeout_s=30))
+    assert out1["ok"], out1
+    assert out1["repr"] == "2"
+
+    # helper 跨帧复用 + run 每帧重定义
+    src2 = ("counter = 41\n"
+            "async def run(ctx):\n    return counter + 1\n")
+    asyncio.run(sb.exec("async def run(ctx):\n    return 0\n", timeout_s=30))
+    out2 = asyncio.run(sb.exec(src2, timeout_s=30))
+    assert out2["ok"] and out2["repr"] == "42"
+
+    # 超时：强杀 + 报超时；下次 exec 自动重启
+    out3 = asyncio.run(sb.exec("async def run(ctx):\n    import asyncio as a\n    await a.sleep(30)\n",
+                               timeout_s=1))
+    assert not out3["ok"] and "timeout" in out3["error"]
+    out4 = asyncio.run(sb.exec(src, timeout_s=30))
+    assert out4["ok"] and out4["repr"] == "2"  # 崩溃自愈：namespace 重置，脚本仍可跑
+
+    asyncio.run(sb.close())
+
+
+def test_run_rate_limited():
+    hub = _hub()
+
+    async def run():
+        await hub.handle(_open_cmd())
+        src = wpb.ProbeRun(source="async def run(ctx):\n    return 1\n", result_max_bytes=1024)
+        r1 = await hub.handle(_cmd(run=src))
+        assert r1.probe_reply.WhichOneof("payload") == "run_result"
+        r2 = await hub.handle(_cmd(run=src))
+        assert r2.probe_reply.failure.code == CODE_LIMIT
+
+    asyncio.run(run())
+
+
+def test_run_empty_source_rejected():
+    hub = _hub()
+
+    async def run():
+        await hub.handle(_open_cmd())
+        r = await hub.handle(_cmd(run=wpb.ProbeRun(source="   ")))
+        assert r.probe_reply.failure.code == CODE_FAILED
+
+    asyncio.run(run())
+
+
+def test_run_truncates_repr_with_injected_sandbox():
+    """run repr 超限截断（sandbox_factory 注入，不 spawn 真子进程）。"""
+    calls: list[str] = []
+
+    class _FakeSandbox:
+        def __init__(self, ops):
+            self.ops = ops
+
+        async def exec(self, source, timeout_s):
+            calls.append(source)
+            return {"ok": True, "repr": "y" * 500, "logs": ["l1"]}
+
+    hub = ProbeHub(artifact_root=None, max_sessions=2,
+                   session_factory=lambda sid, base, record: _FakeUiSession(base, None, f"probe/{sid}", lambda x: x, record),
+                   sandbox_factory=lambda ops: _FakeSandbox(ops))
+
+    async def run():
+        await hub.handle(_open_cmd())
+        src = wpb.ProbeRun(source="async def run(ctx):\n    return 1\n", result_max_bytes=100)
+        r = await hub.handle(_cmd(run=src))
+        rr = r.probe_reply.run_result
+        assert rr.truncated
+        assert len(rr.repr.encode()) <= 100
+        assert rr.logs == ["l1"]
+        assert "run(ctx)" in calls[0]
+
+    asyncio.run(run())
+
+
+def test_probe_sandbox_error_shapes():
+    """entry repl 契约：print 捕获、AssertionError 格式、run 非协程拒绝。"""
+    from testpilot_worker.probes import ProbeSandbox
+
+    sb = ProbeSandbox(extra_ops={})
+
+    async def run():
+        out = await sb.exec("async def run(ctx):\n    print('hello-from-sandbox')\n"
+                            "    raise AssertionError('nope')\n", timeout_s=30)
+        assert not out["ok"]
+        assert "assertion failed: nope" in out["error"]
+        assert any("hello-from-sandbox" in ln for ln in out["logs"])
+
+        out = await sb.exec("run = 123\n", timeout_s=30)
+        assert not out["ok"] and "async def run(ctx)" in out["error"]
+
+        await sb.close()
+
+    asyncio.run(run())

@@ -37,7 +37,7 @@ class BridgeError(Exception):
 class Bridge:
     """同步 fd + 后台读线程派发，async 调用方经 future 等待。"""
 
-    def __init__(self, fd_r: int = 0, fd_w: int = 1):
+    def __init__(self, fd_r: int = 0, fd_w: int = 1, push_queue: "asyncio.Queue | None" = None):
         # dup 出来避免 close 时关掉进程真正的 stdin/stdout
         self._r = os.fdopen(os.dup(fd_r), "rb")
         self._w = os.fdopen(os.dup(fd_w), "wb")
@@ -46,6 +46,9 @@ class Bridge:
         self._pending: dict[int, asyncio.Future] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._reader = threading.Thread(target=self._read_loop, daemon=True)
+        # 常驻模式（repl）：Worker 下行的 push 帧（带 "type" 字段，如 exec）入此队列；
+        # 既有 op 响应帧（无 type）行为不变——v2 前向兼容。
+        self._push_queue = push_queue
 
     def start(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -59,6 +62,10 @@ class Bridge:
             try:
                 msg = json.loads(line)
             except ValueError:
+                continue
+            if self._push_queue is not None and msg.get("type"):
+                if self._loop is not None:
+                    self._loop.call_soon_threadsafe(self._push_queue.put_nowait, msg)
                 continue
             try:
                 call_id = int(msg.get("id", -1))

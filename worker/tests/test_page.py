@@ -163,3 +163,27 @@ def test_normalize_goto_scheme_whitelist():
     for bad in ("file:///etc/passwd", "javascript:alert(1)", "ftp://x/y"):
         with pytest.raises(ValueError):
             _normalize_goto("http://h", bad)
+
+
+def test_page_v2_ui_call_mapping():
+    """v2 探测方法走 ui_call op（method+args 白名单转发）；
+    wait_for_selector 沿用既有 ui_action WAIT 路径（语义等价，不双轨）。"""
+    b = _StubBridge()
+    p = Page(b)
+
+    async def run():
+        await p.evaluate("1+1")
+        await p.content()
+        await p.title()
+        await p.current_url()
+        await p.wait_for_selector("#x", 5000)
+        await p.aria_snapshot()
+
+    asyncio.run(run())
+    assert b.calls, "no bridge calls made"
+    assert b.calls[0] == ("ui_call", {"method": "evaluate", "args": ["1+1"]})
+    assert b.calls[1][1]["method"] == "content"
+    assert b.calls[2][1]["method"] == "title"
+    assert b.calls[3][1]["method"] == "url"
+    assert b.calls[4] == ("ui_action", {"action": "wait", "target": "#x", "value": "5"})
+    assert b.calls[5][1]["method"] == "aria_snapshot"
