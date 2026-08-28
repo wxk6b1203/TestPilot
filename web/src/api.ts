@@ -40,6 +40,35 @@ export async function download(path: string, filename: string) {
   URL.revokeObjectURL(url)
 }
 
+// uploadArtifact 用户上传二进制（multipart；binary_ref 供体）。上限 8MiB（派发内联上限）。
+export async function uploadArtifact(file: File): Promise<Artifact> {
+  if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
+    throw new Error('文件需在 1B..8MiB 之间（binary_ref 内联上限）')
+  }
+  const fd = new FormData()
+  fd.append('file', file)
+  const res = await fetch('/api/v1/artifacts', {
+    method: 'POST',
+    headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+    body: fd, // 浏览器自设 multipart boundary，勿手动设 Content-Type
+  })
+  if (!res.ok) {
+    const t = await res.text().catch(() => '')
+    throw new Error(`上传失败 HTTP ${res.status} ${t}`)
+  }
+  return res.json()
+}
+
+export function listArtifacts(params: { kind?: number; run_id?: string; page?: number; page_size?: number } = {}) {
+  const q = new URLSearchParams()
+  if (params.kind) q.set('kind', String(params.kind))
+  if (params.run_id) q.set('run_id', params.run_id)
+  if (params.page) q.set('page', String(params.page))
+  if (params.page_size) q.set('page_size', String(params.page_size))
+  const qs = q.toString()
+  return get<ListResp<Artifact>>(`/api/v1/artifacts${qs ? `?${qs}` : ''}`)
+}
+
 export async function api<T = any>(path: string, opts: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
     ...opts,
@@ -311,9 +340,16 @@ export interface TestPlan {
 }
 export interface Artifact {
   id: string
-  kind: number // 1=screenshot 2=video 3=trace 4=har 5=download 6=log
+  run_id: string
+  step_result_id: string
+  kind: number // 1=screenshot 2=video 3=trace 4=har 5=download 6=log 7=proto 8=cert 9=upload
   uri: string
   size: number
+  created_at: number
+}
+export const ARTIFACT_KINDS: Record<number, string> = {
+  1: '截图', 2: '视频', 3: 'Trace', 4: 'HAR', 5: '下载',
+  6: '日志', 7: 'Proto', 8: '证书', 9: '上传',
 }
 export interface StepResult {
   step_path: string

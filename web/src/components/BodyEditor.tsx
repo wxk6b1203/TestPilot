@@ -1,10 +1,11 @@
-import { Button, Input, Space, Tabs } from 'antd'
-import { FormatPainterOutlined } from '@ant-design/icons'
-import { useRef } from 'react'
+import { Button, Input, Space, Tabs, Upload } from 'antd'
+import { FormatPainterOutlined, UploadOutlined } from '@ant-design/icons'
+import { useRef, useState } from 'react'
 import KvEditor from './KvEditor'
 import type { Kv } from './KvEditor'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
+import { uploadArtifact } from '../api'
 
 // form 形状与 proto 对齐（FormData{fields:[…]}）：后端 protojson 直接解析，
 // 旧数据里 form 为数组的形态在读取侧兼容（见 fieldsOf）。
@@ -54,8 +55,36 @@ export default function BodyEditor({
   )
   const binaryDraftRef = useRef(value.binary_ref ?? '')
   binaryDraftRef.current = value.binary_ref ?? binaryDraftRef.current
+  const [uploading, setUploading] = useState(false)
   const binaryTab = (
     <div>
+      <Space style={{ marginBottom: 6 }}>
+        <Upload
+          showUploadList={false}
+          beforeUpload={(file) => {
+            if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
+              message.error('文件需在 1B..8MiB 之间（binary_ref 内联上限）')
+              return Upload.LIST_IGNORE
+            }
+            setUploading(true)
+            uploadArtifact(file)
+              .then((a) => {
+                onChange({ contentType: 6, binary_ref: `artifact:${a.id}` })
+                message.success(`已上传 → artifact:${a.id}（可在「产物」页查看）`)
+              })
+              .catch((e: Error) => message.error(e.message))
+              .finally(() => setUploading(false))
+            return false
+          }}
+        >
+          <Button size="small" icon={<UploadOutlined />} loading={uploading}>
+            上传文件生成引用
+          </Button>
+        </Upload>
+        {value.binary_ref?.startsWith('artifact:') && (
+          <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>{value.binary_ref}</span>
+        )}
+      </Space>
       <Input.TextArea
         rows={6}
         value={value.binary_ref ?? binaryDraftRef.current}
@@ -64,7 +93,7 @@ export default function BodyEditor({
         style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
       />
       <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
-        binary_ref 支持 artifact:&lt;id&gt;（Scheduler 派发时读取产物）与 base64:&lt;payload&gt;（直接内联）
+        binary_ref 支持 artifact:&lt;id&gt;（Scheduler 派发时读取产物，≤8MiB）与 base64:&lt;payload&gt;（直接内联）；也可在「产物」页查看/上传
       </div>
     </div>
   )
