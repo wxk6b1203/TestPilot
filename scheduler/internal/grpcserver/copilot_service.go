@@ -18,6 +18,7 @@ import (
 	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
 	"github.com/testpilot/testpilot/internal/impexp"
 	"github.com/testpilot/testpilot/internal/model"
+	"github.com/testpilot/testpilot/internal/probe"
 	"github.com/testpilot/testpilot/internal/quota"
 	"github.com/testpilot/testpilot/internal/runner"
 	"google.golang.org/grpc/codes"
@@ -36,12 +37,13 @@ var domainSchema string
 // 本服务在 Scheduler 内，受 RequestContext 租户约束；写/触发类落审计）。
 type CopilotService struct {
 	copilotv1.UnimplementedCopilotToolServiceServer
-	db  *gorm.DB
-	run *runner.Runner
+	db    *gorm.DB
+	run   *runner.Runner
+	probe *probe.Hub // nil = 探测功能关闭（probe_enabled=false）
 }
 
-func NewCopilotService(db *gorm.DB, run *runner.Runner) *CopilotService {
-	return &CopilotService{db: db, run: run}
+func NewCopilotService(db *gorm.DB, run *runner.Runner, probe *probe.Hub) *CopilotService {
+	return &CopilotService{db: db, run: run, probe: probe}
 }
 
 // ---- 通用工具 ----

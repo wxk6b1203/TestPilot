@@ -75,30 +75,48 @@ type Config struct {
 	// 多实例部署必须关闭（第二实例会误杀第一实例在跑的 run），默认开启。
 	RecoverInterrupted bool `yaml:"recover_interrupted"`
 
+	// UI 探测（Copilot gRPC 工具面，docs/ui-probe-design.md §4.7）。
+	// 默认关闭（灰度）：dev 由 scripts/dev.sh 注入 TP_PROBE_ENABLED=1。
+	ProbeEnabled               bool `yaml:"probe_enabled"`                  // 总开关
+	ProbeSessionIdleTTLMin     int  `yaml:"probe_session_idle_ttl_min"`     // 空闲回收（分）
+	ProbeSessionMaxLifetimeMin int  `yaml:"probe_session_max_lifetime_min"` // 强制回收（分）
+	ProbeMaxSessionsPerWorker  int  `yaml:"probe_max_sessions_per_worker"`  // 每 Worker ACTIVE 会话硬顶
+	ProbeMaxSessionsPerTenant  int  `yaml:"probe_max_sessions_per_tenant"`  // 每租户 ACTIVE 会话硬顶
+	ProbeCmdTimeoutSec         int  `yaml:"probe_cmd_timeout_sec"`          // 单命令 pending 等待上限（秒）
+	ProbeSnapshotMaxBytes      int  `yaml:"probe_snapshot_max_bytes"`       // 快照截断上限（字节）
+	ProbeEvalMaxBytes          int  `yaml:"probe_eval_max_bytes"`           // eval 结果截断上限（字节）
+
 	DefaultTenantID int64 `yaml:"-"` // 存根租户（不开放配置）
 }
 
 // Defaults 内置默认（本地单二进制开发形态）。
 func Defaults() Config {
 	return Config{
-		HTTPAddr:             ":8080",
-		GRPCAddr:             ":9090",
-		DBPath:               "testpilot.db",
-		JWTSecret:            "dev-secret-change-me",
-		JWTExpireHours:       24,
-		SnowflakeNode:        1,
-		LogLevel:             "info",
-		LogFormat:            "text",
-		ArtifactDir:          ".data/artifacts",
-		ArtifactBackend:      "local",
-		S3UseSSL:             true,
-		RetentionIntervalMin: 60,
-		CopilotTrashDays:     30,
-		BodyLimitMB:          64,
-		OTelEndpoint:         "127.0.0.1:4317",
-		CopilotURL:           "http://127.0.0.1:8100",
-		RecoverInterrupted:   true,
-		DefaultTenantID:      1,
+		HTTPAddr:                   ":8080",
+		GRPCAddr:                   ":9090",
+		DBPath:                     "testpilot.db",
+		JWTSecret:                  "dev-secret-change-me",
+		JWTExpireHours:             24,
+		SnowflakeNode:              1,
+		LogLevel:                   "info",
+		LogFormat:                  "text",
+		ArtifactDir:                ".data/artifacts",
+		ArtifactBackend:            "local",
+		S3UseSSL:                   true,
+		RetentionIntervalMin:       60,
+		CopilotTrashDays:           30,
+		BodyLimitMB:                64,
+		OTelEndpoint:               "127.0.0.1:4317",
+		CopilotURL:                 "http://127.0.0.1:8100",
+		RecoverInterrupted:         true,
+		ProbeSessionIdleTTLMin:     10,
+		ProbeSessionMaxLifetimeMin: 60,
+		ProbeMaxSessionsPerWorker:  2,
+		ProbeMaxSessionsPerTenant:  1,
+		ProbeCmdTimeoutSec:         60,
+		ProbeSnapshotMaxBytes:      16 * 1024,
+		ProbeEvalMaxBytes:          4 * 1024,
+		DefaultTenantID:            1,
 	}
 }
 

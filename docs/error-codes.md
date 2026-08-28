@@ -47,6 +47,19 @@
 | `OIDC_EXCHANGE` | 502 | OIDC 令牌交换/验签失败 | OIDC 回调 |
 | `IDENTITY_UNLINK` | 403 | OIDC 身份未关联任何用户 | OIDC 回调 |
 
+### gRPC Copilot 工具面（UI 探测，v1）
+
+UI 探测 RPC（OpenProbe/ActProbe/EvalProbe 等）走 gRPC `status.Error`，`message` 以下列码为前缀（前端/CLI 按前缀分支）：
+
+| code 前缀 | gRPC code | 含义 |
+|---|---|---|
+| `PROBE_DISABLED` | FailedPrecondition | 探测功能未开启（probe_enabled） |
+| `PROBE_NO_WORKER` | Unavailable | 无 PLAYWRIGHT 能力在线 Worker |
+| `PROBE_LIMIT` | ResourceExhausted | 探测会话数超限 |
+| `PROBE_SESSION_NOT_FOUND` | NotFound | 会话不存在/已回收（TTL/断连） |
+| `PROBE_TIMEOUT` | DeadlineExceeded | 探测命令执行超时 |
+| `PROBE_FAILED` | Internal | 探测执行失败（Playwright 报错原文透传） |
+
 ## 约定
 
 1. 新增错误码必须在 `scheduler/internal/apperr/apperr.go` 登记并同步本表。

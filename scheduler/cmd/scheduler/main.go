@@ -23,6 +23,7 @@ import (
 	"github.com/testpilot/testpilot/internal/httpserver"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
+	"github.com/testpilot/testpilot/internal/probe"
 	"github.com/testpilot/testpilot/internal/retention"
 	"github.com/testpilot/testpilot/internal/runner"
 	"github.com/testpilot/testpilot/internal/tracing"
@@ -70,6 +71,22 @@ func main() {
 	cron.Start()
 	defer cron.Stop()
 
+	// UI 探测（v1）：probe_enabled=false 时不构造 Hub，RPC 统一返回 PROBE_DISABLED
+	var probeHub *probe.Hub
+	if cfg.ProbeEnabled {
+		probeHub = probe.New(disp, probe.Config{
+			IdleTTL:          time.Duration(cfg.ProbeSessionIdleTTLMin) * time.Minute,
+			MaxLifetime:      time.Duration(cfg.ProbeSessionMaxLifetimeMin) * time.Minute,
+			MaxPerWorker:     cfg.ProbeMaxSessionsPerWorker,
+			MaxPerTenant:     cfg.ProbeMaxSessionsPerTenant,
+			CmdTimeout:       time.Duration(cfg.ProbeCmdTimeoutSec) * time.Second,
+			SnapshotMaxBytes: int32(cfg.ProbeSnapshotMaxBytes),
+			EvalMaxBytes:     int32(cfg.ProbeEvalMaxBytes),
+		})
+		stopProbe := probeStartSweeper(probeHub)
+		defer close(stopProbe)
+	}
+
 	// A3：后台回收——失联 Worker 剔除（心跳超时）+ 超时 run 终结
 	stopReapers := runner.StartReapers(gormDB, disp)
 	defer stopReapers()
@@ -99,8 +116,8 @@ func main() {
 		grpc.ChainUnaryInterceptor(grpcserver.CopilotAuthUnary(cfg.JWTSecret)),
 		grpc.ChainStreamInterceptor(grpcserver.WorkerAuthStream(cfg.WorkerToken)),
 	)
-	workerv1.RegisterWorkerServiceServer(gs, grpcserver.NewWorkerService(disp))
-	copilotv1.RegisterCopilotToolServiceServer(gs, grpcserver.NewCopilotService(gormDB, run))
+	workerv1.RegisterWorkerServiceServer(gs, grpcserver.NewWorkerService(disp, probeHub))
+	copilotv1.RegisterCopilotToolServiceServer(gs, grpcserver.NewCopilotService(gormDB, run, probeHub))
 	reflection.Register(gs)
 
 	lis, err := net.Listen("tcp", cfg.GRPCAddr)
@@ -151,4 +168,22 @@ func main() {
 		<-gracefulDone
 	}
 	logging.L.Infow("shutdown complete")
+}
+
+// probeStartSweeper 探测会话 TTL 回收循环（复用 reaper 节奏；返回 stop 函数）。
+func probeStartSweeper(hub *probe.Hub) chan struct{} {
+	stop := make(chan struct{})
+	go func() {
+		t := time.NewTicker(time.Minute)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				hub.Sweep()
+			case <-stop:
+				return
+			}
+		}
+	}()
+	return stop
 }

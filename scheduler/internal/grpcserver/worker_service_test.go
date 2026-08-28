@@ -18,7 +18,7 @@ func newWorkerClient(t *testing.T) (workerv1.WorkerServiceClient, *dispatch.Disp
 	t.Helper()
 	disp := dispatch.New(openTestDB(t))
 	conn := bufConn(t, func(srv *grpc.Server) {
-		workerv1.RegisterWorkerServiceServer(srv, grpcserver.NewWorkerService(disp))
+		workerv1.RegisterWorkerServiceServer(srv, grpcserver.NewWorkerService(disp, nil))
 	})
 	return workerv1.NewWorkerServiceClient(conn), disp
 }
@@ -150,7 +150,7 @@ func TestWorkerConnectQuotaRejected(t *testing.T) {
 	}
 	disp2 := dispatch.New(d)
 	conn := bufConn(t, func(srv *grpc.Server) {
-		workerv1.RegisterWorkerServiceServer(srv, grpcserver.NewWorkerService(disp2))
+		workerv1.RegisterWorkerServiceServer(srv, grpcserver.NewWorkerService(disp2, nil))
 	})
 	cli2 := workerv1.NewWorkerServiceClient(conn)
 

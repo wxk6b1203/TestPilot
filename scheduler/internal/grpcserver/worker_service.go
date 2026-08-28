@@ -10,6 +10,7 @@ import (
 	"github.com/testpilot/testpilot/internal/dispatch"
 	"github.com/testpilot/testpilot/internal/events"
 	"github.com/testpilot/testpilot/internal/logging"
+	"github.com/testpilot/testpilot/internal/probe"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -17,11 +18,12 @@ import (
 // WorkerService 实现 testpilot.worker.v1.WorkerService。
 type WorkerService struct {
 	workerv1.UnimplementedWorkerServiceServer
-	Disp *dispatch.Dispatcher
+	Disp  *dispatch.Dispatcher
+	Probe *probe.Hub // UI 探测回执分发（nil = 功能关闭）
 }
 
-func NewWorkerService(d *dispatch.Dispatcher) *WorkerService {
-	return &WorkerService{Disp: d}
+func NewWorkerService(d *dispatch.Dispatcher, probe *probe.Hub) *WorkerService {
+	return &WorkerService{Disp: d, Probe: probe}
 }
 
 // Connect 处理 Worker 双向流：首帧 register，之后心跳/进度/结果。
@@ -57,6 +59,9 @@ func (s *WorkerService) Connect(stream workerv1.WorkerService_ConnectServer) err
 		"worker_id": w.ID, "action": "registered",
 	}})
 	defer func() {
+		if s.Probe != nil {
+			s.Probe.OnWorkerDisconnect(w.ID) // 探测会话随 Worker 下线
+		}
 		s.Disp.Unregister(w.ID)
 		w.Shutdown() // 关闭信号：派发方/泵协程感知退出（Send 永不 close，防 send-on-closed panic）
 		logging.L.Infow("worker disconnected", "id", w.ID)
@@ -149,6 +154,10 @@ func (s *WorkerService) handleEvent(w *dispatch.Worker, ev *workerv1.WorkerEvent
 		logging.L.Debugw("worker logs", "task", e.LogBatch.GetTaskId(), "lines", len(e.LogBatch.GetLines()))
 	case *workerv1.WorkerEvent_Artifact:
 		logging.L.Debugw("worker artifact", "kind", e.Artifact.GetKind(), "uri", e.Artifact.GetUri())
+	case *workerv1.WorkerEvent_ProbeReply:
+		if s.Probe != nil {
+			s.Probe.Deliver(e.ProbeReply) // pending 配对唤醒（迟到回执静默丢弃）
+		}
 	}
 }
 

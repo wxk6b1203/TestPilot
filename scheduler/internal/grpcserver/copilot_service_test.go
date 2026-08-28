@@ -28,7 +28,7 @@ func newCopilotClient(t *testing.T) (copilotv1.CopilotToolServiceClient, *gorm.D
 		t.Fatal(err)
 	}
 	conn := bufConn(t, func(srv *grpc.Server) {
-		copilotv1.RegisterCopilotToolServiceServer(srv, grpcserver.NewCopilotService(d, nil))
+		copilotv1.RegisterCopilotToolServiceServer(srv, grpcserver.NewCopilotService(d, nil, nil))
 	})
 	return copilotv1.NewCopilotToolServiceClient(conn), d
 }
@@ -406,11 +406,11 @@ func TestUpdateTestCase(t *testing.T) {
 			Type: commonv1.TestCaseType_TEST_CASE_TYPE_LOWCODE,
 			Name: "old-name",
 			Definition: &commonv1.TestCase_Lowcode{Lowcode: &commonv1.LowCodeCase{
-			Entry: "run",
-			Script: &commonv1.LowCodeCase_Source{
-				Source: "async def run(ctx):\n    ctx.log('old')",
-			},
-		}},
+				Entry: "run",
+				Script: &commonv1.LowCodeCase_Source{
+					Source: "async def run(ctx):\n    ctx.log('old')",
+				},
+			}},
 		},
 	})
 	if err != nil {

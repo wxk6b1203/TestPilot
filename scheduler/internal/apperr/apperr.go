@@ -52,6 +52,15 @@ const (
 	CodeOIDCState      = "OIDC_BAD_STATE"  // 400 OIDC state 无效/过期
 	CodeOIDCExchange   = "OIDC_EXCHANGE"   // 502 OIDC 令牌交换/验签失败
 	CodeIdentityUnlink = "IDENTITY_UNLINK" // 403 OIDC 身份未关联任何用户
+
+	// UI 探测（Copilot gRPC 工具面，docs/ui-probe-design.md §4.9；
+	// gRPC 侧用 status.Error 携带这些码前缀，映射见 docs/error-codes.md）
+	CodeProbeDisabled     = "PROBE_DISABLED"           // 503 探测功能未开启
+	CodeProbeNoWorker     = "PROBE_NO_WORKER"          // 503 无 PLAYWRIGHT 能力在线 Worker
+	CodeProbeLimit        = "PROBE_LIMIT"              // 429 会话数超限
+	CodeProbeSessionGone  = "PROBE_SESSION_NOT_FOUND"  // 404 会话不存在/已回收
+	CodeProbeTimeout      = "PROBE_TIMEOUT"            // 504 探测命令超时
+	CodeProbeFailed       = "PROBE_FAILED"             // 500 探测执行失败（Playwright 原文透传）
 )
 
 // TooMany 构造 429 错误（配额/限流）。
