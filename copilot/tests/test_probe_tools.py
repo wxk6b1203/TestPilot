@@ -11,7 +11,7 @@ from testpilot.copilot.v1 import copilot_pb2 as cpb
 
 from testpilot_copilot.tools import (
     CopilotDeps, _clip_probe_snapshot, ui_probe_act, ui_probe_close,
-    ui_probe_eval, ui_probe_open, ui_probe_snapshot,
+    ui_probe_eval, ui_probe_open, ui_probe_run, ui_probe_snapshot,
 )
 
 
@@ -95,12 +95,25 @@ def test_clip_snapshot_truncates(monkeypatch):
     assert _clip_probe_snapshot(dict(small))["ariaSnapshot"] == "- main"
 
 
+def test_run_builds_request_and_truncation_fields():
+    resp = cpb.RunProbeResponse(repr="[\'Sign in\']", logs=["hello"], truncated=False)
+    stub = _CaptureStub({"RunProbe": resp})
+    out = _run(ui_probe_run, _deps(stub), source="async def run(ctx):\n    return 1\n")
+    name, req = stub.calls[0]
+    assert name == "RunProbe"
+    assert req.session_id == "chat-1" and "run(ctx)" in req.source
+    assert out["repr"] == "['Sign in']" and out["logs"] == ["hello"]
+
+
 def test_probe_tools_approval_classification():
     # open/act/eval 写类（requires_approval=True）；snapshot/close 只读
     from testpilot_copilot.tools import probe as probe_toolset
     approval = {name: tool.requires_approval for name, tool in probe_toolset.tools.items()}
+    from testpilot_copilot.scheduler_client import _PROBE_RPC_NAMES
+    assert {"OpenProbe", "ActProbe", "EvalProbe", "RunProbe"} <= _PROBE_RPC_NAMES
     assert approval["ui_probe_open"] is True
     assert approval["ui_probe_act"] is True
     assert approval["ui_probe_eval"] is True
+    assert approval["ui_probe_run"] is True
     assert not approval["ui_probe_snapshot"]
     assert not approval["ui_probe_close"]

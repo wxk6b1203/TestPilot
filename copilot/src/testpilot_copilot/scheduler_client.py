@@ -42,7 +42,7 @@ class AuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
         return await continuation(client_call_details, request)
 
 
-_PROBE_RPC_NAMES = {"OpenProbe", "ActProbe", "EvalProbe"}
+_PROBE_RPC_NAMES = {"OpenProbe", "ActProbe", "EvalProbe", "RunProbe"}
 _PROBE_DEADLINE = 70.0
 
 

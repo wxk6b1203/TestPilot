@@ -994,6 +994,20 @@ async def ui_probe_eval(ctx: RunContext[CopilotDeps], expression: str) -> dict:
     return await to_dict_async(r)
 
 
+@probe.tool(requires_approval=True)
+async def ui_probe_run(ctx: RunContext[CopilotDeps], source: str) -> dict:
+    """在探测会话的常驻沙箱中执行一段 Python（写操作，需审批；≤16KB）。
+
+    约定入口 async def run(ctx)，返回值 repr 随响应回传；namespace 跨帧持久
+    （前一次定义的 helper 可复用），print 输出随帧回传。ctx.page 是受限 Playwright
+    门面：goto/click/fill/... 之外还有 evaluate/content/title/current_url/
+    wait_for_selector/aria_snapshot。用于机械枚举/多策略尝试等一段脚本顶多轮
+    工具调用的场景；注意脚本有超时，超时会重启沙箱（helper 丢失）。"""
+    r = await ctx.deps.sched.stub.RunProbe(cpb.RunProbeRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id, source=source))
+    return await to_dict_async(r)
+
+
 @probe.tool
 async def ui_probe_close(ctx: RunContext[CopilotDeps]) -> dict:
     """关闭 UI 探测会话（免审批）。探测确认完整流程、开始生成用例前应调用。"""

@@ -50,6 +50,10 @@
   超时多久），按报错修正而不是盲目重试；
 - 探测确认完整流程后 ui_probe_close，再 create_ui_test_case 固化（必须含 expect_*
   断言），并建议 trigger_run 验证；探测会话与用例运行是两回事，不要混用。
+- 默认走工具循环；机械枚举/多策略尝试/复杂等待等一段脚本顶多轮调用的场景才用
+  ui_probe_run（常驻沙箱执行 Python，约定 async def run(ctx)，helper 可跨帧复用）：
+  例：`async def run(ctx): return await ctx.page.evaluate("[...document.querySelectorAll('button,a')].map(e => e.textContent.trim())")`；
+  run_py 超时会重启沙箱（helper 丢失），长逻辑要分帧。
 
 ## 数据字典（领域 schema）
 {{schema}}

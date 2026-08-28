@@ -67,6 +67,34 @@ r = stub.EvalProbe(cpb.EvalProbeRequest(
 assert "Welcome, neo" in r.result_json, f"登录反馈不符：{r.result_json}"
 print(f"✓ eval result={r.result_json}")
 
+# 3.5) run_py：常驻沙箱执行 Python（枚举页面按钮 + helper 跨帧复用）
+run1 = (
+    "async def run(ctx):\n"
+    "    print('hello-from-sandbox')\n"
+    "    return await ctx.page.evaluate(\"[...document.querySelectorAll('button')].map(b => b.textContent.trim())\")\n"
+)
+r = stub.RunProbe(cpb.RunProbeRequest(ctx=ctx(), session_id=SESSION, source=run1), metadata=MD)
+assert "Sign in" in r.repr, f"run_py 枚举失败：{r.repr}"
+assert any("hello-from-sandbox" in ln for ln in r.logs), f"print 未随帧回传：{r.logs}"
+
+# 频率闸：紧接第二次 run → ResourceExhausted/PROBE_LIMIT
+try:
+    stub.RunProbe(cpb.RunProbeRequest(ctx=ctx(), session_id=SESSION, source=run1), metadata=MD)
+    raise AssertionError("immediate second run must be rate limited")
+except grpc.RpcError as e:
+    assert e.code() == grpc.StatusCode.RESOURCE_EXHAUSTED, e.code()
+    assert "PROBE_LIMIT" in e.details(), e.details()
+
+time.sleep(2.1)  # 每会话 run 频率闸 2s
+run2 = (
+    "helper_seen = 42\n"
+    "async def run(ctx):\n"
+    "    return helper_seen\n"
+)
+r = stub.RunProbe(cpb.RunProbeRequest(ctx=ctx(), session_id=SESSION, source=run2), metadata=MD)
+assert r.repr == "42", f"namespace 持久化失败：{r.repr}"
+print("✓ run_py enumerate + namespace persist")
+
 # 4) snapshot：登录后页面仍可读
 r = stub.GetProbeSnapshot(cpb.GetProbeSnapshotRequest(ctx=ctx(), session_id=SESSION), metadata=MD)
 assert r.aria_snapshot
