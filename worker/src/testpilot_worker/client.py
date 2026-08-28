@@ -17,6 +17,7 @@ from testpilot.worker.v1 import worker_pb2_grpc as wgrpc
 
 from .engine import run_task
 from .stress import run_stress
+from .probes import ProbeHub, CODE_FAILED
 from . import tracing
 
 log = logging.getLogger("testpilot.worker")
@@ -28,7 +29,8 @@ _OUTBOX_MAX = 4096  # outbox 上限：调度器消费停滞时丢弃事件保 Wo
 
 class WorkerClient:
     def __init__(self, addr: str, tags: list[str], max_concurrency: int,
-                 capabilities: list[int], tenant_id: int = 0, name: str = "", token: str = ""):
+                 capabilities: list[int], tenant_id: int = 0, name: str = "", token: str = "",
+                 probe_max_sessions: int = 2):
         self.addr = addr
         # name 为空回退 主机名-pid（容器内主机名即容器 ID，天然唯一）
         self.worker_id = name or f"{socket.gethostname()}-{os.getpid()}"
@@ -44,6 +46,8 @@ class WorkerClient:
         # OOM Worker；满时丢弃并告警（结果丢失由 Scheduler reaper 兜底）
         self.outbox: asyncio.Queue[wpb.WorkerEvent] = asyncio.Queue(maxsize=_OUTBOX_MAX)
         self.tasks: dict[str, asyncio.Task] = {}
+        # UI 探测会话（v1，docs/ui-probe-design.md §4.3）：护栏硬顶见 probes.py
+        self.probe_hub = ProbeHub(max_sessions=probe_max_sessions)
         # 会话代次：断连后旧会话的结果/进度不得再发出（防错发 + outbox 无界积压）
         self._dead = False
         # 优雅停机（SIGTERM）：置位后主循环退出、在途任务取消、流关闭
@@ -102,6 +106,8 @@ class WorkerClient:
                         asyncio.create_task(self._run_one(cmd.task))
                     elif which == "cancel":
                         self._cancel(cmd.cancel.task_id, cmd.cancel.reason)
+                    elif which == "probe":
+                        asyncio.create_task(self._handle_probe(cmd.probe))
                     elif which == "config":
                         log.info("config update ignored (MVP): %s", cmd.config)
             finally:
@@ -150,6 +156,21 @@ class WorkerClient:
         if t:
             log.info("cancel task %s: %s", task_id, reason)
             t.cancel()
+
+    async def _handle_probe(self, cmd: wpb.ProbeCommand):
+        """UI 探测命令：执行并经既有 outbox 回执；任何未预期异常都转失败回执
+        （Scheduler 侧 pending 依赖回执或超时）。断连（_dead）后丢弃回执——
+        旧会话残留不得在重连后发出（与任务结果同一语义）。"""
+        try:
+            ev = await self.probe_hub.handle(cmd)
+        except Exception as e:  # 防御：handle 内部已捕获，这里兜底
+            log.exception("probe hub crashed")
+            ev = wpb.WorkerEvent(probe_reply=wpb.ProbeReply(
+                request_id=cmd.request_id, session_id=cmd.session_id,
+                failure=wpb.ProbeFailure(code=CODE_FAILED, message=f"{type(e).__name__}: {e}")))
+        if self._dead:
+            return
+        await self._emit(ev)
 
     async def _run_one(self, task: wpb.TaskAssignment):
         # 任务从创建起即注册（含排队等待信号量阶段）——否则满载时调度器的

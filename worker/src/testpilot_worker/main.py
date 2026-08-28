@@ -55,6 +55,7 @@ def entry(argv: list[str] | None = None):
         addr=s.scheduler,
         tags=tags,
         max_concurrency=s.max_concurrency,
+        probe_max_sessions=s.probe_max_sessions,
         capabilities=caps,
         tenant_id=s.tenant_id,
         name=s.name,

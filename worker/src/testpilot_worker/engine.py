@@ -138,7 +138,8 @@ class CaseRunner:
                 request: dict | None = None, response: dict | None = None,
                 assertions: list[pb.AssertionResult] | None = None,
                 logs: list[str] | None = None,
-                artifacts: list[ui.UiArtifact] | None = None):
+                artifacts: list[ui.UiArtifact] | None = None,
+                error: str | None = None):
         sr = pb.TestStepResult(
             case_result_id=self.task.functional.case_result_id,
             step_path=path,
@@ -155,6 +156,8 @@ class CaseRunner:
             sr.logs.extend(logs)
         if artifacts:
             sr.artifacts.extend(_artifact_refs(artifacts))
+        if error:
+            sr.error = error   # 步骤级失败原文（get_run include_steps 回传，探测/根因分析用）
         self.step_results.append(sr)
 
     async def _progress(self, path: str, status: int, detail: dict[str, Any] | None = None):
@@ -232,15 +235,18 @@ class CaseRunner:
         except StepFailure as e:
             fail_arts = await self._ui_failure_shot(kind)
             self._record(path, pb.STEP_STATUS_FAILED, _ms(started),
-                         logs=[*logs, str(e)], artifacts=fail_arts or None)
+                         logs=[*logs, str(e)], artifacts=fail_arts or None,
+                         error=str(e))
             self._mark_last_ui(kind)
             await self._progress(path, pb.STEP_STATUS_FAILED, {"error": str(e)})
             raise
         except Exception as e:
             fail_arts = await self._ui_failure_shot(kind)
+            msg = f"{type(e).__name__}: {e}"
             self._record(path, pb.STEP_STATUS_FAILED, _ms(started),
-                         logs=[*logs, f"{type(e).__name__}: {e}"],
-                         artifacts=fail_arts or None)
+                         logs=[*logs, msg],
+                         artifacts=fail_arts or None,
+                         error=msg)
             self._mark_last_ui(kind)
             await self._progress(path, pb.STEP_STATUS_FAILED, {"error": str(e)})
             raise StepFailure(f"step {path}: {e}") from e

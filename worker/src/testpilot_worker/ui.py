@@ -60,6 +60,7 @@ class UiSession:
     case_dir: Path          # 本用例产物目录（绝对）
     case_rel: str           # 本用例产物目录（相对 artifact 根，用于 uri）
     render: Render          # {{var}} 模板渲染
+    record: bool = True     # False = 探测模式（docs/ui-probe-design.md §4.3.2）：不录 HAR/tracing（高频开关会话，产物是无意义膨胀）
 
     _pw: Any = None
     _browser: Any = None
@@ -82,12 +83,13 @@ class UiSession:
         # channel=chromium：用完整 Chromium 跑 headless（兼容未装 headless_shell 的环境，
         # 标准 playwright install chromium 两种都装，行为一致）
         self._browser = await self._pw.chromium.launch(headless=True, channel="chromium")
-        self._ctx = await self._browser.new_context(
-            base_url=self.base_url or None,
-            record_har_path=str(self.case_dir / "network.har"),
-            record_har_content="omit",
-        )
-        await self._ctx.tracing.start(screenshots=True, snapshots=True)
+        ctx_kwargs: dict[str, Any] = {"base_url": self.base_url or None}
+        if self.record:
+            ctx_kwargs["record_har_path"] = str(self.case_dir / "network.har")
+            ctx_kwargs["record_har_content"] = "omit"
+        self._ctx = await self._browser.new_context(**ctx_kwargs)
+        if self.record:
+            await self._ctx.tracing.start(screenshots=True, snapshots=True)
         self.page = await self._ctx.new_page()
         self.page.set_default_timeout(_DEFAULT_TIMEOUT_MS)
 
@@ -221,22 +223,28 @@ class UiSession:
             return []
 
     async def finish(self) -> list[UiArtifact]:
-        """用例结束：导出 trace/har，关闭浏览器。幂等。"""
+        """用例结束：导出 trace/har（record=False 时跳过），关闭浏览器。幂等。"""
         arts: list[UiArtifact] = []
         if self._ctx is not None:
-            try:
-                trace_path = self.case_dir / "trace.zip"
-                await self._ctx.tracing.stop(path=str(trace_path))
-                arts.append(self._artifact("trace", trace_path))
-            except Exception:
-                pass
-            try:
-                await self._ctx.close()  # 关闭时落盘 har
-                har = self.case_dir / "network.har"
-                if har.exists():
-                    arts.append(self._artifact("har", har))
-            except Exception:
-                pass
+            if self.record:
+                try:
+                    trace_path = self.case_dir / "trace.zip"
+                    await self._ctx.tracing.stop(path=str(trace_path))
+                    arts.append(self._artifact("trace", trace_path))
+                except Exception:
+                    pass
+                try:
+                    await self._ctx.close()  # 关闭时落盘 har
+                    har = self.case_dir / "network.har"
+                    if har.exists():
+                        arts.append(self._artifact("har", har))
+                except Exception:
+                    pass
+            else:
+                try:
+                    await self._ctx.close()
+                except Exception:
+                    pass
         if self._browser is not None:
             try:
                 await self._browser.close()

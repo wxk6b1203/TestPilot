@@ -23,6 +23,7 @@ _FIELDS: dict[str, tuple[str, str, object, type]] = {
     "capabilities":    ("capabilities", "TP_WORKER_CAPABILITIES", "functional", str),
     "tags":            ("tags", "TP_WORKER_TAGS", "", str),
     "max_concurrency": ("max_concurrency", "TP_WORKER_MAX_CONCURRENCY", 4, int),
+    "probe_max_sessions": ("probe_max_sessions", "TP_PROBE_MAX_SESSIONS", 2, int),  # UI 探测会话硬顶（防 DoS，勿随意放宽）
     "tenant_id":       ("tenant_id", "TP_WORKER_TENANT_ID", 0, int),  # 0=共享
     "log_level":       ("log_level", "TP_WORKER_LOG_LEVEL", "INFO", str),
     "artifact_dir":    ("artifact_dir", "TP_ARTIFACT_DIR", ".data/artifacts", str),
@@ -48,6 +49,7 @@ class Settings:
     capabilities: str = "functional"
     tags: str = ""
     max_concurrency: int = 4
+    probe_max_sessions: int = 2
     tenant_id: int = 0
     log_level: str = "INFO"
     artifact_dir: str = ".data/artifacts"

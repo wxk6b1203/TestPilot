@@ -393,3 +393,46 @@ def test_bridge_auto_headers(capture_addr):
     # SDK 显式同名头优先（忽略大小写）
     asyncio.run(call({"x-AUTO": "sdk"}, {"X-Auto": "bridge-auto"}))
     assert _Capture.seen.get("x-auto") == "sdk"
+
+
+# ---------------------------------------------------------------------------
+# TestStepResult.error：步骤级失败原文（探测/根因分析反馈，阶段 0）
+# ---------------------------------------------------------------------------
+
+def test_failed_step_records_error_field(tmp_path, monkeypatch):
+    """失败步骤必须把报错原文写入 step_results.error（get_run include_steps 回传）。"""
+    task = wpb.TaskAssignment()
+    task.functional.case_result_id = "cr1"
+    task.functional.case.type = pb.TEST_CASE_TYPE_DECLARATIVE
+    step = task.functional.case.declarative.steps.add()
+    step.type = pb.STEP_TYPE_ASSERTION
+    step.name = "必失败"
+    a = step.assertion.assertions.add()
+    a.op = pb.ASSERTION_OP_EQ
+    a.expected = "2"
+    r = CaseRunner(task)
+    r._ui = None
+
+    async def run():
+        with pytest.raises(Exception):
+            await r._run_steps(r.task.functional.case.declarative.steps, "")
+
+    asyncio.run(run())
+    sr = r.step_results[-1]
+    assert sr.status == pb.STEP_STATUS_FAILED
+    assert sr.error, "failed step must carry error text"
+    assert "assertion failed" in sr.error
+
+
+def test_passed_step_has_empty_error(tmp_path, monkeypatch):
+    task = wpb.TaskAssignment()
+    task.functional.case_result_id = "cr1"
+    task.functional.case.type = pb.TEST_CASE_TYPE_DECLARATIVE
+    step = task.functional.case.declarative.steps.add()
+    step.type = pb.STEP_TYPE_DELAY
+    step.delay.duration.FromSeconds(0)
+    r = CaseRunner(task)
+    asyncio.run(r._run_steps(r.task.functional.case.declarative.steps, ""))
+    sr = r.step_results[-1]
+    assert sr.status == pb.STEP_STATUS_PASSED
+    assert sr.error == ""
