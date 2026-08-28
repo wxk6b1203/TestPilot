@@ -42,6 +42,10 @@ class AuthInterceptor(grpc.aio.UnaryUnaryClientInterceptor):
         return await continuation(client_call_details, request)
 
 
+_PROBE_RPC_NAMES = {"OpenProbe", "ActProbe", "EvalProbe"}
+_PROBE_DEADLINE = 70.0
+
+
 class _DeadlineProxy:
     """给 stub 方法统一注入默认 deadline（grpc.aio 无 channel 级默认超时）。"""
 
@@ -52,7 +56,11 @@ class _DeadlineProxy:
         fn = getattr(self._stub, name)
 
         async def wrapper(*args, **kwargs):
-            kwargs.setdefault("timeout", _DEFAULT_DEADLINE)
+            # UI 探测命令链路更长（Worker 起浏览器/导航）：deadline 需大于
+            # Scheduler 侧 pending 等待上限（60s），保证错误从服务端返回
+            # 而不是客户端先断（见 docs/ui-probe-design.md §4.4）。
+            default = _PROBE_DEADLINE if name in _PROBE_RPC_NAMES else _DEFAULT_DEADLINE
+            kwargs.setdefault("timeout", default)
             return await fn(*args, **kwargs)
 
         return wrapper

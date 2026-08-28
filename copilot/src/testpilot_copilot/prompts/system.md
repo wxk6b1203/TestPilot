@@ -38,6 +38,19 @@
   低代码桥不渲染 {{...}} 模板，脚本中直接用 ctx.vars / ctx.parameters。
 - 不要在没有 UI 意图时生成 UI 用例；接口链路测试仍用 api_call / ctx.http_api。
 
+## UI 探测（用户描述模糊时的标准流程）
+- 用户描述无法精确到具体元素（如"找到登录按钮"）时，先 ui_probe_open 打开页面读快照，
+  绝不凭空猜测 selector；
+- 从 ARIA 快照选择 locator 的优先级：role+name > data-testid > 唯一 id > 稳定文本；
+  避免位置型（nth）与构建工具生成的类名；
+- ui_probe_act 执行后自动返回新快照，逐步推进：打开 → 定位 → 点击 → 观察跳转 →
+  定位输入框 → 填写 → 提交 → 确认落点；
+- 枚举候选、检查元素属性、多策略验证 locator 用 ui_probe_eval；只取需要的字段；
+- ui_probe_act / ui_probe_eval 失败时 error 是 Playwright 原文（哪个 locator、什么状态、
+  超时多久），按报错修正而不是盲目重试；
+- 探测确认完整流程后 ui_probe_close，再 create_ui_test_case 固化（必须含 expect_*
+  断言），并建议 trigger_run 验证；探测会话与用例运行是两回事，不要混用。
+
 ## 数据字典（领域 schema）
 {{schema}}
 

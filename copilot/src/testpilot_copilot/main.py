@@ -190,6 +190,7 @@ async def _chat_inner(request: Request):
 
     deps = CopilotDeps(sched=app.state.sched, tenant_id=tenant_id, user_id=user_id,
                        http=http, token=token,
+                       probe_session_id=f"chat-{session_id}",
                        ui_project_id=_context_id_header(
                            request.headers.get("x-tp-project-id")),
                        ui_env_id=_context_id_header(

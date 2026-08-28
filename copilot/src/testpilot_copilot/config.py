@@ -52,6 +52,8 @@ _FIELDS: dict[str, tuple[str, str, object, type, bool]] = {
     "top_p":                  ("top_p", "TP_COPILOT_TOP_P", None, float, True),
     "summarizer_temperature": ("summarizer_temperature", "TP_COPILOT_SUMMARIZER_TEMPERATURE", None, float, True),
     "summarizer_top_p":       ("summarizer_top_p", "TP_COPILOT_SUMMARIZER_TOP_P", None, float, True),
+    # UI 探测快照工具结果二次截断（字节）；Scheduler/Worker 侧另有权威截断
+    "probe_snapshot_max_bytes": ("probe_snapshot_max_bytes", "TP_COPILOT_PROBE_SNAPSHOT_MAX_BYTES", 16384, int, True),
     # Prompt 模板路径：空 = 使用包内置 prompts/system.md / prompts/summarizer.md
     "system_prompt_file":     ("system_prompt_file", "TP_COPILOT_SYSTEM_PROMPT_FILE", "", str, True),
     "summarizer_prompt_file": ("summarizer_prompt_file", "TP_COPILOT_SUMMARIZER_PROMPT_FILE", "", str, True),
@@ -80,6 +82,7 @@ class Settings:
     top_p: float | None = None
     summarizer_temperature: float | None = None
     summarizer_top_p: float | None = None
+    probe_snapshot_max_bytes: int = 16384
     system_prompt_file: str = ""
     summarizer_prompt_file: str = ""
     context_window: int = 64000

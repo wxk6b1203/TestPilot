@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -70,6 +71,9 @@ class CopilotDeps:
     # hydrate_ui_context() 校验通过后的权威详情（Scheduler REST 返回）。
     ui_project: dict[str, Any] | None = None
     ui_environment: dict[str, Any] | None = None
+    # UI 探测会话 ID（v1）：main.py 按 chat 会话生成注入，工具不再让 LLM 传会话 ID，
+    # 杜绝串会话；Scheduler 侧按 tenant 归属校验。
+    probe_session_id: str = ""
 
     def ctx(self) -> pb.RequestContext:
         return SchedulerClient.ctx(self.tenant_id, self.user_id)
@@ -302,7 +306,7 @@ async def list_runs(ctx: RunContext[CopilotDeps], project_id: str | None = None,
 
 @readonly.tool
 async def get_run(ctx: RunContext[CopilotDeps], run_id: str, include_steps: bool = False) -> dict:
-    """获取运行详情（含用例结果；include_steps=true 含步骤级明细，用于失败根因分析）。"""
+    """获取运行详情（含用例结果；include_steps=true 含步骤级明细，每步带 error 原文，用于失败根因分析）。"""
     r = await ctx.deps.sched.stub.GetRun(
         cpb.GetRunRequest(ctx=ctx.deps.ctx(), run_id=run_id, include_steps=include_steps))
     return await to_dict_async(r)
@@ -904,3 +908,95 @@ async def trigger_stress(ctx: RunContext[CopilotDeps], stress_plan_id: str,
 # parse_struct 占位引用（部分响应含 Struct 时备用）
 _ = parse_struct
 _ = Any
+
+
+# ---------------------------------------------------------------------------
+# UI 探测工具（v1，docs/ui-probe-design.md §4.4）：
+# 会话生命周期/快照只读免审批；open/act/eval 有资源或副作用，走 HITL 审批。
+# 会话空闲 TTL 由 Scheduler 回收；快照在工具结果层二次截断（上下文预算）。
+# ---------------------------------------------------------------------------
+
+probe = FunctionToolset()
+
+
+def _clip_probe_snapshot(d: dict) -> dict:
+    """工具结果二次截断（TP_COPILOT_PROBE_SNAPSHOT_MAX_BYTES，默认 16KB）：
+    Scheduler/Worker 已各有一道截断，这里兜底控制 LLM 上下文预算。"""
+    snap = d.get("ariaSnapshot")
+    if not snap:
+        return d
+    try:
+        maxb = int(os.environ.get("TP_COPILOT_PROBE_SNAPSHOT_MAX_BYTES") or 16384)
+    except ValueError:
+        maxb = 16384
+    raw = snap.encode("utf-8")
+    if len(raw) > maxb:
+        tail = "\n… [已截断]"
+        cut = raw[:max(0, maxb - len(tail.encode("utf-8")))]
+        d["ariaSnapshot"] = cut.decode("utf-8", "ignore") + tail
+        d["snapshotTruncated"] = True
+    return d
+
+
+@probe.tool(requires_approval=True)
+async def ui_probe_open(ctx: RunContext[CopilotDeps], url: str,
+                        env_id: str | None = None) -> dict:
+    """打开 UI 探测会话并返回页面 ARIA 快照（写操作，需审批）。
+
+    返回的快照是页面可交互元素的结构化文本（role/name/层级），据此选择 locator，
+    不要凭空猜测 selector。url 用相对路径（基于环境 base_url）或 http(s) 绝对地址；
+    相对路径必须已选择环境（env_id 或页面左上角当前环境）。
+    会话空闲由 Scheduler 自动回收；探测结束应调用 ui_probe_close。"""
+    if not ctx.deps.probe_session_id:
+        raise ValueError("UI 探测会话不可用（probe_session_id 未注入）")
+    eid = ctx.deps.resolve_env_id(env_id, required=False)
+    r = await ctx.deps.sched.stub.OpenProbe(cpb.OpenProbeRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id,
+        url=url, env_id=eid))
+    return _clip_probe_snapshot(await to_dict_async(r))
+
+
+@probe.tool
+async def ui_probe_snapshot(ctx: RunContext[CopilotDeps], ref: str = "") -> dict:
+    """获取当前页面 ARIA 快照（免审批）。跳转/弹窗后可反复调用观察页面变化；
+    ref 为子树定位（v1 暂不支持全页之外的聚焦，传空即可）。"""
+    r = await ctx.deps.sched.stub.GetProbeSnapshot(cpb.GetProbeSnapshotRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id, ref=ref))
+    return _clip_probe_snapshot(await to_dict_async(r))
+
+
+@probe.tool(requires_approval=True)
+async def ui_probe_act(ctx: RunContext[CopilotDeps], action: str,
+                       target: str = "", value: str = "") -> dict:
+    """在探测会话上执行单步 UI 动作（写操作，需审批），执行后自动返回新快照。
+
+    action: goto/click/fill/select/check/hover/press/wait；target 为 Playwright
+    locator；失败时 error 字段是 Playwright 原始报错（含等待超时与元素状态），
+    应据此修正 locator 重试，而不是换随机 selector。"""
+    norm = _normalize_ui_steps([{"action": action, "target": target, "value": value}])
+    st = norm[0]
+    r = await ctx.deps.sched.stub.ActProbe(cpb.ActProbeRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id,
+        action=pb.UiActionStep(action=_UI_ACTION_ENUM[st["action"]],
+                               target=st["target"], value=_decl_value(st))))
+    return _clip_probe_snapshot(await to_dict_async(r))
+
+
+@probe.tool(requires_approval=True)
+async def ui_probe_eval(ctx: RunContext[CopilotDeps], expression: str) -> dict:
+    """在页面上下文执行 JS 并返回 JSON 结果（写操作，需审批）。
+
+    用于固定动作覆盖不了的探测：枚举候选元素、检查元素状态/属性、多策略验证
+    locator、读取页面状态。结果有体积上限，只取需要的字段，避免返回整个 DOM。"""
+    r = await ctx.deps.sched.stub.EvalProbe(cpb.EvalProbeRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id,
+        expression=expression))
+    return await to_dict_async(r)
+
+
+@probe.tool
+async def ui_probe_close(ctx: RunContext[CopilotDeps]) -> dict:
+    """关闭 UI 探测会话（免审批）。探测确认完整流程、开始生成用例前应调用。"""
+    r = await ctx.deps.sched.stub.CloseProbe(cpb.CloseProbeRequest(
+        ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id))
+    return await to_dict_async(r)

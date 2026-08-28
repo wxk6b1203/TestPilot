@@ -15,7 +15,7 @@ from pydantic_ai_extensions import ContextCompression
 
 from .config import Settings
 from .providers import build_model
-from .tools import CopilotDeps, readonly, writes
+from .tools import CopilotDeps, probe, readonly, writes
 
 log = logging.getLogger("testpilot.copilot")
 
@@ -81,7 +81,7 @@ def build_agent(settings: Settings) -> Agent[CopilotDeps, str]:
         instructions=build_instructions(settings.system_prompt_file),
         deps_type=CopilotDeps,
         output_type=[str, DeferredToolRequests],  # 审批型工具 → 挂起交前端 HITL
-        toolsets=[readonly, writes],
+        toolsets=[readonly, writes, probe],
         model_settings=_model_settings(settings.temperature, settings.top_p),
         capabilities=[
             ContextCompression(
