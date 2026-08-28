@@ -599,3 +599,23 @@ class EvalProbeResponse(_message.Message):
     result_truncated: bool
     error: str
     def __init__(self, result_json: _Optional[str] = ..., result_truncated: _Optional[bool] = ..., error: _Optional[str] = ...) -> None: ...
+
+class RunProbeRequest(_message.Message):
+    __slots__ = ("ctx", "session_id", "source")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    source: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ..., source: _Optional[str] = ...) -> None: ...
+
+class RunProbeResponse(_message.Message):
+    __slots__ = ("repr", "logs", "truncated")
+    REPR_FIELD_NUMBER: _ClassVar[int]
+    LOGS_FIELD_NUMBER: _ClassVar[int]
+    TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    repr: str
+    logs: _containers.RepeatedScalarFieldContainer[str]
+    truncated: bool
+    def __init__(self, repr: _Optional[str] = ..., logs: _Optional[_Iterable[str]] = ..., truncated: _Optional[bool] = ...) -> None: ...

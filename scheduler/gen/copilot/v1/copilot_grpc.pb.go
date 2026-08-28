@@ -53,6 +53,7 @@ type CopilotToolServiceClient interface {
 	CloseProbe(ctx context.Context, in *CloseProbeRequest, opts ...grpc.CallOption) (*CloseProbeResponse, error)
 	ActProbe(ctx context.Context, in *ActProbeRequest, opts ...grpc.CallOption) (*ActProbeResponse, error)
 	EvalProbe(ctx context.Context, in *EvalProbeRequest, opts ...grpc.CallOption) (*EvalProbeResponse, error)
+	RunProbe(ctx context.Context, in *RunProbeRequest, opts ...grpc.CallOption) (*RunProbeResponse, error)
 }
 
 type copilotToolServiceClient struct {
@@ -306,6 +307,15 @@ func (c *copilotToolServiceClient) EvalProbe(ctx context.Context, in *EvalProbeR
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) RunProbe(ctx context.Context, in *RunProbeRequest, opts ...grpc.CallOption) (*RunProbeResponse, error) {
+	out := new(RunProbeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/RunProbe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CopilotToolServiceServer is the server API for CopilotToolService service.
 // All implementations must embed UnimplementedCopilotToolServiceServer
 // for forward compatibility
@@ -341,6 +351,7 @@ type CopilotToolServiceServer interface {
 	CloseProbe(context.Context, *CloseProbeRequest) (*CloseProbeResponse, error)
 	ActProbe(context.Context, *ActProbeRequest) (*ActProbeResponse, error)
 	EvalProbe(context.Context, *EvalProbeRequest) (*EvalProbeResponse, error)
+	RunProbe(context.Context, *RunProbeRequest) (*RunProbeResponse, error)
 	mustEmbedUnimplementedCopilotToolServiceServer()
 }
 
@@ -428,6 +439,9 @@ func (UnimplementedCopilotToolServiceServer) ActProbe(context.Context, *ActProbe
 }
 func (UnimplementedCopilotToolServiceServer) EvalProbe(context.Context, *EvalProbeRequest) (*EvalProbeResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method EvalProbe not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) RunProbe(context.Context, *RunProbeRequest) (*RunProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RunProbe not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) mustEmbedUnimplementedCopilotToolServiceServer() {}
 
@@ -928,6 +942,24 @@ func _CopilotToolService_EvalProbe_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_RunProbe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RunProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).RunProbe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/RunProbe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).RunProbe(ctx, req.(*RunProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CopilotToolService_ServiceDesc is the grpc.ServiceDesc for CopilotToolService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1042,6 +1074,10 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EvalProbe",
 			Handler:    _CopilotToolService_EvalProbe_Handler,
+		},
+		{
+			MethodName: "RunProbe",
+			Handler:    _CopilotToolService_RunProbe_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

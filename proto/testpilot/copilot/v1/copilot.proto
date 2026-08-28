@@ -48,6 +48,7 @@ service CopilotToolService {
   rpc CloseProbe(CloseProbeRequest) returns (CloseProbeResponse);
   rpc ActProbe(ActProbeRequest) returns (ActProbeResponse);
   rpc EvalProbe(EvalProbeRequest) returns (EvalProbeResponse);
+  rpc RunProbe(RunProbeRequest) returns (RunProbeResponse);   // v2：常驻沙箱执行 Python
 }
 
 enum ApiKind {
@@ -405,4 +406,15 @@ message EvalProbeResponse {
   string result_json = 1;        // JSON 序列化结果（截断至上限）
   bool result_truncated = 2;
   string error = 3;              // JS 异常原文
+}
+
+message RunProbeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;
+  string source = 3;             // Python 源码，约定入口 async def run(ctx)（≤16KB）
+}
+message RunProbeResponse {
+  string repr = 1;               // run(ctx) 返回值 repr
+  repeated string logs = 2;      // 本次捕获的 print 输出
+  bool truncated = 3;
 }

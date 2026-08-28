@@ -254,7 +254,7 @@ class ConfigUpdate(_message.Message):
     def __init__(self, config: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
 
 class ProbeCommand(_message.Message):
-    __slots__ = ("request_id", "session_id", "tenant_id", "timeout", "open", "act", "eval", "snapshot", "close")
+    __slots__ = ("request_id", "session_id", "tenant_id", "timeout", "open", "act", "eval", "snapshot", "close", "run")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     TENANT_ID_FIELD_NUMBER: _ClassVar[int]
@@ -264,6 +264,7 @@ class ProbeCommand(_message.Message):
     EVAL_FIELD_NUMBER: _ClassVar[int]
     SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
     CLOSE_FIELD_NUMBER: _ClassVar[int]
+    RUN_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     session_id: str
     tenant_id: int
@@ -273,7 +274,26 @@ class ProbeCommand(_message.Message):
     eval: ProbeEval
     snapshot: ProbeSnapshot
     close: ProbeClose
-    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., tenant_id: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., open: _Optional[_Union[ProbeOpen, _Mapping]] = ..., act: _Optional[_Union[_types_pb2.UiActionStep, _Mapping]] = ..., eval: _Optional[_Union[ProbeEval, _Mapping]] = ..., snapshot: _Optional[_Union[ProbeSnapshot, _Mapping]] = ..., close: _Optional[_Union[ProbeClose, _Mapping]] = ...) -> None: ...
+    run: ProbeRun
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., tenant_id: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., open: _Optional[_Union[ProbeOpen, _Mapping]] = ..., act: _Optional[_Union[_types_pb2.UiActionStep, _Mapping]] = ..., eval: _Optional[_Union[ProbeEval, _Mapping]] = ..., snapshot: _Optional[_Union[ProbeSnapshot, _Mapping]] = ..., close: _Optional[_Union[ProbeClose, _Mapping]] = ..., run: _Optional[_Union[ProbeRun, _Mapping]] = ...) -> None: ...
+
+class ProbeRun(_message.Message):
+    __slots__ = ("source", "result_max_bytes")
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    RESULT_MAX_BYTES_FIELD_NUMBER: _ClassVar[int]
+    source: str
+    result_max_bytes: int
+    def __init__(self, source: _Optional[str] = ..., result_max_bytes: _Optional[int] = ...) -> None: ...
+
+class ProbeRunResult(_message.Message):
+    __slots__ = ("repr", "logs", "truncated")
+    REPR_FIELD_NUMBER: _ClassVar[int]
+    LOGS_FIELD_NUMBER: _ClassVar[int]
+    TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    repr: str
+    logs: _containers.RepeatedScalarFieldContainer[str]
+    truncated: bool
+    def __init__(self, repr: _Optional[str] = ..., logs: _Optional[_Iterable[str]] = ..., truncated: _Optional[bool] = ...) -> None: ...
 
 class ProbeOpen(_message.Message):
     __slots__ = ("url", "snapshot_max_bytes", "record")
@@ -308,20 +328,22 @@ class ProbeClose(_message.Message):
     def __init__(self, reason: _Optional[str] = ...) -> None: ...
 
 class ProbeReply(_message.Message):
-    __slots__ = ("request_id", "session_id", "state", "eval", "ack", "failure")
+    __slots__ = ("request_id", "session_id", "state", "eval", "ack", "failure", "run_result")
     REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
     SESSION_ID_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     EVAL_FIELD_NUMBER: _ClassVar[int]
     ACK_FIELD_NUMBER: _ClassVar[int]
     FAILURE_FIELD_NUMBER: _ClassVar[int]
+    RUN_RESULT_FIELD_NUMBER: _ClassVar[int]
     request_id: str
     session_id: str
     state: ProbeState
     eval: ProbeEvalResult
     ack: ProbeAck
     failure: ProbeFailure
-    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., state: _Optional[_Union[ProbeState, _Mapping]] = ..., eval: _Optional[_Union[ProbeEvalResult, _Mapping]] = ..., ack: _Optional[_Union[ProbeAck, _Mapping]] = ..., failure: _Optional[_Union[ProbeFailure, _Mapping]] = ...) -> None: ...
+    run_result: ProbeRunResult
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., state: _Optional[_Union[ProbeState, _Mapping]] = ..., eval: _Optional[_Union[ProbeEvalResult, _Mapping]] = ..., ack: _Optional[_Union[ProbeAck, _Mapping]] = ..., failure: _Optional[_Union[ProbeFailure, _Mapping]] = ..., run_result: _Optional[_Union[ProbeRunResult, _Mapping]] = ...) -> None: ...
 
 class ProbeState(_message.Message):
     __slots__ = ("final_url", "title", "aria_snapshot", "snapshot_truncated")

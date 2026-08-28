@@ -172,7 +172,19 @@ message ProbeCommand {
     ProbeEval eval = 7;
     ProbeSnapshot snapshot = 8;
     ProbeClose close = 9;
+    ProbeRun run = 10;   // v2：常驻沙箱执行 Python（docs/ui-probe-design.md §6）
   }
+}
+
+message ProbeRun {
+  string source = 1;               // Python 源码，约定入口 async def run(ctx)
+  int32 result_max_bytes = 2;      // repr/logs 截断上限
+}
+
+message ProbeRunResult {
+  string repr = 1;                 // run(ctx) 返回值 repr（截断后）
+  repeated string logs = 2;        // 本次 exec 捕获的 print 输出（截断后）
+  bool truncated = 3;
 }
 
 message ProbeOpen {
@@ -201,6 +213,7 @@ message ProbeReply {
     ProbeEvalResult eval = 4;      // eval 成功
     ProbeAck ack = 5;              // close 成功
     ProbeFailure failure = 6;      // 任何失败（含超时/会话不存在）
+    ProbeRunResult run_result = 7; // v2：run_py 执行结果
   }
 }
 

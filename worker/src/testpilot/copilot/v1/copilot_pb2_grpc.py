@@ -169,6 +169,11 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.FromString,
                 _registered_method=True)
+        self.RunProbe = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/RunProbe',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeResponse.FromString,
+                _registered_method=True)
 
 
 class CopilotToolServiceServicer:
@@ -340,6 +345,13 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def RunProbe(self, request, context):
+        """v2：常驻沙箱执行 Python
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CopilotToolServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -477,6 +489,11 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.EvalProbe,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.SerializeToString,
+            ),
+            'RunProbe': grpc.unary_unary_rpc_method_handler(
+                    servicer.RunProbe,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1208,6 +1225,33 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/EvalProbe',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RunProbe(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/RunProbe',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.RunProbeResponse.FromString,
             options,
             channel_credentials,
             insecure,
