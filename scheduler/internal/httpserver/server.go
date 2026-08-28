@@ -198,6 +198,8 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/runs", auth.RoleViewer, s.listRuns)
 	h(fiber.MethodGet, "/runs/:id", auth.RoleViewer, s.getRun)
 	h(fiber.MethodGet, "/runs/:id/junit", auth.RoleViewer, s.runJUnit)
+	h(fiber.MethodGet, "/artifacts", auth.RoleViewer, s.listArtifacts)
+	h(fiber.MethodPost, "/artifacts", auth.RoleMember, s.uploadArtifact)
 	h(fiber.MethodGet, "/artifacts/:id/content", auth.RoleViewer, s.getArtifactContent)
 
 	h(fiber.MethodGet, "/stress-plans", auth.RoleViewer, s.listStressPlans)

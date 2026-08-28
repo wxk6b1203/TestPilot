@@ -359,7 +359,7 @@ CREATE TABLE artifacts (
     tenant_id      BIGINT        NOT NULL,
     run_id         BIGINT        NULL COMMENT 'NULL = 非运行产物（proto/证书）',
     step_result_id BIGINT        NULL COMMENT '精确归属（可空）',
-    kind           SMALLINT      NOT NULL COMMENT 'screenshot/video/trace/har/download/log/proto/cert',
+    kind           SMALLINT      NOT NULL COMMENT 'screenshot/video/trace/har/download/log/proto/cert/upload',
     uri            VARCHAR(1024) NOT NULL COMMENT '存储位置（S3/本地 FS）',
     size           BIGINT        NOT NULL DEFAULT 0,
     created_at     DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),

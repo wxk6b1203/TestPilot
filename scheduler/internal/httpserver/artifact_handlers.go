@@ -1,12 +1,16 @@
 package httpserver
 
 import (
+	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/apperr"
 	"github.com/testpilot/testpilot/internal/model"
+	"gorm.io/gorm"
 )
 
 // selfClosingReader 读尽（EOF/出错/读满 size）时自动 Close 底层流：
@@ -78,4 +82,104 @@ func (s *Server) getArtifactContent(ctx fiber.Ctx) error {
 	ctx.Set(fiber.HeaderContentDisposition,
 		`inline; filename="`+strings.ReplaceAll(name, `"`, "")+`"`)
 	return ctx.SendStream(&selfClosingReader{r: f, remaining: art.Size}, int(art.Size))
+}
+
+// maxUploadBytes 与 binary_ref 内联上限对齐：超限产物无法被派发内联，入口即拒。
+const maxUploadBytes = 8 << 20
+
+// listArtifacts GET /api/v1/artifacts?kind=&run_id=（viewer）：产物清单，
+// 回答"binary_ref 引用的文件在哪/有哪些产物"。
+func (s *Server) listArtifacts(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	return listOf[model.Artifact](s.db, ctx, func(q *gorm.DB) *gorm.DB {
+		q = q.Where("tenant_id = ?", c.TenantID)
+		if k := queryInt(ctx, "kind"); k != 0 {
+			q = q.Where("kind = ?", k)
+		}
+		if rid := queryInt(ctx, "run_id"); rid != 0 {
+			q = q.Where("run_id = ?", rid)
+		}
+		return q.Order("id desc")
+	})
+}
+
+// uploadArtifact POST /api/v1/artifacts（multipart: file；member）：用户上传二进制
+// （binary_ref 供体等）。写 artifactRoot/uploads/<id>/<name> → Ingest（s3 上传+删本地，
+// local 为 no-op，与 Worker 产物同一约定）→ 落 Artifact 行（run_id=0：retention 只清
+// 已删运行的产物，上传不受影响）。
+func (s *Server) uploadArtifact(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	fh, err := ctx.FormFile("file")
+	if err != nil {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "multipart field 'file' is required"))
+	}
+	if fh.Size <= 0 || fh.Size > maxUploadBytes {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"file size must be within 1B..8MiB (binary_ref inline cap)"))
+	}
+	store := s.artifactStore()
+	if store == nil {
+		return writeAppErr(ctx, apperr.Internal("artifact store unavailable"))
+	}
+
+	// 文件名净化（剥路径 + 字符白名单，防穿越/防怪名）
+	name := strings.ReplaceAll(fh.Filename, "\\", "/")
+	if i := strings.LastIndexAny(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') ||
+			r == '.' || r == '_' || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('_')
+		}
+	}
+	name = strings.Trim(b.String(), ".")
+	if name == "" {
+		name = "upload.bin"
+	}
+	if len(name) > 120 {
+		name = name[:120]
+	}
+
+	// 内容实测（fh.Size 可能不可信）：超限入口即拒
+	src, err := fh.Open()
+	if err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	defer src.Close() //nolint:errcheck
+	data, err := io.ReadAll(io.LimitReader(src, maxUploadBytes+1))
+	if err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	if int64(len(data)) == 0 || int64(len(data)) > maxUploadBytes {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam,
+			"file size must be within 1B..8MiB (binary_ref inline cap)"))
+	}
+
+	artID := model.NextID()
+	art := &model.Artifact{
+		ID:       artID,
+		TenantID: c.TenantID,
+		Kind:     model.ArtifactKindUpload,
+		URI:      fmt.Sprintf("uploads/%d/%s", artID, name),
+		Size:     int64(len(data)),
+	}
+	dest := filepath.Join(s.cfg.ArtifactDir, filepath.Clean("/"+art.URI))
+	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	if err := os.WriteFile(dest, data, 0o644); err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	// s3 后端：上传并删本地临时落盘；local：no-op（文件已在位）
+	if err := store.Ingest(dest, c.TenantID, art.URI); err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	if err := s.db.Create(art).Error; err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	return writeJSON(ctx, fiber.StatusOK, art)
 }

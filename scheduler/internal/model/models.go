@@ -415,6 +415,7 @@ const (
 	ArtifactKindLog        int16 = 6
 	ArtifactKindProto      int16 = 7
 	ArtifactKindCert       int16 = 8
+	ArtifactKindUpload     int16 = 9 // 用户上传（binary_ref 供体等）
 )
 
 // ---- 压力测试 ----
@@ -588,6 +589,8 @@ func ArtifactKindFromString(s string) int16 {
 		return ArtifactKindProto
 	case "cert":
 		return ArtifactKindCert
+	case "upload":
+		return ArtifactKindUpload
 	}
 	return 0
 }
