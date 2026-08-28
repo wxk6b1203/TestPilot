@@ -41,6 +41,13 @@ service CopilotToolService {
   // ---- 触发工具（默认 HITL 审批） ----
   rpc TriggerRun(TriggerRunRequest) returns (TriggerRunResponse);
   rpc TriggerStress(TriggerStressRequest) returns (TriggerStressResponse);
+
+  // ---- UI 探测（v1）：会话生命周期类只读（snapshot/close），资源/副作用类写（open/act/eval，HITL） ----
+  rpc OpenProbe(OpenProbeRequest) returns (OpenProbeResponse);
+  rpc GetProbeSnapshot(GetProbeSnapshotRequest) returns (GetProbeSnapshotResponse);
+  rpc CloseProbe(CloseProbeRequest) returns (CloseProbeResponse);
+  rpc ActProbe(ActProbeRequest) returns (ActProbeResponse);
+  rpc EvalProbe(EvalProbeRequest) returns (EvalProbeResponse);
 }
 
 enum ApiKind {
@@ -337,4 +344,65 @@ message TriggerStressRequest {
 }
 message TriggerStressResponse {
   string run_id = 1;
+}
+
+// ---------------------------------------------------------------------------
+// UI 探测（v1，设计：docs/ui-probe-design.md §4.1）
+// ---------------------------------------------------------------------------
+
+message OpenProbeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;   // Copilot 生成，每 chat 会话一个（Scheduler 粘性路由键）
+  string url = 3;          // 相对路径基于 env 的 base_url；Scheduler 解析后下发绝对 URL
+  string env_id = 4;       // 解析 base_url；空 = Copilot 当前选中环境
+}
+message OpenProbeResponse {
+  string session_id = 1;
+  string worker_id = 2;    // 实际承载探测的 Worker
+  string final_url = 3;    // 导航后的真实 URL（重定向后）
+  string title = 4;
+  string aria_snapshot = 5;             // 截断后的 ARIA YAML
+  bool snapshot_truncated = 6;
+}
+
+message GetProbeSnapshotRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;
+  string ref = 3;          // 可选：子树定位（ARIA YAML 路径），空 = 全页（v1.x 增强，先不支持）
+}
+message GetProbeSnapshotResponse {
+  string final_url = 1;
+  string title = 2;
+  string aria_snapshot = 3;
+  bool snapshot_truncated = 4;
+}
+
+message CloseProbeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;
+}
+message CloseProbeResponse { bool ok = 1; }
+
+message ActProbeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;
+  testpilot.common.v1.UiActionStep action = 3;  // 复用 common 的 UI 动作（与声明式步骤同构）
+}
+message ActProbeResponse {
+  string final_url = 1;
+  string title = 2;
+  string aria_snapshot = 3;      // 动作执行后自动回快照（一步一反馈）
+  bool snapshot_truncated = 4;
+  string error = 5;              // 空 = 成功；非空为 Playwright 原始报错
+}
+
+message EvalProbeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string session_id = 2;
+  string expression = 3;         // JS 表达式或 () => {...}（Playwright evaluate 语义）
+}
+message EvalProbeResponse {
+  string result_json = 1;        // JSON 序列化结果（截断至上限）
+  bool result_truncated = 2;
+  string error = 3;              // JS 异常原文
 }

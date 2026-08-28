@@ -926,7 +926,7 @@ class ArtifactRef(_message.Message):
     def __init__(self, id: _Optional[str] = ..., kind: _Optional[str] = ..., uri: _Optional[str] = ..., size: _Optional[int] = ...) -> None: ...
 
 class TestStepResult(_message.Message):
-    __slots__ = ("id", "case_result_id", "step_path", "status", "duration", "request", "response", "assertions", "logs", "artifacts")
+    __slots__ = ("id", "case_result_id", "step_path", "status", "duration", "request", "response", "assertions", "logs", "artifacts", "error")
     ID_FIELD_NUMBER: _ClassVar[int]
     CASE_RESULT_ID_FIELD_NUMBER: _ClassVar[int]
     STEP_PATH_FIELD_NUMBER: _ClassVar[int]
@@ -937,6 +937,7 @@ class TestStepResult(_message.Message):
     ASSERTIONS_FIELD_NUMBER: _ClassVar[int]
     LOGS_FIELD_NUMBER: _ClassVar[int]
     ARTIFACTS_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
     id: str
     case_result_id: str
     step_path: str
@@ -947,7 +948,8 @@ class TestStepResult(_message.Message):
     assertions: _containers.RepeatedCompositeFieldContainer[AssertionResult]
     logs: _containers.RepeatedScalarFieldContainer[str]
     artifacts: _containers.RepeatedCompositeFieldContainer[ArtifactRef]
-    def __init__(self, id: _Optional[str] = ..., case_result_id: _Optional[str] = ..., step_path: _Optional[str] = ..., status: _Optional[_Union[StepStatus, str]] = ..., duration: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., request: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., response: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., assertions: _Optional[_Iterable[_Union[AssertionResult, _Mapping]]] = ..., logs: _Optional[_Iterable[str]] = ..., artifacts: _Optional[_Iterable[_Union[ArtifactRef, _Mapping]]] = ...) -> None: ...
+    error: str
+    def __init__(self, id: _Optional[str] = ..., case_result_id: _Optional[str] = ..., step_path: _Optional[str] = ..., status: _Optional[_Union[StepStatus, str]] = ..., duration: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., request: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., response: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ..., assertions: _Optional[_Iterable[_Union[AssertionResult, _Mapping]]] = ..., logs: _Optional[_Iterable[str]] = ..., artifacts: _Optional[_Iterable[_Union[ArtifactRef, _Mapping]]] = ..., error: _Optional[str] = ...) -> None: ...
 
 class RampStage(_message.Message):
     __slots__ = ("at", "target")

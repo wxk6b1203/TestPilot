@@ -664,6 +664,11 @@
    {
     "name": "artifacts",
     "type": "repeated ArtifactRef"
+   },
+   {
+    "name": "error",
+    "type": "string",
+    "doc": "步骤失败原因原文（Playwright/断言等报错原样；成功为空）"
    }
   ],
   "StressTestPlan": [

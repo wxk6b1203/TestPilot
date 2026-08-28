@@ -33,6 +33,7 @@ message WorkerEvent {
     TaskResult task_result = 5;
     StressMetricBatch stress_metrics = 6;
     testpilot.common.v1.ArtifactRef artifact = 7;
+    ProbeReply probe_reply = 8;    // UI 探测回执（v1，docs/ui-probe-design.md）
   }
 }
 
@@ -97,6 +98,7 @@ message SchedulerCommand {
     TaskAssignment task = 1;
     CancelTask cancel = 2;
     ConfigUpdate config = 3;
+    ProbeCommand probe = 4;    // UI 探测命令（v1；旧 Worker 对未知成员静默忽略，前向兼容）
   }
 }
 
@@ -152,4 +154,71 @@ message CancelTask {
 
 message ConfigUpdate {
   google.protobuf.Struct config = 1;
+}
+
+// ---------------------------------------------------------------------------
+// UI 探测（v1，docs/ui-probe-design.md §4.1.2）：
+// Scheduler 经既有命令流下发 ProbeCommand，Worker 异步回 ProbeReply（request_id 配对）。
+// ---------------------------------------------------------------------------
+
+message ProbeCommand {
+  string request_id = 1;                 // Scheduler 生成，回执原样带回（配对键）
+  string session_id = 2;
+  int64 tenant_id = 3;                   // 冗余下发，Worker 侧做会话归属校验
+  google.protobuf.Duration timeout = 4;  // 单命令执行上限（Scheduler 权威值；Worker 侧另有硬顶）
+  oneof op {
+    ProbeOpen open = 5;
+    testpilot.common.v1.UiActionStep act = 6;  // 复用 common 的 UI 动作（与 copilot.proto 同构）
+    ProbeEval eval = 7;
+    ProbeSnapshot snapshot = 8;
+    ProbeClose close = 9;
+  }
+}
+
+message ProbeOpen {
+  string url = 1;                  // 绝对 URL（Scheduler 已解析 base_url，Worker 不做模板渲染）
+  int32 snapshot_max_bytes = 2;    // 快照截断上限（Scheduler 权威值）
+  bool record = 3;                 // 是否录 HAR/tracing（探测默认 false）
+}
+
+message ProbeEval {
+  string expression = 1;           // JS 表达式或 () => {...}（Playwright evaluate 语义）
+  int32 result_max_bytes = 2;      // 结果截断上限
+}
+
+message ProbeSnapshot {
+  string ref = 1;                  // 子树定位，空 = 全页（v1.x 增强，先不支持）
+  int32 snapshot_max_bytes = 2;
+}
+
+message ProbeClose { string reason = 1; }  // user | ttl | limit | worker_shutdown
+
+message ProbeReply {
+  string request_id = 1;
+  string session_id = 2;
+  oneof payload {
+    ProbeState state = 3;          // open/act/snapshot 成功
+    ProbeEvalResult eval = 4;      // eval 成功
+    ProbeAck ack = 5;              // close 成功
+    ProbeFailure failure = 6;      // 任何失败（含超时/会话不存在）
+  }
+}
+
+message ProbeState {
+  string final_url = 1;
+  string title = 2;
+  string aria_snapshot = 3;
+  bool snapshot_truncated = 4;
+}
+
+message ProbeEvalResult {
+  string result_json = 1;
+  bool result_truncated = 2;
+}
+
+message ProbeAck { string session_id = 1; }
+
+message ProbeFailure {
+  string code = 1;    // PROBE_SESSION_NOT_FOUND | PROBE_LIMIT | PROBE_TIMEOUT | PROBE_FAILED 等
+  string message = 2; // 报错原文（Playwright error 原样透传）
 }

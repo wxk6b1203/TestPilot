@@ -144,6 +144,31 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressResponse.FromString,
                 _registered_method=True)
+        self.OpenProbe = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/OpenProbe',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeResponse.FromString,
+                _registered_method=True)
+        self.GetProbeSnapshot = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/GetProbeSnapshot',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotResponse.FromString,
+                _registered_method=True)
+        self.CloseProbe = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/CloseProbe',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeResponse.FromString,
+                _registered_method=True)
+        self.ActProbe = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/ActProbe',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeResponse.FromString,
+                _registered_method=True)
+        self.EvalProbe = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/EvalProbe',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.FromString,
+                _registered_method=True)
 
 
 class CopilotToolServiceServicer:
@@ -284,6 +309,37 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def OpenProbe(self, request, context):
+        """---- UI 探测（v1）：会话生命周期类只读（snapshot/close），资源/副作用类写（open/act/eval，HITL） ----
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetProbeSnapshot(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CloseProbe(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ActProbe(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def EvalProbe(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_CopilotToolServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -396,6 +452,31 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.TriggerStress,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressResponse.SerializeToString,
+            ),
+            'OpenProbe': grpc.unary_unary_rpc_method_handler(
+                    servicer.OpenProbe,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeResponse.SerializeToString,
+            ),
+            'GetProbeSnapshot': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetProbeSnapshot,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotResponse.SerializeToString,
+            ),
+            'CloseProbe': grpc.unary_unary_rpc_method_handler(
+                    servicer.CloseProbe,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeResponse.SerializeToString,
+            ),
+            'ActProbe': grpc.unary_unary_rpc_method_handler(
+                    servicer.ActProbe,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeResponse.SerializeToString,
+            ),
+            'EvalProbe': grpc.unary_unary_rpc_method_handler(
+                    servicer.EvalProbe,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -992,6 +1073,141 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/TriggerStress',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.TriggerStressResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def OpenProbe(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/OpenProbe',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.OpenProbeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetProbeSnapshot(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/GetProbeSnapshot',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetProbeSnapshotResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CloseProbe(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/CloseProbe',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CloseProbeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ActProbe(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/ActProbe',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ActProbeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def EvalProbe(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/EvalProbe',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.EvalProbeResponse.FromString,
             options,
             channel_credentials,
             insecure,

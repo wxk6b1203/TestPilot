@@ -603,6 +603,7 @@ message TestStepResult {
   repeated AssertionResult assertions = 8;
   repeated string logs = 9;
   repeated ArtifactRef artifacts = 10;
+  string error = 11;                    // 步骤失败原因原文（Playwright/断言等报错原样；成功为空）
 }
 
 // ---------------------------------------------------------------------------

@@ -47,6 +47,12 @@ type CopilotToolServiceClient interface {
 	// ---- 触发工具（默认 HITL 审批） ----
 	TriggerRun(ctx context.Context, in *TriggerRunRequest, opts ...grpc.CallOption) (*TriggerRunResponse, error)
 	TriggerStress(ctx context.Context, in *TriggerStressRequest, opts ...grpc.CallOption) (*TriggerStressResponse, error)
+	// ---- UI 探测（v1）：会话生命周期类只读（snapshot/close），资源/副作用类写（open/act/eval，HITL） ----
+	OpenProbe(ctx context.Context, in *OpenProbeRequest, opts ...grpc.CallOption) (*OpenProbeResponse, error)
+	GetProbeSnapshot(ctx context.Context, in *GetProbeSnapshotRequest, opts ...grpc.CallOption) (*GetProbeSnapshotResponse, error)
+	CloseProbe(ctx context.Context, in *CloseProbeRequest, opts ...grpc.CallOption) (*CloseProbeResponse, error)
+	ActProbe(ctx context.Context, in *ActProbeRequest, opts ...grpc.CallOption) (*ActProbeResponse, error)
+	EvalProbe(ctx context.Context, in *EvalProbeRequest, opts ...grpc.CallOption) (*EvalProbeResponse, error)
 }
 
 type copilotToolServiceClient struct {
@@ -255,6 +261,51 @@ func (c *copilotToolServiceClient) TriggerStress(ctx context.Context, in *Trigge
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) OpenProbe(ctx context.Context, in *OpenProbeRequest, opts ...grpc.CallOption) (*OpenProbeResponse, error) {
+	out := new(OpenProbeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/OpenProbe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) GetProbeSnapshot(ctx context.Context, in *GetProbeSnapshotRequest, opts ...grpc.CallOption) (*GetProbeSnapshotResponse, error) {
+	out := new(GetProbeSnapshotResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/GetProbeSnapshot", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) CloseProbe(ctx context.Context, in *CloseProbeRequest, opts ...grpc.CallOption) (*CloseProbeResponse, error) {
+	out := new(CloseProbeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CloseProbe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) ActProbe(ctx context.Context, in *ActProbeRequest, opts ...grpc.CallOption) (*ActProbeResponse, error) {
+	out := new(ActProbeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/ActProbe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) EvalProbe(ctx context.Context, in *EvalProbeRequest, opts ...grpc.CallOption) (*EvalProbeResponse, error) {
+	out := new(EvalProbeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/EvalProbe", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CopilotToolServiceServer is the server API for CopilotToolService service.
 // All implementations must embed UnimplementedCopilotToolServiceServer
 // for forward compatibility
@@ -284,6 +335,12 @@ type CopilotToolServiceServer interface {
 	// ---- 触发工具（默认 HITL 审批） ----
 	TriggerRun(context.Context, *TriggerRunRequest) (*TriggerRunResponse, error)
 	TriggerStress(context.Context, *TriggerStressRequest) (*TriggerStressResponse, error)
+	// ---- UI 探测（v1）：会话生命周期类只读（snapshot/close），资源/副作用类写（open/act/eval，HITL） ----
+	OpenProbe(context.Context, *OpenProbeRequest) (*OpenProbeResponse, error)
+	GetProbeSnapshot(context.Context, *GetProbeSnapshotRequest) (*GetProbeSnapshotResponse, error)
+	CloseProbe(context.Context, *CloseProbeRequest) (*CloseProbeResponse, error)
+	ActProbe(context.Context, *ActProbeRequest) (*ActProbeResponse, error)
+	EvalProbe(context.Context, *EvalProbeRequest) (*EvalProbeResponse, error)
 	mustEmbedUnimplementedCopilotToolServiceServer()
 }
 
@@ -356,6 +413,21 @@ func (UnimplementedCopilotToolServiceServer) TriggerRun(context.Context, *Trigge
 }
 func (UnimplementedCopilotToolServiceServer) TriggerStress(context.Context, *TriggerStressRequest) (*TriggerStressResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method TriggerStress not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) OpenProbe(context.Context, *OpenProbeRequest) (*OpenProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method OpenProbe not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) GetProbeSnapshot(context.Context, *GetProbeSnapshotRequest) (*GetProbeSnapshotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetProbeSnapshot not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) CloseProbe(context.Context, *CloseProbeRequest) (*CloseProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CloseProbe not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) ActProbe(context.Context, *ActProbeRequest) (*ActProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ActProbe not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) EvalProbe(context.Context, *EvalProbeRequest) (*EvalProbeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method EvalProbe not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) mustEmbedUnimplementedCopilotToolServiceServer() {}
 
@@ -766,6 +838,96 @@ func _CopilotToolService_TriggerStress_Handler(srv interface{}, ctx context.Cont
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_OpenProbe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(OpenProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).OpenProbe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/OpenProbe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).OpenProbe(ctx, req.(*OpenProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_GetProbeSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProbeSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).GetProbeSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/GetProbeSnapshot",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).GetProbeSnapshot(ctx, req.(*GetProbeSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_CloseProbe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CloseProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).CloseProbe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/CloseProbe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).CloseProbe(ctx, req.(*CloseProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_ActProbe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ActProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).ActProbe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/ActProbe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).ActProbe(ctx, req.(*ActProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_EvalProbe_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EvalProbeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).EvalProbe(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/EvalProbe",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).EvalProbe(ctx, req.(*EvalProbeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CopilotToolService_ServiceDesc is the grpc.ServiceDesc for CopilotToolService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -860,6 +1022,26 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TriggerStress",
 			Handler:    _CopilotToolService_TriggerStress_Handler,
+		},
+		{
+			MethodName: "OpenProbe",
+			Handler:    _CopilotToolService_OpenProbe_Handler,
+		},
+		{
+			MethodName: "GetProbeSnapshot",
+			Handler:    _CopilotToolService_GetProbeSnapshot_Handler,
+		},
+		{
+			MethodName: "CloseProbe",
+			Handler:    _CopilotToolService_CloseProbe_Handler,
+		},
+		{
+			MethodName: "ActProbe",
+			Handler:    _CopilotToolService_ActProbe_Handler,
+		},
+		{
+			MethodName: "EvalProbe",
+			Handler:    _CopilotToolService_EvalProbe_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -13,7 +13,7 @@ from typing import ClassVar as _ClassVar, Optional as _Optional, Union as _Union
 DESCRIPTOR: _descriptor.FileDescriptor
 
 class WorkerEvent(_message.Message):
-    __slots__ = ("register", "heartbeat", "step_progress", "log_batch", "task_result", "stress_metrics", "artifact")
+    __slots__ = ("register", "heartbeat", "step_progress", "log_batch", "task_result", "stress_metrics", "artifact", "probe_reply")
     REGISTER_FIELD_NUMBER: _ClassVar[int]
     HEARTBEAT_FIELD_NUMBER: _ClassVar[int]
     STEP_PROGRESS_FIELD_NUMBER: _ClassVar[int]
@@ -21,6 +21,7 @@ class WorkerEvent(_message.Message):
     TASK_RESULT_FIELD_NUMBER: _ClassVar[int]
     STRESS_METRICS_FIELD_NUMBER: _ClassVar[int]
     ARTIFACT_FIELD_NUMBER: _ClassVar[int]
+    PROBE_REPLY_FIELD_NUMBER: _ClassVar[int]
     register: RegisterRequest
     heartbeat: Heartbeat
     step_progress: StepProgress
@@ -28,7 +29,8 @@ class WorkerEvent(_message.Message):
     task_result: TaskResult
     stress_metrics: StressMetricBatch
     artifact: _types_pb2.ArtifactRef
-    def __init__(self, register: _Optional[_Union[RegisterRequest, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., step_progress: _Optional[_Union[StepProgress, _Mapping]] = ..., log_batch: _Optional[_Union[LogBatch, _Mapping]] = ..., task_result: _Optional[_Union[TaskResult, _Mapping]] = ..., stress_metrics: _Optional[_Union[StressMetricBatch, _Mapping]] = ..., artifact: _Optional[_Union[_types_pb2.ArtifactRef, _Mapping]] = ...) -> None: ...
+    probe_reply: ProbeReply
+    def __init__(self, register: _Optional[_Union[RegisterRequest, _Mapping]] = ..., heartbeat: _Optional[_Union[Heartbeat, _Mapping]] = ..., step_progress: _Optional[_Union[StepProgress, _Mapping]] = ..., log_batch: _Optional[_Union[LogBatch, _Mapping]] = ..., task_result: _Optional[_Union[TaskResult, _Mapping]] = ..., stress_metrics: _Optional[_Union[StressMetricBatch, _Mapping]] = ..., artifact: _Optional[_Union[_types_pb2.ArtifactRef, _Mapping]] = ..., probe_reply: _Optional[_Union[ProbeReply, _Mapping]] = ...) -> None: ...
 
 class RegisterRequest(_message.Message):
     __slots__ = ("worker_id", "worker_name", "capabilities", "python_version", "sdk_version", "worker_version", "tags", "max_concurrency", "tenant_id")
@@ -119,14 +121,16 @@ class StressMetricBatch(_message.Message):
     def __init__(self, task_id: _Optional[str] = ..., run_id: _Optional[str] = ..., points: _Optional[_Iterable[_Union[_types_pb2.StressMetricPoint, _Mapping]]] = ...) -> None: ...
 
 class SchedulerCommand(_message.Message):
-    __slots__ = ("task", "cancel", "config")
+    __slots__ = ("task", "cancel", "config", "probe")
     TASK_FIELD_NUMBER: _ClassVar[int]
     CANCEL_FIELD_NUMBER: _ClassVar[int]
     CONFIG_FIELD_NUMBER: _ClassVar[int]
+    PROBE_FIELD_NUMBER: _ClassVar[int]
     task: TaskAssignment
     cancel: CancelTask
     config: ConfigUpdate
-    def __init__(self, task: _Optional[_Union[TaskAssignment, _Mapping]] = ..., cancel: _Optional[_Union[CancelTask, _Mapping]] = ..., config: _Optional[_Union[ConfigUpdate, _Mapping]] = ...) -> None: ...
+    probe: ProbeCommand
+    def __init__(self, task: _Optional[_Union[TaskAssignment, _Mapping]] = ..., cancel: _Optional[_Union[CancelTask, _Mapping]] = ..., config: _Optional[_Union[ConfigUpdate, _Mapping]] = ..., probe: _Optional[_Union[ProbeCommand, _Mapping]] = ...) -> None: ...
 
 class ExecutionEnv(_message.Message):
     __slots__ = ("environment", "variables", "base_url")
@@ -248,3 +252,107 @@ class ConfigUpdate(_message.Message):
     CONFIG_FIELD_NUMBER: _ClassVar[int]
     config: _struct_pb2.Struct
     def __init__(self, config: _Optional[_Union[_struct_pb2.Struct, _Mapping]] = ...) -> None: ...
+
+class ProbeCommand(_message.Message):
+    __slots__ = ("request_id", "session_id", "tenant_id", "timeout", "open", "act", "eval", "snapshot", "close")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    TENANT_ID_FIELD_NUMBER: _ClassVar[int]
+    TIMEOUT_FIELD_NUMBER: _ClassVar[int]
+    OPEN_FIELD_NUMBER: _ClassVar[int]
+    ACT_FIELD_NUMBER: _ClassVar[int]
+    EVAL_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    CLOSE_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    session_id: str
+    tenant_id: int
+    timeout: _duration_pb2.Duration
+    open: ProbeOpen
+    act: _types_pb2.UiActionStep
+    eval: ProbeEval
+    snapshot: ProbeSnapshot
+    close: ProbeClose
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., tenant_id: _Optional[int] = ..., timeout: _Optional[_Union[datetime.timedelta, _duration_pb2.Duration, _Mapping]] = ..., open: _Optional[_Union[ProbeOpen, _Mapping]] = ..., act: _Optional[_Union[_types_pb2.UiActionStep, _Mapping]] = ..., eval: _Optional[_Union[ProbeEval, _Mapping]] = ..., snapshot: _Optional[_Union[ProbeSnapshot, _Mapping]] = ..., close: _Optional[_Union[ProbeClose, _Mapping]] = ...) -> None: ...
+
+class ProbeOpen(_message.Message):
+    __slots__ = ("url", "snapshot_max_bytes", "record")
+    URL_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_MAX_BYTES_FIELD_NUMBER: _ClassVar[int]
+    RECORD_FIELD_NUMBER: _ClassVar[int]
+    url: str
+    snapshot_max_bytes: int
+    record: bool
+    def __init__(self, url: _Optional[str] = ..., snapshot_max_bytes: _Optional[int] = ..., record: _Optional[bool] = ...) -> None: ...
+
+class ProbeEval(_message.Message):
+    __slots__ = ("expression", "result_max_bytes")
+    EXPRESSION_FIELD_NUMBER: _ClassVar[int]
+    RESULT_MAX_BYTES_FIELD_NUMBER: _ClassVar[int]
+    expression: str
+    result_max_bytes: int
+    def __init__(self, expression: _Optional[str] = ..., result_max_bytes: _Optional[int] = ...) -> None: ...
+
+class ProbeSnapshot(_message.Message):
+    __slots__ = ("ref", "snapshot_max_bytes")
+    REF_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_MAX_BYTES_FIELD_NUMBER: _ClassVar[int]
+    ref: str
+    snapshot_max_bytes: int
+    def __init__(self, ref: _Optional[str] = ..., snapshot_max_bytes: _Optional[int] = ...) -> None: ...
+
+class ProbeClose(_message.Message):
+    __slots__ = ("reason",)
+    REASON_FIELD_NUMBER: _ClassVar[int]
+    reason: str
+    def __init__(self, reason: _Optional[str] = ...) -> None: ...
+
+class ProbeReply(_message.Message):
+    __slots__ = ("request_id", "session_id", "state", "eval", "ack", "failure")
+    REQUEST_ID_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    EVAL_FIELD_NUMBER: _ClassVar[int]
+    ACK_FIELD_NUMBER: _ClassVar[int]
+    FAILURE_FIELD_NUMBER: _ClassVar[int]
+    request_id: str
+    session_id: str
+    state: ProbeState
+    eval: ProbeEvalResult
+    ack: ProbeAck
+    failure: ProbeFailure
+    def __init__(self, request_id: _Optional[str] = ..., session_id: _Optional[str] = ..., state: _Optional[_Union[ProbeState, _Mapping]] = ..., eval: _Optional[_Union[ProbeEvalResult, _Mapping]] = ..., ack: _Optional[_Union[ProbeAck, _Mapping]] = ..., failure: _Optional[_Union[ProbeFailure, _Mapping]] = ...) -> None: ...
+
+class ProbeState(_message.Message):
+    __slots__ = ("final_url", "title", "aria_snapshot", "snapshot_truncated")
+    FINAL_URL_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    ARIA_SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    final_url: str
+    title: str
+    aria_snapshot: str
+    snapshot_truncated: bool
+    def __init__(self, final_url: _Optional[str] = ..., title: _Optional[str] = ..., aria_snapshot: _Optional[str] = ..., snapshot_truncated: _Optional[bool] = ...) -> None: ...
+
+class ProbeEvalResult(_message.Message):
+    __slots__ = ("result_json", "result_truncated")
+    RESULT_JSON_FIELD_NUMBER: _ClassVar[int]
+    RESULT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    result_json: str
+    result_truncated: bool
+    def __init__(self, result_json: _Optional[str] = ..., result_truncated: _Optional[bool] = ...) -> None: ...
+
+class ProbeAck(_message.Message):
+    __slots__ = ("session_id",)
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    def __init__(self, session_id: _Optional[str] = ...) -> None: ...
+
+class ProbeFailure(_message.Message):
+    __slots__ = ("code", "message")
+    CODE_FIELD_NUMBER: _ClassVar[int]
+    MESSAGE_FIELD_NUMBER: _ClassVar[int]
+    code: str
+    message: str
+    def __init__(self, code: _Optional[str] = ..., message: _Optional[str] = ...) -> None: ...

@@ -159,6 +159,10 @@ service CopilotToolService {
 
 新增消息（追加于文件末尾，字段号从 1 起，均为新消息无冲突）：
 
+> 勘误（实施阶段 1 时修正）：初稿自定义了 `ProbeAction`；实施时改为复用 `common.v1.UiActionStep`
+> `{UiAction action; string target; string value;}`（worker.proto 不能跨包 import copilot.proto，
+> common 两端已引入，共用避免重复定义）。
+
 ```proto
 // UI 探测动作（与 worker.v1 的 UiAction 动作枚举对齐，复用其枚举值）
 message ProbeAction {
@@ -203,7 +207,7 @@ message CloseProbeResponse { bool ok = 1; }
 message ActProbeRequest {
   testpilot.common.v1.RequestContext ctx = 1;
   string session_id = 2;
-  ProbeAction action = 3;
+  testpilot.common.v1.UiActionStep action = 3;   // 复用 common 的 UI 动作（与声明式步骤同构）
 }
 message ActProbeResponse {
   string final_url = 1;
@@ -249,11 +253,11 @@ message SchedulerCommand {
 message ProbeCommand {
   string request_id = 1;           // Scheduler 生成，回执原样带回（配对键）
   string session_id = 2;
-  string tenant_id = 3;            // 冗余下发，Worker 侧做会话归属校验
+  int64 tenant_id = 3;             // 冗余下发，Worker 侧做会话归属校验
   google.protobuf.Duration timeout = 4;  // 单命令执行上限（Scheduler 权威值）
   oneof op {
     ProbeOpen open = 5;
-    ProbeAction act = 6;
+    testpilot.common.v1.UiActionStep act = 6;   // 复用 common 的 UI 动作（与 copilot.proto 同构）
     ProbeEval eval = 7;
     ProbeSnapshot snapshot = 8;
     ProbeClose close = 9;
@@ -342,7 +346,7 @@ type Session struct {
 ```go
 func New(disp *dispatch.Dispatcher, cfg Config) *Hub
 func (h *Hub) Open(ctx context.Context, tenantID int64, userID, sessionID, url, envID string) (*workerv1.ProbeState, error)
-func (h *Hub) Act(ctx context.Context, tenantID int64, sessionID string, act *workerv1.ProbeAction) (*workerv1.ProbeState, error)
+func (h *Hub) Act(ctx context.Context, tenantID int64, sessionID string, act *commonv1.UiActionStep) (*workerv1.ProbeState, error)
 func (h *Hub) Snapshot(ctx context.Context, tenantID int64, sessionID, ref string) (*workerv1.ProbeState, error)
 func (h *Hub) Eval(ctx context.Context, tenantID int64, sessionID, expression string) (*workerv1.ProbeEvalResult, error)
 func (h *Hub) Close(tenantID int64, sessionID, reason string) error

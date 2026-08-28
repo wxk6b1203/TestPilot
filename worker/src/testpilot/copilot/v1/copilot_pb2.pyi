@@ -491,3 +491,111 @@ class TriggerStressResponse(_message.Message):
     RUN_ID_FIELD_NUMBER: _ClassVar[int]
     run_id: str
     def __init__(self, run_id: _Optional[str] = ...) -> None: ...
+
+class OpenProbeRequest(_message.Message):
+    __slots__ = ("ctx", "session_id", "url", "env_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    URL_FIELD_NUMBER: _ClassVar[int]
+    ENV_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    url: str
+    env_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ..., url: _Optional[str] = ..., env_id: _Optional[str] = ...) -> None: ...
+
+class OpenProbeResponse(_message.Message):
+    __slots__ = ("session_id", "worker_id", "final_url", "title", "aria_snapshot", "snapshot_truncated")
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    WORKER_ID_FIELD_NUMBER: _ClassVar[int]
+    FINAL_URL_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    ARIA_SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    session_id: str
+    worker_id: str
+    final_url: str
+    title: str
+    aria_snapshot: str
+    snapshot_truncated: bool
+    def __init__(self, session_id: _Optional[str] = ..., worker_id: _Optional[str] = ..., final_url: _Optional[str] = ..., title: _Optional[str] = ..., aria_snapshot: _Optional[str] = ..., snapshot_truncated: _Optional[bool] = ...) -> None: ...
+
+class GetProbeSnapshotRequest(_message.Message):
+    __slots__ = ("ctx", "session_id", "ref")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    REF_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    ref: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ..., ref: _Optional[str] = ...) -> None: ...
+
+class GetProbeSnapshotResponse(_message.Message):
+    __slots__ = ("final_url", "title", "aria_snapshot", "snapshot_truncated")
+    FINAL_URL_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    ARIA_SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    final_url: str
+    title: str
+    aria_snapshot: str
+    snapshot_truncated: bool
+    def __init__(self, final_url: _Optional[str] = ..., title: _Optional[str] = ..., aria_snapshot: _Optional[str] = ..., snapshot_truncated: _Optional[bool] = ...) -> None: ...
+
+class CloseProbeRequest(_message.Message):
+    __slots__ = ("ctx", "session_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ...) -> None: ...
+
+class CloseProbeResponse(_message.Message):
+    __slots__ = ("ok",)
+    OK_FIELD_NUMBER: _ClassVar[int]
+    ok: bool
+    def __init__(self, ok: _Optional[bool] = ...) -> None: ...
+
+class ActProbeRequest(_message.Message):
+    __slots__ = ("ctx", "session_id", "action")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    ACTION_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    action: _types_pb2.UiActionStep
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ..., action: _Optional[_Union[_types_pb2.UiActionStep, _Mapping]] = ...) -> None: ...
+
+class ActProbeResponse(_message.Message):
+    __slots__ = ("final_url", "title", "aria_snapshot", "snapshot_truncated", "error")
+    FINAL_URL_FIELD_NUMBER: _ClassVar[int]
+    TITLE_FIELD_NUMBER: _ClassVar[int]
+    ARIA_SNAPSHOT_FIELD_NUMBER: _ClassVar[int]
+    SNAPSHOT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    final_url: str
+    title: str
+    aria_snapshot: str
+    snapshot_truncated: bool
+    error: str
+    def __init__(self, final_url: _Optional[str] = ..., title: _Optional[str] = ..., aria_snapshot: _Optional[str] = ..., snapshot_truncated: _Optional[bool] = ..., error: _Optional[str] = ...) -> None: ...
+
+class EvalProbeRequest(_message.Message):
+    __slots__ = ("ctx", "session_id", "expression")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SESSION_ID_FIELD_NUMBER: _ClassVar[int]
+    EXPRESSION_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    session_id: str
+    expression: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., session_id: _Optional[str] = ..., expression: _Optional[str] = ...) -> None: ...
+
+class EvalProbeResponse(_message.Message):
+    __slots__ = ("result_json", "result_truncated", "error")
+    RESULT_JSON_FIELD_NUMBER: _ClassVar[int]
+    RESULT_TRUNCATED_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    result_json: str
+    result_truncated: bool
+    error: str
+    def __init__(self, result_json: _Optional[str] = ..., result_truncated: _Optional[bool] = ..., error: _Optional[str] = ...) -> None: ...
