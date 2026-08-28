@@ -54,7 +54,7 @@ start() {
     echo "✗ scheduler 构建失败"; return 1;
   }
   _start scheduler env TP_DB_PATH="$DB" TP_HTTP_ADDR=127.0.0.1:8080 TP_GRPC_ADDR=127.0.0.1:9090 \
-    TP_STATIC_DIR="$ROOT/web/dist" TP_WORKER_TOKEN="$TP_WORKER_TOKEN" "$ROOT/.data/bin/scheduler"
+    TP_STATIC_DIR="$ROOT/web/dist" TP_WORKER_TOKEN="$TP_WORKER_TOKEN" TP_PROBE_ENABLED=1 "$ROOT/.data/bin/scheduler"
   sleep 2
   # worker/copilot 与 _start 同款 nohup：终端关闭（SIGHUP）不退出
   _start worker sh -c "cd '$ROOT/worker' && exec env PYTHONPATH=src venv/bin/python -m testpilot_worker \
