@@ -1,6 +1,6 @@
 import { Button, Card, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Segmented, Select, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useState } from 'react'
-import { del, get, HTTP_METHODS, post, STATUS, warnTruncated } from '../api'
+import { del, get, HTTP_METHODS, post, STATUS } from '../api'
 import type { Environment, HttpApi, ListResp, TestCase } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { useEventStream } from '../hooks/useEventStream'
@@ -92,12 +92,16 @@ export default function Stress() {
   const [form] = Form.useForm()
   const targetType = Form.useWatch('target_type', form) ?? 1
 
+  const [planTotal, setPlanTotal] = useState(0)
+  const [runTotal, setRunTotal] = useState(0)
+
   const load = () => {
     if (!projectId) return
-    get<ListResp<StressPlan>>(`/api/v1/stress-plans?project_id=${projectId}&page_size=200`)
-      .then((r) => { setPlans(r.items); warnTruncated(r, '压测计划') })
-    get<ListResp<StressRun>>(`/api/v1/stress-runs?page_size=50&project_id=` + projectId)
-      .then((r) => { setRuns(r.items); warnTruncated(r, '压测运行') })
+    // page_size 取后端上限 500：客户端分页一次拉全
+    get<ListResp<StressPlan>>(`/api/v1/stress-plans?project_id=${projectId}&page_size=500`)
+      .then((r) => { setPlans(r.items); setPlanTotal(r.total ?? 0) })
+    get<ListResp<StressRun>>(`/api/v1/stress-runs?page_size=500&project_id=` + projectId)
+      .then((r) => { setRuns(r.items); setRunTotal(r.total ?? 0) })
   }
   useEffect(() => {
     if (!projectId) return
@@ -152,11 +156,18 @@ export default function Stress() {
 
   return (
     <>
-      <Card title="压测计划" extra={<Button type="primary" onClick={() => setOpen(true)}>新建压测计划</Button>} style={{ marginBottom: 16 }}>
+      <Card title="压测计划" extra={
+        <Space>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            共 {planTotal} 条{planTotal > plans.length ? `（已加载前 ${plans.length} 条）` : ''}
+          </Typography.Text>
+          <Button type="primary" onClick={() => setOpen(true)}>新建压测计划</Button>
+        </Space>
+      } style={{ marginBottom: 16 }}>
         <Table
           rowKey="id"
           dataSource={plans}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
           columns={[
             {
               title: '类型', dataIndex: 'target_type', width: 90,
@@ -189,11 +200,15 @@ export default function Stress() {
         />
       </Card>
 
-      <Card title="压测运行">
+      <Card title="压测运行" extra={
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          共 {runTotal} 条{runTotal > runs.length ? `（已加载前 ${runs.length} 条）` : ''}
+        </Typography.Text>
+      }>
         <Table
           rowKey="id"
           dataSource={runs}
-          pagination={{ pageSize: 10 }}
+          pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 190, render: (v: string) => <Typography.Text copyable={{ text: v }}>{v.slice(-8)}</Typography.Text> },
             { title: '状态', dataIndex: 'status', width: 100, render: (v: number) => <Tag color={(STATUS[v]?.color as string) || 'default'}>{STATUS[v]?.text || v}</Tag> },

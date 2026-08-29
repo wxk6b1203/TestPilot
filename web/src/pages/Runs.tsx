@@ -1,6 +1,6 @@
 import { Button, Card, Popconfirm, Space, Table, Tag, Typography } from 'antd'
 import { useEffect, useRef, useState } from 'react'
-import { download, get, post, warnTruncated } from '../api'
+import { download, get, post } from '../api'
 import type { ListResp, TestRun } from '../api'
 import RunDetailDrawer, { StatusTag } from '../components/RunDetailDrawer'
 import { useLayout } from '../hooks/useLayout'
@@ -14,11 +14,14 @@ export default function Runs() {
   const timer = useRef<ReturnType<typeof setInterval> | undefined>(undefined)
   const detailTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
+  const [total, setTotal] = useState(0)
+
   const load = async () => {
     if (!projectId) return
-    const r = await get<ListResp<TestRun>>(`/api/v1/runs?page_size=100&project_id=` + projectId)
+    // page_size 取后端上限 500：客户端分页一次拉全（后端 pageParams 硬顶 500）
+    const r = await get<ListResp<TestRun>>(`/api/v1/runs?page_size=500&project_id=` + projectId)
     setRows(r.items)
-    warnTruncated(r, '运行记录')
+    setTotal(r.total ?? 0)
   }
 
   // 项目切换重置 + 初始加载 + 30s 慢速兜底对账（实时更新走 SSE）
@@ -65,11 +68,15 @@ export default function Runs() {
   if (!projectId) return <Card>请先在顶部选择项目</Card>
 
   return (
-    <Card title="运行记录">
+    <Card title="运行记录" extra={
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        共 {total} 条{total > rows.length ? `（已加载前 ${rows.length} 条）` : ''}
+      </Typography.Text>
+    }>
       <Table
         rowKey="id"
         dataSource={rows}
-        pagination={{ pageSize: 15 }}
+        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 190, render: (v: string) => <Typography.Text copyable={{ text: v }}>{v.slice(-8)}</Typography.Text> },
           { title: '状态', dataIndex: 'status', width: 100, render: (v: number) => <StatusTag v={v} /> },
