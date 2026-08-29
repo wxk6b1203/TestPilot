@@ -1,7 +1,7 @@
 // Copilot 对话页：Vercel AI SDK v7（ai + @ai-sdk/react useChat）消费 SSE + 写操作 HITL 审批。
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { KeyboardEvent, UIEvent } from 'react'
-import { Button, Input, Listy, Pagination, Popconfirm, Space, Spin, Tag, Typography } from 'antd'
+import type { KeyboardEvent } from 'react'
+import { Button, Input, Pagination, Popconfirm, Space, Tag, Typography } from 'antd'
 import {
   ArrowLeftOutlined, ClockCircleOutlined, CopyOutlined, DeleteOutlined, EnvironmentOutlined,
   LoadingOutlined, PlusOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
@@ -149,10 +149,6 @@ export default function Copilot() {
   const [sessionId, setSessionId] = useState('')
   const sessionIdRef = useRef('') // 供 transport 回调读取最新会话（不回环依赖 state）
   const [sessions, setSessions] = useState<Session[]>([])
-  const [sessionsTotal, setSessionsTotal] = useState(0)
-  const [sessionsLoading, setSessionsLoading] = useState(false)
-  const sessionsLoadingRef = useRef(false)
-  const sessionsPageRef = useRef(0) // 已加载到的页码
   const [view, setView] = useState<'chat' | 'trash'>('chat')
   const [trash, setTrash] = useState<TrashSession[]>([])
   const [trashTotal, setTrashTotal] = useState(0)
@@ -173,44 +169,10 @@ export default function Copilot() {
     }
   }, [input])
 
-  // 会话列表：Listy 无限加载（滚动近底部追加下一页，virtual 渲染视口内行）
-  const loadSessions = (reset = false) => {
-    if (sessionsLoadingRef.current) return Promise.resolve()
-    const page = reset ? 1 : sessionsPageRef.current + 1
-    sessionsLoadingRef.current = true
-    setSessionsLoading(true)
-    return get<ListResp<Session>>(`/api/v1/copilot/sessions?page=${page}&page_size=20`)
-      .then((r) => {
-        sessionsPageRef.current = page
-        setSessionsTotal(r.total ?? 0)
-        setSessions((prev) => (reset ? r.items ?? [] : [...prev, ...(r.items ?? [])]))
-      })
-      .catch((e: any) => message.error(e.message))
-      .finally(() => {
-        sessionsLoadingRef.current = false
-        setSessionsLoading(false)
-      })
-  }
+  const loadSessions = () =>
+    get<ListResp<Session>>('/api/v1/copilot/sessions?page_size=500').then((r) => setSessions(r.items))
 
-  // Listy 需要像素高度：ResizeObserver 跟踪侧栏列表容器
-  const sessionListRef = useRef<HTMLDivElement>(null)
-  const [sessionListH, setSessionListH] = useState(0)
-  useLayoutEffect(() => {
-    const el = sessionListRef.current
-    if (!el) return
-    const ro = new ResizeObserver(() => setSessionListH(el.clientHeight))
-    ro.observe(el)
-    setSessionListH(el.clientHeight)
-    return () => ro.disconnect()
-  }, [])
-
-  const onSessionsScroll = (e: UIEvent<HTMLElement>) => {
-    const { scrollTop, clientHeight, scrollHeight } = e.currentTarget
-    if (scrollHeight - scrollTop - clientHeight > 80) return
-    if (sessions.length < sessionsTotal) void loadSessions()
-  }
-
-  // 回收站：常规服务端分页（Pagination 翻页器）
+  // 回收站：服务端分页（Pagination 翻页器）
   const loadTrash = (page = trashPage, size = trashPageSize) =>
     get<ListResp<TrashSession>>(`/api/v1/copilot/trash?page=${page}&page_size=${size}`)
       .then((r) => {
@@ -233,7 +195,6 @@ export default function Copilot() {
       await del(`/api/v1/copilot/sessions/${s.id}`)
       message.success('已移入回收站')
       setSessions((prev) => prev.filter((x) => x.id !== s.id))
-      setSessionsTotal((t) => Math.max(0, t - 1))
       if (sessionId === s.id) newChat()
     } catch (e: any) {
       message.error(e.message)
@@ -284,7 +245,7 @@ export default function Copilot() {
           if (sid && sid !== sessionIdRef.current) {
             sessionIdRef.current = sid
             setSessionId(sid)
-            loadSessions(true)
+            loadSessions()
           }
           return res
         },
@@ -357,7 +318,7 @@ export default function Copilot() {
   }, [messages])
 
   useEffect(() => {
-    loadSessions(true)
+    loadSessions()
   }, [])
   useEffect(() => {
     // 流式期间按帧滚动；用户向上翻阅历史（离底部 >120px）时不抢滚动位置
@@ -507,48 +468,35 @@ export default function Copilot() {
         <Button block icon={<PlusOutlined />} onClick={newChat} style={{ marginBottom: 8, flexShrink: 0 }}>
           新会话
         </Button>
-        <div ref={sessionListRef} style={{ flex: 1, minHeight: 0 }}>
-          {sessions.length === 0 && !sessionsLoading ? (
-            <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无会话</div>
-          ) : (
-            <Listy<Session>
-              virtual={sessionListH > 0}
-              height={sessionListH || undefined}
-              items={sessions}
-              rowKey="id"
-              styles={{ item: { padding: '6px 8px', background: 'transparent', borderBottom: 'none' } }}
-              itemRender={(item) => (
-                <div
-                  onClick={() => openSession(item.id)}
-                  style={{
-                    cursor: 'pointer', borderRadius: 6,
-                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
-                    background: item.id === sessionId ? PALETTE.selectedRow : undefined,
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+          {sessions.map((s) => (
+            <div
+              key={s.id}
+              onClick={() => openSession(s.id)}
+              style={{
+                cursor: 'pointer', padding: '6px 8px', borderRadius: 6, margin: '2px 4px',
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                background: s.id === sessionId ? PALETTE.selectedRow : undefined,
+              }}
+            >
+              <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{s.title || '新对话'}</Typography.Text>
+              <Space size={4} onClick={(e) => e.stopPropagation()}>
+                <Popconfirm
+                  title="删除会话？"
+                  description="删除后会移入回收站，30 天后自动清理"
+                  onConfirm={async () => {
+                    await confirmDeleteSession(s)
                   }}
                 >
-                  <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{item.title || '新对话'}</Typography.Text>
-                  <Space size={4} onClick={(e) => e.stopPropagation()}>
-                    <Popconfirm
-                      title="删除会话？"
-                      description="删除后会移入回收站，30 天后自动清理"
-                      onConfirm={async () => {
-                        await confirmDeleteSession(item)
-                      }}
-                    >
-                      <Button size="small" danger type="text" icon={<DeleteOutlined />} />
-                    </Popconfirm>
-                  </Space>
-                </div>
-              )}
-              onScroll={onSessionsScroll}
-            />
+                  <Button size="small" danger type="text" icon={<DeleteOutlined />} />
+                </Popconfirm>
+              </Space>
+            </div>
+          ))}
+          {sessions.length === 0 && (
+            <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无会话</div>
           )}
         </div>
-        {sessionsLoading && (
-          <div style={{ flexShrink: 0, textAlign: 'center', padding: '4px 0' }}>
-            <Spin size="small" />
-          </div>
-        )}
         {/* 固定底栏：回收站入口 */}
         <div style={{ flexShrink: 0, paddingTop: 8, marginTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
           <Button
