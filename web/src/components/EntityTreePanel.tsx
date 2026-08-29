@@ -357,6 +357,10 @@ export default function EntityTreePanel({
   const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
     const d = parseKey(dragKey)
     const t = parseKey(dropKey)
+    // TODO(拖拽隐患): 插入点解析依赖 nodeMeta.byRef / nodeMeta.parent 的时效性。
+    // 若上一次拖拽后 reload 尚未完成就连续拖拽，第二次可能查不到 byRef 而
+    // 被误判为「未挂载」走 mount 分支，产生重复树节点。后续应加防护：
+    // dragKey 校验失败时拒绝静默挂载（提示刷新），或改为乐观更新单数据源。
     const draggedNodeId = d.kind === 'folder' ? d.id : nodeMeta.byRef[d.id] ?? ''
 
     // 插入点统一按「排除被拖节点后的兄弟序」计算：若用包含被拖节点的数组
