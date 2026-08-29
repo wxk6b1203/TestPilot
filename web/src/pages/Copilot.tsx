@@ -497,12 +497,7 @@ export default function Copilot() {
                 background: s.id === sessionId ? PALETTE.selectedRow : undefined,
               }}
             >
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <Typography.Text ellipsis style={{ fontSize: 13 }}>{s.title || '新对话'}</Typography.Text>
-                <div style={{ fontSize: 12, color: PALETTE.textTertiary, marginTop: 2 }}>
-                  创建于 {formatTime(s.created_at)}
-                </div>
-              </div>
+              <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{s.title || '新对话'}</Typography.Text>
               <Space size={4} onClick={(e) => e.stopPropagation()}>
                 <Popconfirm
                   title="删除会话？"
