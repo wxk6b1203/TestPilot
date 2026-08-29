@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { Button, Select, Space, Table, Tag, Typography, Upload } from 'antd'
 import { DownloadOutlined, UploadOutlined } from '@ant-design/icons'
 import {
-  ARTIFACT_KINDS, download, listArtifacts, uploadArtifact, warnTruncated,
+  ARTIFACT_KINDS, download, listArtifacts, uploadArtifact,
 } from '../api'
 import type { Artifact, ListResp } from '../api'
 import { message } from '../messageBridge'
@@ -22,22 +22,21 @@ export default function Artifacts() {
   const [page, setPage] = useState(1)
   const [kind, setKind] = useState<number | undefined>()
   const [uploading, setUploading] = useState(false)
-  const pageSize = 50
+  const [pageSize, setPageSize] = useState(10)
 
   const load = () =>
     listArtifacts({ kind, page, page_size: pageSize })
       .then((r: ListResp<Artifact>) => {
         setItems(r.items ?? [])
         setTotal(r.total ?? 0)
-        warnTruncated(r, '产物')
       })
       .catch((e: Error) => message.error(e.message))
 
   useEffect(() => {
     load().catch(() => {})
-    // eslint 在 oxlint 下不强制；load 随 page/kind 变化重新拉取
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, kind])
+    // load 随 page/pageSize/kind 变化重新拉取（函数内闭包取最新 state）
+    // oxlint 不强制 exhaustive-deps；此处不把 load 入列避免无谓重拉
+  }, [page, pageSize, kind])
 
   return (
     <div style={{ padding: 16 }}>
@@ -72,7 +71,11 @@ export default function Artifacts() {
       </Space>
       <Table<Artifact>
         size="small" rowKey="id" dataSource={items}
-        pagination={{ current: page, pageSize, total, onChange: setPage, showSizeChanger: false }}
+        pagination={{
+          current: page, pageSize, total, showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          onChange: (p, ps) => { setPage(p); setPageSize(ps) },
+        }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 200, render: (v: string) => <Typography.Text copyable style={{ fontSize: 12 }}>{v}</Typography.Text> },
           { title: '类型', dataIndex: 'kind', width: 80, render: (v: number) => <Tag>{ARTIFACT_KINDS[v] ?? v}</Tag> },
