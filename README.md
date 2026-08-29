@@ -9,6 +9,11 @@ Python 低代码编写测试，支持 Playwright 页面 E2E、分布式压测、
 
 ## 功能
 
+### 样式浏览
+![接口页](./assets/screenshot_0.png)
+
+![用例页](./assets/screenshot_1.png)
+
 ### 接口管理
 
 - HTTP 接口：方法 / URI / params / headers / cookies / body / TLS / 重定向 / JSONC / 二进制引用；
