@@ -397,6 +397,7 @@ type GetApiResponse struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Api:
+	//
 	//	*GetApiResponse_Http
 	//	*GetApiResponse_Grpc
 	Api isGetApiResponse_Api `protobuf_oneof:"api"`
@@ -1902,6 +1903,7 @@ type CreateApiRequest struct {
 	Ctx       *v1.RequestContext `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	ProjectId string             `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// Types that are assignable to Api:
+	//
 	//	*CreateApiRequest_Http
 	//	*CreateApiRequest_Grpc
 	Api          isCreateApiRequest_Api `protobuf_oneof:"api"`
@@ -2062,6 +2064,7 @@ type UpdateApiRequest struct {
 	ApiId string             `protobuf:"bytes,2,opt,name=api_id,json=apiId,proto3" json:"api_id,omitempty"`
 	Kind  ApiKind            `protobuf:"varint,3,opt,name=kind,proto3,enum=testpilot.copilot.v1.ApiKind" json:"kind,omitempty"`
 	// Types that are assignable to Api:
+	//
 	//	*UpdateApiRequest_Http
 	//	*UpdateApiRequest_Grpc
 	Api isUpdateApiRequest_Api `protobuf_oneof:"api"`
@@ -2574,6 +2577,7 @@ type ImportOpenApiRequest struct {
 	Ctx       *v1.RequestContext `protobuf:"bytes,1,opt,name=ctx,proto3" json:"ctx,omitempty"`
 	ProjectId string             `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	// Types that are assignable to Spec:
+	//
 	//	*ImportOpenApiRequest_OpenapiUrl
 	//	*ImportOpenApiRequest_OpenapiDocument
 	Spec          isImportOpenApiRequest_Spec `protobuf_oneof:"spec"`

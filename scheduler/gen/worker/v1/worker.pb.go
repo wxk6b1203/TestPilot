@@ -33,6 +33,7 @@ type WorkerEvent struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Event:
+	//
 	//	*WorkerEvent_Register
 	//	*WorkerEvent_Heartbeat
 	//	*WorkerEvent_StepProgress
@@ -689,6 +690,7 @@ type SchedulerCommand struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Command:
+	//
 	//	*SchedulerCommand_Task
 	//	*SchedulerCommand_Cancel
 	//	*SchedulerCommand_Config
@@ -1074,6 +1076,7 @@ type TaskAssignment struct {
 	TaskType v1.TaskType          `protobuf:"varint,4,opt,name=task_type,json=taskType,proto3,enum=testpilot.common.v1.TaskType" json:"task_type,omitempty"`
 	Timeout  *durationpb.Duration `protobuf:"bytes,5,opt,name=timeout,proto3" json:"timeout,omitempty"`
 	// Types that are assignable to Payload:
+	//
 	//	*TaskAssignment_Functional
 	//	*TaskAssignment_Stress
 	Payload     isTaskAssignment_Payload `protobuf_oneof:"payload"`
@@ -1311,6 +1314,7 @@ type ProbeCommand struct {
 	TenantId  int64                `protobuf:"varint,3,opt,name=tenant_id,json=tenantId,proto3" json:"tenant_id,omitempty"` // 冗余下发，Worker 侧做会话归属校验
 	Timeout   *durationpb.Duration `protobuf:"bytes,4,opt,name=timeout,proto3" json:"timeout,omitempty"`                    // 单命令执行上限（Scheduler 权威值；Worker 侧另有硬顶）
 	// Types that are assignable to Op:
+	//
 	//	*ProbeCommand_Open
 	//	*ProbeCommand_Act
 	//	*ProbeCommand_Eval
@@ -1815,6 +1819,7 @@ type ProbeReply struct {
 	RequestId string `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
 	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
 	// Types that are assignable to Payload:
+	//
 	//	*ProbeReply_State
 	//	*ProbeReply_Eval
 	//	*ProbeReply_Ack

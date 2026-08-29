@@ -183,6 +183,10 @@ cd web && pnpm lint && pnpm build
 - 生成入口：`scripts/proto-gen.sh`（Go gRPC + Worker/Copilot Python gRPC + grounding）。
 - 校验入口：`scripts/proto-check.sh`（`buf lint` / `buf breaking` + 生成零漂移检查）。
 - 生成产物随仓库提交以支持离线构建，修改 proto 后必须同步提交生成结果。
+- 版本钉点：protoc v35、protoc-gen-go v1.28.1、protoc-gen-go-grpc v1.2.0、
+  grpcio-tools 1.83.0 / protobuf 7.35.1。注意插件需用 **Go ≥ 1.19** 编译
+  （`go install ...@v1.28.1`）：gofmt 的 doc comment 规则在产物 oneof 注释
+  块插入 `//` 分隔行，旧 Go 编译的插件会产生旧格式导致零漂移校验报假漂移。
 
 ### 数据库迁移
 

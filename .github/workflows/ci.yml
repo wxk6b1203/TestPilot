@@ -33,6 +33,10 @@ jobs:
 
       # 生成复现性检查：protoc v35 + protoc-gen-go v1.28.1 + protoc-gen-go-grpc v1.2.0
       # 与 Python grpcio-tools 1.83.0 / protobuf 7.35.1 保持和 README 一致。
+      # 注意：插件生成后内嵌 gofmt（go/format.Source），产物注释格式随编译
+      # 插件的 Go 版本变化（Go 1.19+ 的 doc comment 规则会在 oneof 注释块
+      # 插入 "//" 分隔行）。本地重装插件必须用 go >= 1.19，否则零漂移校验
+      # 会因注释格式差异报假漂移。
       - uses: arduino/setup-protoc@v3
         with:
           version: "35.0"

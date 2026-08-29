@@ -1505,6 +1505,7 @@ type BodySpec struct {
 
 	ContentType BodyContentType `protobuf:"varint,1,opt,name=content_type,json=contentType,proto3,enum=testpilot.common.v1.BodyContentType" json:"content_type,omitempty"`
 	// Types that are assignable to Content:
+	//
 	//	*BodySpec_Raw
 	//	*BodySpec_Form
 	//	*BodySpec_BinaryRef
@@ -3222,6 +3223,7 @@ type LoopStep struct {
 
 	Iterator string `protobuf:"bytes,1,opt,name=iterator,proto3" json:"iterator,omitempty"`
 	// Types that are assignable to Bounds:
+	//
 	//	*LoopStep_Count
 	//	*LoopStep_Range
 	Bounds    isLoopStep_Bounds `protobuf_oneof:"bounds"`
@@ -3556,6 +3558,7 @@ type TestStep struct {
 	Type StepType `protobuf:"varint,2,opt,name=type,proto3,enum=testpilot.common.v1.StepType" json:"type,omitempty"`
 	Name string   `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
 	// Types that are assignable to Params:
+	//
 	//	*TestStep_ApiCall
 	//	*TestStep_GrpcCall
 	//	*TestStep_Assertion
@@ -3816,6 +3819,7 @@ type LowCodeCase struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Script:
+	//
 	//	*LowCodeCase_ScriptRef
 	//	*LowCodeCase_Source
 	Script      isLowCodeCase_Script `protobuf_oneof:"script"`
@@ -3934,6 +3938,7 @@ type TestCase struct {
 	Name        string       `protobuf:"bytes,5,opt,name=name,proto3" json:"name,omitempty"`
 	Description string       `protobuf:"bytes,6,opt,name=description,proto3" json:"description,omitempty"`
 	// Types that are assignable to Definition:
+	//
 	//	*TestCase_Declarative
 	//	*TestCase_Lowcode
 	Definition isTestCase_Definition `protobuf_oneof:"definition"`
@@ -4238,6 +4243,7 @@ type PlanItem struct {
 	unknownFields protoimpl.UnknownFields
 
 	// Types that are assignable to Ref:
+	//
 	//	*PlanItem_CaseId
 	//	*PlanItem_SuiteId
 	Ref            isPlanItem_Ref   `protobuf_oneof:"ref"`
@@ -5066,6 +5072,7 @@ type StressTestPlan struct {
 	ProjectId string `protobuf:"bytes,3,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	EnvId     string `protobuf:"bytes,4,opt,name=env_id,json=envId,proto3" json:"env_id,omitempty"`
 	// Types that are assignable to Target:
+	//
 	//	*StressTestPlan_ApiId
 	//	*StressTestPlan_BehaviorCaseId
 	Target          isStressTestPlan_Target `protobuf_oneof:"target"`
