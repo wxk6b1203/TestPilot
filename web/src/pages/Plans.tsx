@@ -2,7 +2,7 @@ import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space } from 'ant
 import { DeleteOutlined, PlayCircleOutlined, PlusOutlined } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { del, get, post, warnTruncated } from '../api'
+import { del, get, post } from '../api'
 import type { ListResp, TestPlan } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
@@ -25,9 +25,8 @@ export default function Plans() {
 
   const load = () =>
     projectId
-      ? get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=200`).then((r) => {
+      ? get<ListResp<TestPlan>>(`/api/v1/plans?project_id=${projectId}&page_size=500`).then((r) => {
           setRows(r.items)
-          warnTruncated(r, '测试计划')
         })
       : Promise.resolve()
 

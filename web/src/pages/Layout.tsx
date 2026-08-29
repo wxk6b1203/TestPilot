@@ -47,7 +47,7 @@ export default function Layout() {
   const [tenants, setTenants] = useState<TenantView[]>([])
 
   useEffect(() => {
-    get<ListResp<Project>>('/api/v1/projects?page_size=100')
+    get<ListResp<Project>>('/api/v1/projects?page_size=500')
       .then((r) => {
         setProjects(r.items)
         if (!r.items.find((p) => p.id === projectId)) {
@@ -64,7 +64,7 @@ export default function Layout() {
   // 项目变化 → 环境列表重载
   useEffect(() => {
     if (!projectId) return
-    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
+    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=500`)
       .then((r) => {
         setEnvs(r.items)
         // 环境已不存在时连同 localStorage 一起清，避免刷新后复活
@@ -85,7 +85,7 @@ export default function Layout() {
     projectId,
     projects,
     refreshProjects: () =>
-      get<ListResp<Project>>('/api/v1/projects?page_size=100').then((r) => setProjects(r.items)),
+      get<ListResp<Project>>('/api/v1/projects?page_size=500').then((r) => setProjects(r.items)),
     envId,
     setEnvId: (id) => {
       setEid(id)
@@ -93,7 +93,7 @@ export default function Layout() {
     },
     envs,
     refreshEnvs: () =>
-      get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
+      get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=500`)
         .then((r) => {
           setEnvs(r.items)
           // 当前环境被删除时同步清掉顶部选择与 localStorage

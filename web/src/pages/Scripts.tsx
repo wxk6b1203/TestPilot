@@ -3,7 +3,7 @@ import { ArrowLeftOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/ico
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { del, get, post, put, warnTruncated } from '../api'
+import { del, get, post, put } from '../api'
 import type { ListResp, Script } from '../api'
 import IdeLayout from '../components/IdeLayout'
 import PanelList from '../components/PanelList'
@@ -47,7 +47,7 @@ export default function Scripts() {
 
   const loadScripts = () =>
     projectId
-      ? get<ListResp<Script>>(`/api/v1/scripts?project_id=${projectId}&page_size=200`).then((r) => { setScripts(r.items); warnTruncated(r, '脚本') })
+      ? get<ListResp<Script>>(`/api/v1/scripts?project_id=${projectId}&page_size=500`).then((r) => { setScripts(r.items) })
       : Promise.resolve()
 
   useEffect(() => {

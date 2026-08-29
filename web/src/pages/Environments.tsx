@@ -1,6 +1,6 @@
 import { Button, Card, Col, Form, Input, Modal, Popconfirm, Row, Select, Space, Switch, Table } from 'antd'
 import { useCallback, useEffect, useState } from 'react'
-import { del, get, post, put, warnTruncated } from '../api'
+import { del, get, post, put } from '../api'
 import type { Environment, ListResp, Variable } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
@@ -26,7 +26,7 @@ export default function Environments() {
   const loadVars = useCallback(
     () =>
       projectId
-        ? get<ListResp<Variable>>(`/api/v1/variables?project_id=${projectId}&page_size=500`).then((r) => { setVars(r.items); warnTruncated(r, '变量') })
+        ? get<ListResp<Variable>>(`/api/v1/variables?project_id=${projectId}&page_size=500`).then((r) => { setVars(r.items) })
         : Promise.resolve(),
     [projectId],
   )
@@ -95,7 +95,7 @@ export default function Environments() {
             rowKey="id"
             size="small"
             dataSource={vars}
-            pagination={{ pageSize: 12 }}
+            pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
             columns={[
               { title: 'Key', dataIndex: 'key' },
               { title: 'Value', dataIndex: 'value', render: (v: string, r) => (r.sensitive ? '••••••' : v) },

@@ -102,7 +102,7 @@ export default function Suites() {
   useEffect(() => {
     setCases([])
     if (!projectId) return
-    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`)
+    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=500`)
       .then((r) => setCases(r.items))
       .catch((e) => message.error(e.message))
   }, [projectId])

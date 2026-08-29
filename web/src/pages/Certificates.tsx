@@ -1,7 +1,7 @@
 import { Button, Card, Form, Input, Modal, Popconfirm, Select, Space, Table, Tag } from 'antd'
 import { PlusOutlined } from '@ant-design/icons'
 import { useCallback, useEffect, useState } from 'react'
-import { del, get, post, put, warnTruncated } from '../api'
+import { del, get, post, put } from '../api'
 import type { Certificate, ListResp } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
@@ -15,15 +15,16 @@ export default function Certificates() {
   const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState<Certificate | null>(null)
+  const [total, setTotal] = useState(0)
   const [form] = Form.useForm()
 
   const load = useCallback(() => {
     if (!projectId) return Promise.resolve()
     setLoading(true)
-    return get<ListResp<Certificate>>(`/api/v1/certificates?project_id=${projectId}&page_size=200`)
+    return get<ListResp<Certificate>>(`/api/v1/certificates?project_id=${projectId}&page_size=500`)
       .then((r) => {
         setItems(r.items)
-        warnTruncated(r, '证书')
+        setTotal(r.total ?? 0)
       })
       .catch((e) => message.error(e.message))
       .finally(() => setLoading(false))
@@ -69,7 +70,7 @@ export default function Certificates() {
 
   return (
     <Card
-      title="证书"
+      title={`证书（共 ${total} 张）`}
       extra={(
         <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建证书</Button>
       )}
@@ -79,7 +80,7 @@ export default function Certificates() {
         rowKey="id"
         loading={loading}
         dataSource={items}
-        pagination={false}
+        pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
         columns={[
           { title: '名称', dataIndex: 'name' },
           {

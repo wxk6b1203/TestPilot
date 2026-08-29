@@ -167,10 +167,10 @@ export default function Copilot() {
   }, [input])
 
   const loadSessions = () =>
-    get<ListResp<Session>>('/api/v1/copilot/sessions?page_size=50').then((r) => setSessions(r.items))
+    get<ListResp<Session>>('/api/v1/copilot/sessions?page_size=500').then((r) => setSessions(r.items))
 
   const loadTrash = () =>
-    get<ListResp<TrashSession>>('/api/v1/copilot/trash?page_size=200')
+    get<ListResp<TrashSession>>('/api/v1/copilot/trash?page_size=500')
       .then((r) => setTrash(r.items))
       .catch((e: any) => message.error(e.message))
 

@@ -2,7 +2,7 @@ import { Button, Card, Collapse, Input, InputNumber, Popconfirm, Select, Space, 
 import { DeleteOutlined, PlusOutlined, SaveOutlined, SearchOutlined } from '@ant-design/icons'
 import { useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import { del, get, post, put, warnTruncated } from '../api'
+import { del, get, post, put } from '../api'
 import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import type { GrpcApi, ListResp, ProtoFile } from '../api'
@@ -85,11 +85,11 @@ export default function GrpcApis() {
 
   const loadGrpc = () =>
     projectId
-      ? get<ListResp<GrpcApi>>(`/api/v1/grpc-apis?project_id=${projectId}&page_size=200`).then((r) => { setGrpcApis(r.items); warnTruncated(r, 'gRPC 接口') })
+      ? get<ListResp<GrpcApi>>(`/api/v1/grpc-apis?project_id=${projectId}&page_size=500`).then((r) => { setGrpcApis(r.items) })
       : Promise.resolve()
   const loadProto = () =>
     projectId
-      ? get<ListResp<ProtoFile>>(`/api/v1/proto-files?project_id=${projectId}&page_size=200`).then((r) => { setProtoFiles(r.items); warnTruncated(r, 'Proto 文件') })
+      ? get<ListResp<ProtoFile>>(`/api/v1/proto-files?project_id=${projectId}&page_size=500`).then((r) => { setProtoFiles(r.items) })
       : Promise.resolve()
 
   useEffect(() => {
