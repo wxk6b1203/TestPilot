@@ -516,7 +516,7 @@ export default function Copilot() {
               height={sessionListH || undefined}
               items={sessions}
               rowKey="id"
-              styles={{ item: { padding: '6px 8px' } }}
+              styles={{ item: { padding: '6px 8px', background: 'transparent', borderBottom: 'none' } }}
               itemRender={(item) => (
                 <div
                   onClick={() => openSession(item.id)}
@@ -544,9 +544,11 @@ export default function Copilot() {
             />
           )}
         </div>
-        <div style={{ flexShrink: 0, textAlign: 'center', paddingTop: 4, height: 22, fontSize: 12, color: PALETTE.textTertiary }}>
-          {sessionsLoading ? <Spin size="small" /> : sessions.length > 0 && `已加载 ${sessions.length} / ${sessionsTotal}`}
-        </div>
+        {sessionsLoading && (
+          <div style={{ flexShrink: 0, textAlign: 'center', padding: '4px 0' }}>
+            <Spin size="small" />
+          </div>
+        )}
         {/* 固定底栏：回收站入口 */}
         <div style={{ flexShrink: 0, paddingTop: 8, marginTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
           <Button
