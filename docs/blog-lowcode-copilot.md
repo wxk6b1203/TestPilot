@@ -1,115 +1,175 @@
-# 当测试脚本不再复制 URL：TestPilot 的低代码与 Copilot 设计
+# TestPilot：接口目录、低代码沙箱与 AI Copilot —— 一个集成测试平台的设计与实现
 
 > 技术博文 · 面向测试工程师 / 平台工程师
-> 关键词：API 测试、低代码、Python SDK、LLM Agent、HITL、沙箱、gRPC、CI
+> 关键词：API 测试、gRPC、低代码、Python SDK、沙箱、LLM Agent、HITL、分布式压测、CI
 
-**摘要**：Postman 和 Apifox 把「接口调试」做到了极致，但当测试资产从几十个请求
-长到几百个用例、几十个计划之后，它们的脚本模型开始显露三个结构性问题：接口定义
-与测试脚本彼此复制、脚本与 AI 的上下文彼此割裂、脚本运行时缺少可验证的凭据边界。
-本文介绍 TestPilot 的两条设计主线——**低代码按接口 ID 调用**与**带工具调用的
-Copilot Agent**，说明它们如何分别解决「定义漂移」和「AI 只能给建议、不能干活」
-的问题。
-
----
-
-## 1. 传统 API 工具的三个结构性缺口
-
-先说明立场：Postman / Apifox 是非常优秀的 API 调试与协作工具。本文讨论的不是
-「谁更好用」，而是当 API 测试从手工调试走向持续集成的测试工程时，脚本模型会遇到
-哪些通用问题。
-
-典型工作流是这样的：
-
-1. 在集合（Collection）里维护接口，URL、headers、body 各一份；
-2. 用 pre-request / tests 脚本做前置数据准备与断言；
-3. 环境变量里放 `baseUrl`、`token` 等值；
-4. 通过 Runner / CLI 定时或接入 CI 执行集合。
-
-这个模型在调试阶段非常自然，但当测试资产规模化后，三个问题会逐步放大。
-
-### 1.1 定义漂移：URL 被复制进了脚本
-
-```javascript
-// Postman/Apifox 的常见写法：接口定义已经存在，脚本又把关键定义抄了一遍
-pm.sendRequest({
-  url: pm.variables.get("baseUrl") + "/users",
-  method: "POST",
-  header: { Authorization: "Bearer " + pm.variables.get("token") },
-  body: JSON.stringify({ name: "neo" })
-}, (err, res) => {
-  pm.expect(res.status).to.eql(200)
-})
-```
-
-`/users` 变了、改成 `/v2/users`、header 里新增签名参数、cookie 策略调整——这些
-变更发生在接口定义处，但脚本里的字符串不会跟着变。结果通常不是「运行失败」，而是
-更糟的「静默打到了旧路径」或「漏测了新契约」。
-
-### 1.2 上下文割裂：AI 只能给建议，不能基于项目事实行动
-
-新一代工具普遍内置 AI：生成请求体、补断言、解释响应。但这些能力大多是**文本级
-辅助**：AI 看不到你集合里的真实接口结构、项目变量、历史运行结果，也不被允许执行
-写操作。用户在聊天框和编辑器之间反复复制粘贴，AI 生成的代码是否正确，最终仍靠人
-手工核对。
-
-换句话说：**AI 有嘴，但没有手，也没有眼睛。**
-
-### 1.3 凭据边界：脚本能读到什么，只能靠约定
-
-测试脚本天然需要接触 `token`、`cookie`、内部 host 等敏感信息。传统集合脚本与接口
-调试器运行在同一个上下文里，环境变量里的 secret 对脚本完全可见；本地 Runner 的
-隔离边界更弱。团队只能依靠「不要把 secret 写进脚本」这类规范来管理风险，而规范
-是无法审计的。
+**摘要**：TestPilot 是一个 LLM 增强的集成测试平台，覆盖从接口管理、用例编排、
+执行调度、报告制品到 AI 协作的完整链路。本文面向第一次接触 TestPilot 的读者，
+从它要解决的四个测试工程问题讲起，依次介绍整体架构、接口目录、变量体系、
+两种用例形态（声明式步骤树与 Python 低代码）、沙箱与凭据边界、调度执行、
+报告与制品、UI 测试与分布式压测，最后落到 Copilot Agent 的工具调用与人工
+审批设计，以及端到端的工作流闭环。
 
 ---
 
-## 2. TestPilot 的设计主线
+## 1. TestPilot 是什么
 
-TestPilot 把上述三个问题转成三条架构约束：
+TestPilot 是一个开源（Apache-2.0）的集成测试平台，一句话定位：
 
-1. **接口目录是唯一真相源**——脚本不复制 URL / header / TLS 配置，只按接口 ID
-   引用，执行时由调度器把接口快照注入任务。
-2. **Copilot 是 Agent，不是聊天框**——AI 通过 gRPC 工具集读写真实的项目数据，
-   写操作必须经过人工审批（HITL），并全程落审计。
-3. **脚本在受限沙箱中运行**——沙箱无网络、无环境变量、无凭据，所有副作用
-   （HTTP / gRPC / 变量 / 日志 / UI）经能力桥由 Worker 代执行。
+> **以接口目录为唯一真相源，用声明式步骤树和 Python 低代码编写用例，
+> 由 Go 调度器派发到分布式 Worker 执行，并用带审批机制的 AI Copilot
+> 参与编写、导入、触发与失败分析的全过程。**
 
-部署拓扑如下：
+它要解决的是测试资产达到工程规模后的四个经典问题：
+
+1. **定义漂移**——脚本如果直接复制接口的 URL / header / TLS 配置，接口一变
+   脚本就悄悄过期，结果往往不是运行失败，而是「静默打到了旧路径」。
+2. **资产难以复用与编排**——单个请求容易写，成百上千个用例的组织、依赖声明、
+   参数传递、定时触发和 CI 集成才是真正的工程量。
+3. **凭据边界模糊**——测试脚本天然要接触 token、cookie、内部域名，如果脚本
+   与凭据同处一个运行时，安全就只剩「规范约定」，无法审计。
+4. **AI 只能给建议、不能干活**——通用 AI 助手看不到项目的真实接口、变量和
+   历史运行，生成的代码要人工搬运和核对，更不被允许执行任何写操作。
+
+TestPilot 对这四个问题的回答分别是：**按 ID 引用接口、派发时注入快照**；
+**用例 / 套件 / 计划三层编排 + cron / CI 触发**；**低代码沙箱零凭据 + 能力桥
+代执行副作用**；**Copilot 通过 gRPC 工具集读写真实项目数据，写操作全部经过
+人工审批（HITL）并落审计**。
+
+下面从架构开始逐一展开。
+
+---
+
+## 2. 整体架构
+
+TestPilot 由四个组件组成：
 
 ```text
 Frontend (React)
-   │  REST / SSE                    │  Vercel AI SSE
-   ▼                                ▼
-Scheduler (Go)  ◄───── gRPC ────  Copilot (Python + pydantic-ai)
-   │  REST 控制面 · 调度 · 落库        （工具调用 = Scheduler 的 gRPC 客户端）
-   │ gRPC 任务下发 / 结果回传
+   │  REST 控制面 / SSE 实时事件        │  Vercel AI SSE（经 Scheduler 反代）
+   ▼                                   ▼
+Scheduler (Go)  ◄───── gRPC ──────►  Copilot (Python + pydantic-ai)
+   │  接口目录 · 用例/计划 · 调度 · 落库      （每个工具调用 = 一次 Scheduler gRPC）
+   │  gRPC 任务下发 / 事件回传
    ▼
-Worker (Python)
+Worker (Python) × N
    ├── 声明式执行引擎（步骤树）
    ├── 低代码沙箱（testpilot-sdk + 能力桥）
-   ├── Playwright E2E
-   └── 压测（Locust）
+   ├── Playwright UI 执行器
+   └── 压测执行器（Locust / 行为压测）
 ```
 
-- **Worker 与 Copilot 都直连 Scheduler**：Worker 主动注册并领取任务；Copilot 作为
-  gRPC 客户端调工具。两者互不穿透业务库。
-- **数据库只属于 Scheduler**：所有读写都带 `tenant_id` 上下文，租户隔离在入口处
-  统一收敛，而不是散落在脚本层。
-- **proto 是单一契约**：领域对象（接口 / 用例 / 步骤 / 运行结果）在
-  `proto/testpilot` 中定义，Go、Python、Copilot 三端从同一份契约生成代码。
+- **Scheduler**（Go，REST `:8080` + gRPC `:9090`）：唯一的数据库持有者。接口
+  目录、用例、计划、运行结果、审计都落在这里；同时负责把计划展开成任务、
+  按 capability / 租户 / 负载挑选 Worker 下发，以及向前端推送 SSE 实时事件。
+- **Worker**（Python）：不监听端口，主动向 Scheduler 发起双向 gRPC 流注册并
+  领取任务；执行声明式步骤树或低代码沙箱，边执行边回推进度、日志与制品。
+- **Copilot**（Python）：LLM Agent 服务。它不直连数据库，每一个工具调用都是
+  一次 Scheduler gRPC 请求，复用平台既有的租户、RBAC 与审计边界。
+- **Frontend**（React）：控制台 + Copilot 对话页，实时事件走 SSE。
+
+三条架构铁律贯穿全项目：
+
+1. **数据库只属于 Scheduler**。Worker 与 Copilot 都是 Scheduler 的下游，彼此
+   互不通信；下发给 Worker 的任务里，所有实体（接口快照、脚本源码、生成的
+   封装类）都已内联解析完毕，Worker 执行期间零数据库访问。
+2. **proto 是单一契约**。接口、用例、步骤、运行结果等领域对象统一定义在
+   `proto/testpilot` 下，Go 与 Python 两侧的代码由同一份契约生成，跨语言
+   不存在第二份结构定义。
+3. **租户隔离在入口收敛**。所有读写都带 `tenant_id` 上下文，RBAC（owner /
+   admin / member / viewer 四级）在 REST 与 gRPC 入口统一校验，而不是散落在
+   业务代码里。
 
 ---
 
-## 3. 低代码：绑定 ID，而不是绑定 URL
+## 3. 接口目录：唯一真相源
 
-低代码用例是一段 Python 脚本，入口函数固定：
+接口目录是整个平台的基石，支持两类接口：
+
+- **HTTP 接口**：method、URL、headers、cookies、query/body 模板、TLS 校验
+  策略、客户端证书、认证 header 等，全部结构化存储；
+- **gRPC 接口**：service / method 全名、元数据、超时，请求体在执行时通过
+  **server reflection** 动态构造——不需要为被测服务编译 proto 桩，只要服务
+  开了反射即可直接调用。
+
+目录之上还有两组工程化能力：
+
+- **OpenAPI 导入与变更同步**：可以把 OpenAPI 描述导入为接口目录；后端发布
+  新版本后再次导入，平台按 added / changed / breaking 分类给出 diff，可选择
+  自动回写受影响的用例。
+- **变量引用检查**：接口定义里大量使用 `{{vars.xxx}}` 模板，平台提供一键
+  检查「哪些接口引用了未定义的变量」，避免运行期才发现拼写错误。
+
+---
+
+## 4. 环境与变量体系
+
+接口和脚本都不应该写死环境相关的值。TestPilot 用两级容器 + 五层作用域解决：
+
+- **项目（Project）**与**环境（Environment）**是两个顶层容器：接口、用例、
+  计划属于项目；每个项目可定义多个环境（dev / staging / prod…），环境携带
+  自己的变量集。
+- 变量在运行时的解析优先级为 **step > case > plan > env > project**——步骤里
+  刚设置的值立即生效，环境变量兜底，项目变量再兜底。
+- 脚本与接口定义里用 `{{vars.path.to.value}}` 引用变量。模板表达式由一个
+  AST 白名单解释器执行：**只有属性访问与索引，没有函数调用**，配合深度与
+  长度护栏，模板引擎本身不成为注入面。
+- 敏感变量（token、secret 类命名）在展示层统一掩码，且**不会注入低代码脚本
+  上下文**（见第 6 节）。
+
+---
+
+## 5. 用例的两种形态
+
+TestPilot 的用例（TestCase）有两种类型，共享同一套接口目录与变量体系。
+
+### 5.1 声明式步骤树
+
+用 JSON / 表单描述步骤，适合流程固定的接口测试。步骤类型共十种：
+
+```text
+api_call     调用 HTTP 接口（按 ID 引用 + 参数覆盖）
+grpc_call    调用 gRPC 接口
+assertion    断言（status / header / jsonpath，等于、包含、存在、正则等）
+set_var      把表达式结果写入变量
+if / loop    条件分支与循环（支持并行度上限）
+retry        失败重试（次数 + 间隔）
+code_block   内联代码片段
+delay        延时等待
+ui_action    Playwright UI 动作（goto / click / fill / 断言可见 等）
+```
+
+一段真实的步骤树大致长这样：
+
+```json
+{
+  "steps": [
+    { "id": "1", "type": "STEP_TYPE_API_CALL", "name": "创建用户",
+      "apiCall": { "apiId": "744267297657487360",
+                   "override": { "body": { "name": "neo" } } } },
+    { "id": "2", "type": "STEP_TYPE_ASSERTION", "name": "校验响应",
+      "assertion": { "assertions": [
+        { "target": "JSON", "path": "$.data.id", "op": "EXISTS" } ] } },
+    { "id": "3", "type": "STEP_TYPE_LOOP", "name": "批量查询",
+      "loopStep": { "over": "{{vars.user_ids}}", "parallel": 4, "steps": [ ... ] } }
+  ]
+}
+```
+
+步骤以**嵌套点路径**定址（如 `3.loop.1.2`），运行报告里的每一步都有独立的
+结果记录：请求 / 响应快照、逐条断言的期望与实际值、日志、耗时。
+
+### 5.2 低代码 Python
+
+当测试逻辑超出声明式的表达力（多步编排、复杂数据加工、UI 脚本化），可以写
+一段 Python 脚本，入口函数固定：
 
 ```python
 async def run(ctx):
     ...
 ```
 
-### 3.1 按 ID 调用，接口快照在派发时注入
+脚本在受限沙箱里执行（见第 6 节），通过 `ctx` 能力对象声明一切副作用：
 
 ```python
 # 创建用户并断言。注意：没有 method / uri / headers，只有一个接口 ID
@@ -119,30 +179,38 @@ resp = await ctx.http_api("744267297657487360").run(
 assert_that(resp.status).eq(200)
 assert_that(resp.body["data"]["id"]).exists()
 
-# 直接复用上面拿到的 ID 做第二个业务动作
-user = await ctx.http_api("744267297657487358").run(
-    headers={"X-Trace": "{{vars.trace_id}}"}
-)
-assert_that(user.body["data"]["name"]).contains("neo")
+# 变量读写与日志
+await ctx.set_var("user_id", resp.body["data"]["id"])
+ctx.log(f"created user {resp.body['data']['id']}")
+
+# gRPC 同构：按 ID 调用，反射动态构造请求
+r = await ctx.grpc_api("744267297657487999").run(request={"name": "neo"})
 ```
 
-`ctx.http_api(id)` 背后的语义是：**脚本只声明「我要调哪个接口」和「本次业务输入
-是什么」**。method、uri、headers、cookies、证书、TLS 校验策略、binary 引用、
-pre/post 脚本——这些都在 Scheduler 派发任务前从接口目录解析成快照，随任务下发到
-Worker。
+`ctx.http_api(id)` 背后的语义是：**脚本只声明「我要调哪个接口」和「本次业务
+输入是什么」**。method、URL、headers、cookies、证书、TLS 策略、binary 引用
+都在 Scheduler 派发任务前从接口目录解析成快照，随任务一起下发。
 
-脚本的 `run(...)` 参数只是 override：headers/params/cookies 按键合并，body 整体
-替换；`tls_verify` 等安全设置以接口快照为准，**脚本不可覆盖**。这意味着一个把
-`tls_verify` 关掉的行为，不可能藏在测试脚本里发生。
+脚本的 `run(...)` 参数只是 override：headers / params / cookies 按键合并，
+body 整体替换；而 `tls_verify` 这类安全设置以接口快照为准，**脚本不可覆盖**
+——把 TLS 校验关掉的行为不可能藏在测试脚本里发生。
 
-### 3.2 自动生成的稳定封装类
+### 5.3 依赖声明与运行前校验
 
-对习惯面向对象写法的场景，派发时 Scheduler 会为被引用接口生成
+低代码用例必须显式声明它引用了哪些接口（`httpApiRefs` / `grpcApiRefs`；
+脚本里的 `ctx.http_api("...")` 字面量也会在派发时被静态提取补全）。引用了
+不存在或无权限的接口，**在运行开始前就明确失败**，而不是执行到一半抛出一串
+难懂的堆栈。声明本身还有第二个用途：影响分析——接口变更时能精确列出受影响
+的用例。
+
+### 5.4 自动生成的稳定封装类
+
+对偏好面向对象写法的场景，派发时 Scheduler 会为被引用接口生成
 `tp_api_wrappers.py`：
 
 ```python
 # auto-generated by TestPilot — do not edit
-from testpilot_sdk import HttpAPI, GrpcAPI
+from testpilot_sdk import HttpAPI
 
 class Api744267297657487360(HttpAPI):
     """创建用户 · POST /users"""
@@ -150,112 +218,146 @@ class Api744267297657487360(HttpAPI):
     method: str = "POST"
     uri: str = "/users"
     headers: dict = {"X-Client": "testpilot"}
-    cookies: dict = {}
 ```
 
-脚本中即可：
-
-```python
-from tp_api_wrappers import Api744267297657487360
-
-resp = await Api744267297657487360(body={"name": "neo"}).run()
-```
-
-这里有一个刻意的设计：**`Api<ID>` 是稳定类名**。接口在页面里改名、改 URI，甚至
-生成的可读别名（如 `CreateUser`）随之变化，`Api<ID>` 始终有效——脚本天然免疫接口
-重命名。依赖关系也会在派发时被静态提取（`ctx.http_api("...")`、`Api123` 等字面量），
-或由用例的 `httpApiRefs` / `grpcApiRefs` 显式声明；引用了不存在的接口会**在运行前
-明确失败**，而不是执行到一半抛出一串难懂的堆栈。
-
-### 3.3 沙箱：脚本「看不见」凭据，也摸不到网络
-
-低代码脚本运行在受限子进程中：
-
-- 无网络：`requests` / `httpx` / 直连 socket 全部不可用；
-- 无环境变量（白名单除外）；
-- CPU / 内存受限；
-- 文件写入仅限临时目录；
-- 所有副作用只能通过 `ctx` 能力桥执行。
-
-鉴权是怎么工作的？环境里的 `Authorization` 等 HEADER 变量由执行器在发起请求时
-自动注入，**值不需要、也不会进入脚本上下文**；敏感变量不注入脚本。对比传统
-pre-request 脚本「秘密就在眼前」，TestPilot 的脚本作者从头到尾接触不到 token。
-
-### 3.4 与普通工具的低代码差异
-
-| | Postman / Apifox 典型脚本 | TestPilot 低代码 |
-|---|---|---|
-| 绑定方式 | 字符串复制 URL / headers | 接口 ID + 派发时快照 |
-| 接口变更传播 | 手工搜索替换，可能漏 | 下次运行自动获得最新快照；OpenAPI diff 工具可检测变更 |
-| 复用单位 | 请求级片段，跨集合复用弱 | 接口目录 + 脚本资产库 + 套件有序展开 |
-| 运行时 | JS 片段，与集合变量同上下文 | Python 沙箱 + 能力桥，零凭据 |
-| 断言 | `pm.expect` 断言片段 | `assert_that` 链式断言，结果结构化进步骤报告 |
-| gRPC | 视产品版本支持情况而定 | 与 HTTP 同构：`ctx.grpc_api(id)` + 反射动态调用 |
-
-**优势的实质不是「Python 比 JS 好」，而是「测试脚本从复制接口定义，变成了消费
-接口定义」。** 一旦目录成为唯一真相源，接口与用例之间就不再是两份需要人工同步的
-数据，而是一份数据加一层引用。
+脚本中即可 `Api744267297657487360(body={"name": "neo"}).run()`。这里有个刻意
+的设计：**`Api<ID>` 是稳定类名**。接口在页面上改名、改 URL，`Api<ID>` 始终
+有效——脚本天然免疫接口重命名。
 
 ---
 
-## 4. Copilot：有工具、有审批、有审计的 Agent
+## 6. 沙箱与凭据边界
 
-TestPilot 的 Copilot 基于 `pydantic-ai`，前端经 Vercel AI SDK 流式交互。它和
-「API 工具内置 AI 聊天」的关键区别在于：**Copilot 的每一轮回答，都是对真实项目
-数据的函数调用序列，而不是对代码片段的文字建议。**
+低代码脚本运行在一个受限子进程中，这是平台安全模型的基石：
 
-### 4.1 工具集：只读 + 受审批的写操作
+- **无网络**：脚本进程的直连网络被拒绝（macOS `sandbox-exec` / Linux
+  bubblewrap 尽力隔离，可配置强制），`requests` / `httpx` / 裸 socket 都
+  不可用；
+- **无环境变量**：子进程启动即抹掉所有 `*TOKEN* / *KEY* / *SECRET* /
+  *PASSWORD*` 类环境变量；
+- **资源受限**：CPU / 内存 / 输出尺寸都有硬顶，循环与桥接调用有并发护栏，
+  防止失控脚本拖垮 Worker；
+- **副作用全部经能力桥代执行**：HTTP、gRPC、变量读写、日志、UI 操作，由
+  Worker 进程代为执行后把结果回传给脚本。
 
-工具分两组：
+那鉴权怎么办？环境里配置的 `Authorization` 等 header 变量，由 Worker 在
+发起请求时自动注入，**值不需要、也不会进入脚本上下文**。脚本作者从头到尾
+接触不到 token；沙箱里写什么代码都不会把凭据带出去。脚本资产（源码）由
+Scheduler 存储与版本管理，派发前内联进任务，同样不经过任何共享文件系统。
 
-- **只读（免审批）**：`list_projects`、`list_apis`、`get_api`、`query_schema`、
-  `list_test_cases`、`get_run`（含步骤明细）、`query_coverage`、
-  `query_api_directory`、`check_variable_refs`、`get_current_context` 等。
-- **写 / 触发（必须 HITL 审批）**：`create_project`、`create_api`、
-  `update_api`、`create_grpc_api`、`create_test_case`、`update_test_case`、
-  `create_test_plan`、`import_openapi`、`apply_openapi_diff`、`trigger_run`、
-  `trigger_stress` 等。
+---
 
-所有工具都经 Scheduler 的 gRPC 接口执行，请求带 `tenant_id + user_id` 上下文；
-因此**租户隔离、RBAC 和审计不是 Copilot 自己实现的，而是复用平台既有边界**。
-Copilot 不直连数据库，也没有任何一条旁路。
+## 7. 计划、调度与执行
 
-### 4.2 Grounding：让模型知道「本项目的数据长什么样」
+单条用例之上是计划（TestPlan）：把用例 / 套件按顺序组装，绑定环境，附加
+计划级变量，就构成一次可重复执行的测试资产。
+
+**触发方式**有四种：
+
+1. 控制台手动触发；
+2. **cron 定时**：计划绑定 cron 表达式，Scheduler 内置调度器按时触发，对
+   落后超过阈值的 misfire 自动补跑一次；
+3. **CI token 触发**：流水线里用长令牌调用 REST 接口发起运行，适合部署后
+   冒烟；
+4. webhook / 事件联动。
+
+触发后 Scheduler 把计划展开成任务，按 **capability 标签、租户归属与当前
+负载**挑选合适的 Worker，经双向 gRPC 流下发；执行期间的取消与超时也沿同一条
+流传播，不会出现「页面点了取消、Worker 还在跑」的分裂状态。
+
+---
+
+## 8. 报告、制品与通知
+
+一次运行（TestRun）落库后得到：
+
+- **运行级汇总**：总数 / 通过 / 失败 / 耗时，前端 SSE 实时刷新进度；
+- **步骤树明细**：每个步骤（含循环内每一轮）的请求与响应快照、逐条断言的
+  期望值与实际值、日志、耗时，可精确到 `3.loop.1.2` 这样的路径；
+- **JUnit XML 导出**：`GET /runs/:id/junit`，Jenkins / GitLab CI 直接渲染；
+- **制品（Artifacts）**：九类——截图、视频、Trace、HAR、下载文件、日志、
+  Proto、证书、用户上传。UI 测试自动归档截图与视频；二进制请求体支持
+  `artifact:<id>` 引用，派发时内联下发；
+- **通知**：运行结束可回调 webhook，附带运行摘要，方便接入 IM 机器人或
+  内部告警平台。
+
+---
+
+## 9. UI 测试与分布式压测
+
+**UI 测试**基于 Playwright，与接口测试共用一套资产模型：
+
+- 声明式形态：步骤树里的 `ui_action` 步骤（goto / click / fill / select /
+  断言可见 / 截图等），与接口步骤自由混排——「调接口造数 → 打开页面 → 断言
+  元素」在同一个用例里完成；
+- 低代码形态：`ctx.page` 暴露受控的 Playwright 页面对象，适合脚本化的复杂
+  UI 流程；每步自动截图，失败时归档现场。
+
+**压测**分两种形态，共用同一套用例资产：
+
+- **接口压测**：直接选接口（或用例）配并发与时长，由 Locust 执行——Locust
+  被隔离在独立子进程里，避免其 gevent 与平台 asyncio 互相污染；
+- **行为压测**：以低代码用例为虚拟用户行为脚本，按 ramp 曲线（如
+  `0s→2, 5s→10, 10s→20`）逐步加压，压测执行器可以独立横向扩容成专门的
+  Worker 池。
+
+压测运行实时回传 RPS、延迟分位、错误率等指标，前端绘制时序曲线。
+
+---
+
+## 10. Copilot：有工具、有审批、有审计的 Agent
+
+TestPilot 的 Copilot 基于 `pydantic-ai`，前端经 Vercel AI SDK 流式交互。它
+不是「套壳聊天框」：**每一轮回答都是对真实项目数据的函数调用序列**。模型
+支持 DeepSeek 与任意 OpenAI 兼容端点（温度 / top_p 等采样参数可按部署配置）。
+
+### 10.1 工具集：只读 + 受审批的写操作
+
+- **只读（免审批）**：项目 / 环境 / 接口 / 用例 / 计划的查询，`get_run`
+  （含步骤明细）、覆盖率查询、接口目录视图、变量引用检查、当前上下文，
+  以及 UI 探测的快照与关闭；
+- **写 / 触发（必须人工审批）**：创建 / 修改项目、HTTP 与 gRPC 接口、用例
+  （含 UI 用例）、计划，OpenAPI 导入与 diff 应用，触发运行与触发压测，以及
+  UI 探测的打开 / 操作 / 求值 / 执行脚本。
+
+所有工具都经 Scheduler 的 gRPC 接口执行，请求带租户与用户上下文——**租户
+隔离、RBAC 和审计不是 Copilot 自己实现的，而是复用平台既有边界**。Copilot
+没有数据库连接，也没有任何旁路。
+
+### 10.2 Grounding：让模型知道「本项目的数据长什么样」
 
 通用 LLM 最大的问题不是「不会写代码」，而是「不知道你的 schema 和 SDK 签名」。
 TestPilot 在构建期生成两份 grounding 注入 system prompt：
 
-1. **领域数据字典**（`domain-schema.json`）：所有实体的字段、类型、约束，LLM
-   生成用例 JSON 时按真实 camelCase 结构输出，而不是凭记忆编造；
-2. **低代码 SDK 文档**（`sdk-api.md`）：`ctx.http_api`、`assert_that`、封装类的
-   真实签名与限制。
+1. **领域数据字典**（`domain-schema.json`）：所有实体的字段、类型、约束，
+   模型生成用例 JSON 时按真实 camelCase 结构输出，而不是凭记忆编造；
+2. **低代码 SDK 文档**（`sdk-api.md`）：`ctx.http_api`、`assert_that`、
+   封装类的真实签名与限制。
 
 因此 Copilot 生成低代码用例时会被显式引导：优先 `ctx.http_api(id)` 或
-`tp_api_wrappers.Api<ID>`，**不要手抄 method/uri**，并在 `httpApiRefs` /
-`grpcApiRefs` 中声明依赖。生成结果从第一行开始就符合平台契约，而不是「看起来像
-Python 的伪代码」。
+`Api<ID>` 封装类，**不要手抄 method / URL**，并在 `httpApiRefs` 中声明依赖。
+生成结果从第一行起就符合平台契约。
 
-### 4.3 页面上下文：AI 知道你当前在看哪个项目
+### 10.3 页面上下文：AI 知道你当前在看哪个项目
 
-Copilot 页左上角沿用控制台的当前项目/环境选择，前端通过 `X-TP-Project-Id` /
-`X-TP-Env-Id` 头随每次请求传给 Copilot。服务端会用 REST 校验这些 ID 的租户归属
-并加载权威详情，于是以下对话成立：
+Copilot 页沿用控制台的当前项目 / 环境选择，前端通过 `X-TP-Project-Id` /
+`X-TP-Env-Id` 头随每次请求传给 Copilot，服务端校验租户归属后加载权威详情。
+于是这样的对话成立：
 
-> 用户：**把当前项目的接口目录里，变量引用没定义的接口列出来，并生成一个冒烟计划。**
+> 用户：**把当前项目里变量引用没定义的接口列出来，并生成一个冒烟计划。**
 >
 > Copilot 实际动作：
 > 1. `get_current_context()` —— 确认当前项目 / 环境，不臆造 ID；
 > 2. `check_variable_refs()` —— 找出 `{{var}}` 缺失定义的接口；
-> 3. `query_api_directory()` + `list_apis()` —— 选出合适接口；
+> 3. `query_api_directory()` —— 浏览接口目录挑选接口；
 > 4. `create_test_case()` × N —— 生成低代码用例（触发审批）；
 > 5. `create_test_plan()` —— 组装计划（触发审批）。
 
-对比传统 AI 辅助：用户得先自己查目录、复制接口定义、描述给 AI、再复制回工具。
-在 TestPilot 里，上下文是请求的一部分，工具是上下文的眼睛，审批是动作的闸门。
+上下文是请求的一部分，工具是上下文的眼睛，审批是动作的闸门。
 
-### 4.4 HITL：写操作必须经过人
+### 10.4 HITL：写操作必须经过人
 
-`pydantic-ai` 的 deferred tool request 会在写工具前挂起，把审批卡片推给前端：
+写工具执行前会挂起，把审批卡片推给前端：
 
 ```text
 [工具调用] create_test_case
@@ -267,28 +369,37 @@ Copilot 页左上角沿用控制台的当前项目/环境选择，前端通过 `
 ```
 
 - 批准后工具才真正执行；拒绝后 Agent 被告知结果并继续对话；
-- 审批请求显示**明确的 target project/env**，避免「AI 操作错环境」这类事故；
+- 审批卡片显示明确的**目标项目 / 环境**，避免「AI 操作错环境」；
 - 全部调用落审计，actor 标记为 `copilot`，谁在什么时间批准了什么可追溯。
 
-敏感信息也有工程化防护：接口定义里的 `Authorization`、`Cookie`、`X-Api-Key` 等
-header 值在进入 LLM 上下文前统一掩码。团队配置里的凭据，不会因为一次 AI 对话
-离开平台边界。
+敏感信息有工程化防护：接口定义里的 `Authorization`、`Cookie`、`X-Api-Key`
+等 header 值在进入 LLM 上下文前统一掩码；已掩码的值回写时会被丢弃而不是
+覆盖真实凭据。
 
-### 4.5 长对话与运行分析的闭环
+### 10.5 UI 探测：让 AI 先「看」页面再写用例
 
-Copilot 内置上下文压缩（到达窗口阈值后由 summarizer 模型压缩历史），因此可以
-支撑「触发运行 → 查看进度 → 拿到结果 → 分析失败」的完整会话，而不需要用户反复
-开新会话。
+写 UI 用例最难的是选择器与页面真实结构对不上。Copilot 内置 **UI 探测**
+能力：在受控会话里打开目标页面，抓取 ARIA 可访问性快照，执行点击 / 填充 /
+取值等探测动作，甚至运行一段受沙箱约束的 Playwright 脚本——探测会话有
+数量、时长与输出尺寸上限，快照作为文本反馈给模型，用于生成可靠的
+`ui_action` 步骤或 `ctx.page` 脚本。探测中的写类动作同样走审批。
 
-结合 `get_run(include_steps=true)`，失败分析是**事实驱动**的：步骤路径、请求/
-响应快照、断言明细、日志都来自数据库，而不是用户口述。Copilot 可以精确到
-「第 3 步 `$.data.id` 断言失败，实际响应为 …，原因是环境变量覆盖顺序」这类结论。
+### 10.6 长对话与失败分析的闭环
+
+Copilot 内置上下文压缩（历史到达窗口阈值后由轻量 summarizer 模型压缩），
+支撑「触发运行 → 跟踪进度 → 拿到结果 → 分析失败」的完整长会话；对话历史
+持久化存储，支持会话切换与回收站恢复（30 天自动清理）。
+
+结合 `get_run(include_steps=true)`，失败分析是**事实驱动**的：步骤路径、
+请求 / 响应快照、断言明细、日志都来自数据库，而不是用户口述。Copilot 可以
+给出「第 3 步 `$.data.id` 断言失败，实际响应为 …，根因是环境变量覆盖顺序」
+级别的结论。
 
 ---
 
-## 5. 完整闭环：一次 OpenAPI 变更之后
+## 11. 端到端闭环：一次 OpenAPI 变更之后
 
-把前面几条线串起来，展示一个团队真实会遇到的场景：
+把前面的能力串成一个真实场景：
 
 ```text
 后端发布新版本，OpenAPI 描述变更
@@ -300,7 +411,7 @@ Copilot：import_openapi / apply_openapi_diff（HITL）
         └─ 可选 auto_update_cases 回写受影响用例
         │
         ▼
-用户：生成受影响的低代码冒烟用例
+用户：为新增接口生成低代码冒烟用例
 Copilot：query_schema + get_api + 按 ID 生成用例（HITL）
         │
         ▼
@@ -311,36 +422,70 @@ Copilot：trigger_run（HITL）→ get_run 跟踪 → 失败根因分析
 CI：run_finished webhook → 拉取 JUnit XML → Jenkins/GitLab 渲染
 ```
 
-在普通工具里，这条链路的每一步几乎都跨工具、靠人搬运数据；在 TestPilot 里，
-接口、用例、运行结果在同一个数据模型里，Copilot 通过工具读写它们，人只在写操作
-处按下审批键。
+接口、用例、运行结果在同一个数据模型里，Copilot 通过工具读写它们，人只在
+写操作处按下审批键。
 
 ---
 
-## 6. 诚实的边界
+## 12. 平台化能力
+
+作为多团队共用的平台，TestPilot 内置了组织级的基础能力：
+
+- **多租户隔离**：所有数据带租户边界，入口统一校验；
+- **RBAC**：owner / admin / member / viewer 四级角色，数字越小权限越强；
+- **OIDC SSO**：对接企业身份提供方登录；
+- **配额**：按租户限制运行并发与资产规模；
+- **审计日志**：谁在什么时间对什么实体做了什么，含 Copilot 的全部工具调用
+  与人工审批记录；
+- **可观测**：Scheduler 暴露 metrics，链路追踪接 OpenTelemetry，部署样例
+  附带 Prometheus + Jaeger。
+
+---
+
+## 13. 部署与上手
+
+- **生产**：`deploy/docker-compose.prod.yml` 一键拉起 PostgreSQL + Scheduler
+  + Worker 集群 + 独立压测 Worker 池 + Copilot + Jaeger + Prometheus；三个
+  服务均为「CLI 参数 > 环境变量 > YAML 配置文件 > 内置默认值」的四级配置，
+  仓库内有逐键注释的配置模板。
+- **本地开发**：`scripts/dev.sh start` 一条命令拉起全部组件（含 mock 回显
+  服务），附带主流程与各专项的端到端测试脚本。
+- **安全默认**：弱 JWT 密钥拒绝启动、空 Worker 令牌拒绝所有 Worker 注册、
+  通知 webhook 默认屏蔽私网地址——安全项全部 fail-closed。
+
+作为 Apache-2.0 许可的开源项目，完整设计文档见仓库内 `README.md`、
+`docs/design.md` 与 `docs/usage.md`。
+
+---
+
+## 14. 诚实的边界
 
 技术博客应当交代边界，而不是只写优势：
 
-- **AI 质量取决于模型**：grounding 和 HITL 能大幅降低 schema 错误与越权风险，
-  但生成质量仍受所选模型能力影响。平台支持 DeepSeek 与任意 OpenAI 兼容端点，
-  团队可以按数据合规要求选型。
-- **沙箱是分层基线**：当前低代码沙箱为 subprocess 加固基线（无网络、无环境变量、
-  资源受限、副作用桥接），生产可进一步替换为 gVisor 或独立 Worker 池。
-- **Copilot 工具面仍在增长**：当前写工具有创建 / 导入 / 触发，修改与修复闭环
-  是下一步的明确方向；覆盖缺口分析、压测报告 AI 分析等能力也在路线图上。
-- **这是平台，不是插件**：TestPilot 的价值要在「接口目录 + 用例 + 计划 + 报告 +
-  CI」作为整体使用时才完全成立；如果只需要单次调试，传统工具仍然更轻。
+- **AI 质量取决于模型**：grounding 与 HITL 能大幅降低 schema 错误与越权
+  风险，但生成质量仍受所选模型能力影响；平台不绑定模型供应商，团队可按
+  数据合规要求自行选型。
+- **沙箱是分层基线**：当前低代码沙箱为子进程加固基线（无网络、无环境变量、
+  资源受限、副作用桥接）；对强隔离诉求的生产环境，可以替换为 gVisor 或
+  独立的 Worker 池。
+- **Copilot 的写覆盖仍在扩展**：当前覆盖创建 / 修改 / 导入 / 触发，更远的
+  自动修复闭环、覆盖缺口分析、压测报告的 AI 解读在路线图上。
+- **平台的价值在整体**：接口目录 + 用例 + 计划 + 报告 + CI 作为整体使用时
+  价值才完全成立；如果诉求只是单次手工调试，一个轻量 HTTP 客户端就够了。
 
 ---
 
-## 7. 结语
+## 15. 结语
 
-Postman / Apifox 证明了「接口调试可以有多顺手」；TestPilot 想回答的是下一个问题：
-**当测试资产达到工程规模，脚本如何不腐烂、AI 如何真正参与闭环、凭据如何有边界。**
+TestPilot 把 API 测试从「一份份孤立的脚本」组织成「一个有目录、有编排、有
+调度、有报告、有 AI 协作的工程系统」：
 
-低代码按 ID 调用解决定义漂移，Copilot Agent + HITL 解决 AI 只说不做，沙箱与
-租户边界解决安全与审计——三者共同把 API 测试从「带断言的请求集合」推进到
-「可生成、可执行、可追溯、可接入 CI 的测试工程系统」。
+- 低代码**按 ID 调用**让脚本消费接口定义而非复制接口定义，定义漂移失去土壤；
+- 声明式步骤树与 Python 沙箱覆盖从简单断言到复杂编排的全部表达力区间；
+- 沙箱与能力桥让凭据有了可审计的边界，脚本作者从头到尾接触不到秘密；
+- 计划、cron、CI 令牌与分布式 Worker 让测试资产真正跑在流水线里；
+- Copilot 以工具调用读写真实项目数据，以 HITL 审批约束每一次写操作——
+  AI 终于从「给建议的旁观者」变成了「被授权的同事」。
 
-这也是一个 Apache-2.0 许可的开源项目，完整设计与部署见仓库内 `README.md`、
-`docs/design.md` 与 `docs/usage.md`。
+欢迎试用与共建：克隆仓库、`dev.sh start` 拉起本地环境，从一个接口、一个
+用例、一次对话开始。
