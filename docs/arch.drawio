@@ -1,0 +1,57 @@
+<mxfile host="Electron">
+  <diagram name="第 1 页" id="p4JYnzcgip_DHFIe-j6O">
+    <mxGraphModel dx="1006" dy="682" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-3" edge="1" parent="1" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="CUP2HV3EbdxfHlcPph0D-2" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="320" y="250" as="sourcePoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-7" edge="1" parent="1" source="CUP2HV3EbdxfHlcPph0D-1" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;dashed=1;" target="CUP2HV3EbdxfHlcPph0D-5">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-1" parent="1" style="rounded=0;whiteSpace=wrap;html=1;" value="Frontend (React)" vertex="1">
+          <mxGeometry height="60" width="120" x="260" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-6" edge="1" parent="1" source="CUP2HV3EbdxfHlcPph0D-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;startArrow=classic;startFill=1;" target="CUP2HV3EbdxfHlcPph0D-5" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-11" edge="1" parent="1" source="CUP2HV3EbdxfHlcPph0D-2" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;" target="CUP2HV3EbdxfHlcPph0D-10" value="">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-2" parent="1" style="whiteSpace=wrap;html=1;rounded=0;" value="Scheduler (Go)" vertex="1">
+          <mxGeometry height="60" width="120" x="260" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-4" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="REST / SSE" vertex="1">
+          <mxGeometry height="30" width="126" x="200" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-5" parent="1" style="whiteSpace=wrap;html=1;rounded=0;" value="Copilot (Python)" vertex="1">
+          <mxGeometry height="60" width="120" x="460" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-8" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="Vercel AI SSE（Reversed Proxy By Scheduler）" vertex="1">
+          <mxGeometry height="30" width="210" x="390" y="270" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-9" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="gRPC" vertex="1">
+          <mxGeometry height="30" width="60" x="384" y="330" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-14" connectable="0" parent="1" style="group" value="" vertex="1">
+          <mxGeometry height="80" width="140" x="260" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-10" parent="CUP2HV3EbdxfHlcPph0D-14" style="whiteSpace=wrap;html=1;rounded=0;" value="Worker (Python)" vertex="1">
+          <mxGeometry height="60" width="120" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-12" parent="CUP2HV3EbdxfHlcPph0D-14" style="whiteSpace=wrap;html=1;rounded=0;" value="Worker (Python)" vertex="1">
+          <mxGeometry height="60" width="120" x="10" y="10" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-13" parent="CUP2HV3EbdxfHlcPph0D-14" style="whiteSpace=wrap;html=1;rounded=0;" value="Worker (Python)" vertex="1">
+          <mxGeometry height="60" width="120" x="20" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="CUP2HV3EbdxfHlcPph0D-16" parent="1" style="text;html=1;whiteSpace=wrap;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;rounded=0;" value="ExecuteEngine&lt;div&gt;TestPilot (SDK)&lt;/div&gt;&lt;div&gt;Playwright&lt;/div&gt;&lt;div&gt;Locust&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" vertex="1">
+          <mxGeometry height="30" width="150" x="370" y="510" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
