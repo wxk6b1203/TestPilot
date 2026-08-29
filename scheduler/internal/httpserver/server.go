@@ -216,6 +216,7 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPost, "/copilot/sessions", auth.RoleMember, s.createCopilotSession)
 	h(fiber.MethodGet, "/copilot/sessions/:id/messages", auth.RoleViewer, s.listCopilotMessages)
 	h(fiber.MethodPost, "/copilot/sessions/:id/messages", auth.RoleMember, s.appendCopilotMessage)
+	h(fiber.MethodPut, "/copilot/sessions/:id", auth.RoleMember, s.updateCopilotSession)
 	h(fiber.MethodDelete, "/copilot/sessions/:id", auth.RoleMember, s.deleteCopilotSession)
 	// 回收站：读列表 viewer 即可；彻底删除属成员动作
 	h(fiber.MethodGet, "/copilot/trash", auth.RoleViewer, s.listCopilotTrash)

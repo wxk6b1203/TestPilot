@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v3"
@@ -40,6 +41,42 @@ func (s *Server) createCopilotSession(ctx fiber.Ctx) error {
 		return writeAppErr(ctx, apperr.Internal(err.Error()))
 	}
 	return writeJSON(ctx, fiber.StatusOK, row)
+}
+
+// updateCopilotSession 重命名会话：仅改标题，消息与回放不受影响。
+func (s *Server) updateCopilotSession(ctx fiber.Ctx) error {
+	c := claimsOf(ctx)
+	sid, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var in sessionReq
+	if !decode(ctx, &in) {
+		return nil
+	}
+	title := strings.TrimSpace(in.Title)
+	if title == "" {
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "标题不能为空"))
+	}
+	res := s.db.Model(&model.CopilotSession{}).
+		Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",
+			sid, c.TenantID, c.UserID).
+		Update("title", title)
+	if res.Error != nil {
+		return writeAppErr(ctx, apperr.Internal(res.Error.Error()))
+	}
+	if res.RowsAffected == 0 {
+		// MySQL 对同值 UPDATE 上报 0 行受影响：区分「改名成同名」（200）与
+		// 「会话不存在/不可见」（404）
+		var cnt int64
+		s.db.Model(&model.CopilotSession{}).
+			Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",
+				sid, c.TenantID, c.UserID).Count(&cnt)
+		if cnt == 0 {
+			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "session not found"))
+		}
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"id": sid, "title": title})
 }
 
 type messageReq struct {
