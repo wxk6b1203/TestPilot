@@ -425,7 +425,9 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
                      kind: str = "http") -> dict:
     """修改已有接口。kind: http|grpc；api 为需要变更的字段（camelCase，如
     {"uri": "/v2/echo", "headers": {...}, "body": {...}}），未提供的字段保持原值。
-    建议先 get_api 获取完整定义再改；敏感 header/cookie 未修改时不会被覆盖。"""
+    建议先 get_api 获取完整定义再改；api 直接传变更字段对象，不要按 get
+    返回的 JSON 包 http/grpc 包装键（多传了也会自动剥掉）；敏感 header/cookie
+    未修改时不会被覆盖。"""
     k = str(kind or "http").strip().lower()
     if k not in ("http", "grpc"):
         raise ValueError(f"kind must be http or grpc, got {kind!r}")
@@ -437,6 +439,8 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
     if not isinstance(base, dict):
         raise ValueError(f"{k} api {api_id} not found")
     merged = {**base}
+    if isinstance(api, dict):
+        api = strip_def_wrappers(api, ("http", "grpc", "api"))
     for field, value in (api or {}).items():
         if value is None:
             continue
@@ -467,8 +471,10 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
     """创建测试用例。case_type: declarative（definition=DeclarativeCase 的 JSON：{"steps":[...]}）
     或 lowcode（definition={"source": "...", "entry": "run",
     "http_api_refs": ["接口ID", ...], "grpc_api_refs": [...]}）。
-    project_id 省略时使用页面左上角当前选择的项目。"""
+    definition 直接传定义对象本身，不要带 lowcode/declarative/case 包装键
+    （多传了也会自动剥掉）。project_id 省略时使用页面左上角当前选择的项目。"""
     pid = ctx.deps.resolve_project_id(project_id)
+    definition = strip_def_wrappers(definition, ("lowcode", "declarative", "case"))
     case = pb.TestCase(name=name, description=description, created_by="copilot")
     if case_type == "lowcode":
         case.type = pb.TEST_CASE_TYPE_LOWCODE
@@ -501,7 +507,8 @@ async def update_test_case(ctx: RunContext[CopilotDeps], case_id: str,
                            definition: dict | None = None) -> dict:
     """修改已有测试用例。只更新显式传入的字段；definition 与现有定义浅合并，
     因此只改 lowcode source / declarative steps 时无需重复 httpApiRefs 等字段。
-    不能修改用例 type（要换类型请新建用例）。"""
+    definition 直接传定义对象，不要按 get 返回的 JSON 包 lowcode/declarative
+    包装键（多传了也会自动剥掉）。不能修改用例 type（要换类型请新建用例）。"""
     cur = await ctx.deps.sched.stub.GetTestCase(
         cpb.GetTestCaseRequest(ctx=ctx.deps.ctx(), case_id=str(case_id)))
     cur_d = await to_dict_async(cur)
@@ -526,7 +533,8 @@ async def update_test_case(ctx: RunContext[CopilotDeps], case_id: str,
     if definition is None:
         merged_def = base_def or {}
     else:
-        merged_def = {**(base_def or {}), **(definition or {})}
+        definition = strip_def_wrappers(definition, ("lowcode", "declarative", "case"))
+        merged_def = {**(base_def or {}), **definition}
 
     case = pb.TestCase(type=case_type, name=name, description=description)
     if case_type == pb.TEST_CASE_TYPE_LOWCODE:
@@ -546,6 +554,24 @@ async def update_test_case(ctx: RunContext[CopilotDeps], case_id: str,
 def json_format_parse(d: dict, msg) -> None:
     from google.protobuf import json_format
     json_format.ParseDict(d, msg, ignore_unknown_fields=False)
+
+
+def strip_def_wrappers(d: Any, wrappers: tuple[str, ...]) -> dict:
+    """剥掉 LLM 回传定义时带的 oneof 包装键，返回裸定义对象。
+
+    get_test_case / get_api 返回的 JSON 形状是 case.lowcode.{...} / api.http.{...}
+    （oneof 键），LLM 回传 definition/api 时常照抄这个形状，而 protojson
+    拒绝未知字段（如 LowCodeCase has no field named "lowcode"）。这里逐层
+    剥掉包装键（最多 3 层，防深包），取回裸定义；无包装时原样返回。"""
+    cur: Any = d
+    for _ in range(3):
+        if not isinstance(cur, dict):
+            return d if isinstance(d, dict) else {}
+        hit = next((k for k in wrappers if k in cur and isinstance(cur[k], dict)), None)
+        if hit is None:
+            break
+        cur = cur[hit]
+    return cur if isinstance(cur, dict) else {}
 
 
 # ---------------------------------------------------------------------------
