@@ -2,7 +2,7 @@
 // 及其显示层辅助函数。与对话状态无关，只吃 props。
 import { memo, useEffect, useState } from 'react'
 import { Button, Space, Tag, Typography } from 'antd'
-import { ClockCircleOutlined, LoadingOutlined } from '@ant-design/icons'
+import { ClockCircleOutlined, DownOutlined, LoadingOutlined, RightOutlined } from '@ant-design/icons'
 import MarkdownView from '../../components/MarkdownView'
 import { PALETTE } from '../../theme'
 
@@ -116,35 +116,64 @@ export const PartView = memo(function PartView({ part, role, onRespond }: {
   // 工具 part：静态工具 type 形如 tool-<name>，动态工具为 dynamic-tool + toolName
   const toolName = part.type === 'dynamic-tool' ? part.toolName : String(part.type).replace(/^tool-/, '')
   if (part.type === 'dynamic-tool' || String(part.type).startsWith('tool-')) {
-    return (
-      <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: 8, margin: '4px 0', fontSize: 12 }}>
-        <Space>
-          <Tag color="blue">{toolName}</Tag>
-          <StateTag state={part.state} />
-        </Space>
-        {part.input != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {stringifyToolValue(part.input)}
-          </pre>
-        )}
-        {part.state === 'approval-requested' && (
-          <Space>
-            <Button size="small" type="primary" onClick={() => onRespond(part, true)}>批准执行</Button>
-            <Button size="small" danger onClick={() => onRespond(part, false)}>拒绝</Button>
-          </Space>
-        )}
-        {part.state === 'approval-responded' && <Typography.Text type="secondary">已审批，等待执行…</Typography.Text>}
-        {part.state === 'output-available' && part.output != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {stringifyToolValue(part.output)}
-          </pre>
-        )}
-        {part.state === 'output-error' && <Typography.Text type="danger">{part.errorText}</Typography.Text>}
-      </div>
-    )
+    return <ToolCard part={part} toolName={toolName} onRespond={onRespond} />
   }
   return null
 })
+
+// 工具调用可能带很长的 input/output：默认折叠只留名称+状态，点开看全文；
+// 审批与失败态默认展开（需要立即看到按钮/错误）。pre 统一自动换行，
+// 长行不再撑出横向滚动条。
+const TOOL_PRE_STYLE = {
+  margin: '4px 0', maxHeight: 120, overflow: 'auto',
+  whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+} as const
+
+function ToolCard({ part, toolName, onRespond }: {
+  part: any
+  toolName: string
+  onRespond: (p: any, ok: boolean) => void
+}) {
+  // 用户未点过按钮时按状态推导默认值：审批/失败展开，其余折叠；
+  // 审批态始终强制展开（批准/拒绝按钮必须可见）
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null)
+  const expanded = part.state === 'approval-requested' ||
+    (userExpanded ?? part.state === 'output-error')
+
+  return (
+    <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: 8, margin: '4px 0', fontSize: 12 }}>
+      <Space size={4}>
+        <Button
+          size="small" type="text"
+          icon={expanded ? <DownOutlined /> : <RightOutlined />}
+          onClick={() => setUserExpanded(!expanded)}
+          title={expanded ? '收起' : '展开'}
+          style={{ width: 20, height: 20, padding: 0 }}
+        />
+        <Tag color="blue">{toolName}</Tag>
+        <StateTag state={part.state} />
+      </Space>
+      {expanded && part.input != null && (
+        <pre style={TOOL_PRE_STYLE}>
+          {stringifyToolValue(part.input)}
+        </pre>
+      )}
+      {expanded && part.state === 'approval-requested' && (
+        <Space>
+          <Button size="small" type="primary" onClick={() => onRespond(part, true)}>批准执行</Button>
+          <Button size="small" danger onClick={() => onRespond(part, false)}>拒绝</Button>
+        </Space>
+      )}
+      {expanded && part.state === 'approval-responded' && <Typography.Text type="secondary">已审批，等待执行…</Typography.Text>}
+      {expanded && part.state === 'output-available' && part.output != null && (
+        <pre style={TOOL_PRE_STYLE}>
+          {stringifyToolValue(part.output)}
+        </pre>
+      )}
+      {expanded && part.state === 'output-error' && <Typography.Text type="danger">{part.errorText}</Typography.Text>}
+    </div>
+  )
+}
 
 function StateTag({ state }: { state?: string }) {
   const map: Record<string, [string, string]> = {
