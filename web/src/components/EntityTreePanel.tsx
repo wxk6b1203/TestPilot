@@ -357,6 +357,17 @@ export default function EntityTreePanel({
   const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
     const d = parseKey(dragKey)
     const t = parseKey(dropKey)
+    const draggedNodeId = d.kind === 'folder' ? d.id : nodeMeta.byRef[d.id] ?? ''
+
+    // 插入点统一按「排除被拖节点后的兄弟序」计算：若用包含被拖节点的数组
+    // findIndex，同父向下拖时目标序号会偏大 1，splice 落点后移一位
+    const insertIndex = (parentId: string, targetNodeId: string, after: boolean): number => {
+      const ids = (nodeMeta.children[parentId] ?? [])
+        .map((s) => s.id).filter((id) => id !== draggedNodeId)
+      const i = ids.indexOf(targetNodeId)
+      return i < 0 ? ids.length : i + (after ? 1 : 0)
+    }
+
     let parentId = ''
     let index: number | null = null
     if (t.kind === 'root') {
@@ -366,18 +377,15 @@ export default function EntityTreePanel({
         parentId = t.id
       } else {
         parentId = nodeMeta.parent[t.id] ?? ''
-        const siblings = nodeMeta.children[parentId] ?? []
-        index = siblings.findIndex((c) => c.id === t.id) + (dropPos > 0 ? 1 : 0)
+        index = insertIndex(parentId, t.id, dropPos > 0)
       }
     } else {
       const nodeId = nodeMeta.byRef[t.id]
       if (nodeId) {
         parentId = nodeMeta.parent[nodeId] ?? ''
-        const siblings = nodeMeta.children[parentId] ?? []
-        index = siblings.findIndex((c) => c.id === nodeId) + (dropPos >= 0 ? 1 : 0)
+        index = insertIndex(parentId, nodeId, dropPos >= 0)
       }
     }
-    const draggedNodeId = d.kind === 'folder' ? d.id : nodeMeta.byRef[d.id] ?? ''
     try {
       if (!draggedNodeId) {
         await post('/api/v1/tree/nodes', {
