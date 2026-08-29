@@ -16,6 +16,8 @@ import MarkdownView from '../components/MarkdownView'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
 
+const SESSIONS_PAGE_SIZE = 50
+
 interface Session {
   id: string
   title: string
@@ -149,6 +151,8 @@ export default function Copilot() {
   const [sessionId, setSessionId] = useState('')
   const sessionIdRef = useRef('') // 供 transport 回调读取最新会话（不回环依赖 state）
   const [sessions, setSessions] = useState<Session[]>([])
+  const [sessionsTotal, setSessionsTotal] = useState(0)
+  const [sessionsPage, setSessionsPage] = useState(1)
   const [view, setView] = useState<'chat' | 'trash'>('chat')
   const [trash, setTrash] = useState<TrashSession[]>([])
   const [trashTotal, setTrashTotal] = useState(0)
@@ -169,8 +173,14 @@ export default function Copilot() {
     }
   }, [input])
 
-  const loadSessions = () =>
-    get<ListResp<Session>>('/api/v1/copilot/sessions?page_size=500').then((r) => setSessions(r.items))
+  // 会话列表：服务端分页（50/页，底部小翻页器，无页大小切换）
+  const loadSessions = (page = sessionsPage) =>
+    get<ListResp<Session>>(`/api/v1/copilot/sessions?page=${page}&page_size=50`)
+      .then((r) => {
+        setSessions(r.items ?? [])
+        setSessionsTotal(r.total ?? 0)
+      })
+      .catch((e: any) => message.error(e.message))
 
   // 回收站：服务端分页（Pagination 翻页器）
   const loadTrash = (page = trashPage, size = trashPageSize) =>
@@ -194,7 +204,12 @@ export default function Copilot() {
     try {
       await del(`/api/v1/copilot/sessions/${s.id}`)
       message.success('已移入回收站')
-      setSessions((prev) => prev.filter((x) => x.id !== s.id))
+      // 当前页删空则回退一页（与回收站翻页器同策略）
+      const left = sessionsTotal - 1
+      const maxPage = Math.max(1, Math.ceil(left / SESSIONS_PAGE_SIZE))
+      const next = Math.min(sessionsPage, maxPage)
+      if (next !== sessionsPage) setSessionsPage(next)
+      await loadSessions(next)
       if (sessionId === s.id) newChat()
     } catch (e: any) {
       message.error(e.message)
@@ -245,7 +260,8 @@ export default function Copilot() {
           if (sid && sid !== sessionIdRef.current) {
             sessionIdRef.current = sid
             setSessionId(sid)
-            loadSessions()
+            setSessionsPage(1) // 新会话置顶，回到第一页
+            loadSessions(1)
           }
           return res
         },
@@ -318,7 +334,7 @@ export default function Copilot() {
   }, [messages])
 
   useEffect(() => {
-    loadSessions()
+    loadSessions(1)
   }, [])
   useEffect(() => {
     // 流式期间按帧滚动；用户向上翻阅历史（离底部 >120px）时不抢滚动位置
@@ -474,12 +490,19 @@ export default function Copilot() {
               key={s.id}
               onClick={() => openSession(s.id)}
               style={{
-                cursor: 'pointer', padding: '6px 8px', borderRadius: 6, margin: '2px 4px',
-                display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
+                cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: 8,
+                border: `1px solid ${PALETTE.border}`, borderRadius: 6,
+                padding: '8px 10px', marginBottom: 8,
                 background: s.id === sessionId ? PALETTE.selectedRow : undefined,
               }}
             >
-              <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{s.title || '新对话'}</Typography.Text>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <Typography.Text ellipsis style={{ fontSize: 13 }}>{s.title || '新对话'}</Typography.Text>
+                <div style={{ fontSize: 12, color: PALETTE.textTertiary, marginTop: 2 }}>
+                  创建于 {formatTime(s.created_at)}
+                </div>
+              </div>
               <Space size={4} onClick={(e) => e.stopPropagation()}>
                 <Popconfirm
                   title="删除会话？"
@@ -497,8 +520,17 @@ export default function Copilot() {
             <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无会话</div>
           )}
         </div>
-        {/* 固定底栏：回收站入口 */}
-        <div style={{ flexShrink: 0, paddingTop: 8, marginTop: 8, borderTop: `1px solid ${PALETTE.border}` }}>
+        {sessionsTotal > 0 && (
+          <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', paddingTop: 6 }}>
+            <Pagination
+              size="small" current={sessionsPage} pageSize={SESSIONS_PAGE_SIZE} total={sessionsTotal}
+              hideOnSinglePage
+              onChange={(pg) => { setSessionsPage(pg); loadSessions(pg) }}
+            />
+          </div>
+        )}
+        {/* 固定底栏：回收站入口（负外边距抵消侧栏 padding，分隔线贯穿左右） */}
+        <div style={{ flexShrink: 0, margin: '8px -8px 0', padding: '8px 8px 0', borderTop: `1px solid ${PALETTE.border}` }}>
           <Button
             size="small" block icon={<DeleteOutlined />}
             type={view === 'trash' ? 'primary' : 'default'}
