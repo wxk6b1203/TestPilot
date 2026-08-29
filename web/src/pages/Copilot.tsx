@@ -1,38 +1,24 @@
 // Copilot 对话页：Vercel AI SDK v7（ai + @ai-sdk/react useChat）消费 SSE + 写操作 HITL 审批。
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+// 本文件只保留对话主流程（transport/useChat/看门狗/消息气泡/输入框）；
+// 会话侧栏、回收站、消息部件分别拆在 ./copilot/ 下。
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
-import { Button, Input, Pagination, Popconfirm, Space, Tag, Typography } from 'antd'
+import { Button, Input, Tag, Typography } from 'antd'
 import {
-  ArrowLeftOutlined, ClockCircleOutlined, CopyOutlined, DeleteOutlined, EnvironmentOutlined,
-  LoadingOutlined, PlusOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
+  CopyOutlined, EnvironmentOutlined, ProjectOutlined, RobotOutlined, SendOutlined, StopOutlined,
 } from '@ant-design/icons'
 import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai'
 import type { UIMessage } from 'ai'
-import { del, get, getToken } from '../api'
+import { get, getToken } from '../api'
 import type { ListResp } from '../api'
 import { useLayout } from '../hooks/useLayout'
-import MarkdownView from '../components/MarkdownView'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
+import SessionList from './copilot/SessionList'
+import TrashView from './copilot/TrashView'
+import { BusyIndicator, PartView } from './copilot/MessageParts'
 
-const SESSIONS_PAGE_SIZE = 50
-
-interface Session {
-  id: string
-  title: string
-  created_at: string
-}
-
-interface TrashSession {
-  id: string
-  title: string
-  created_at: string
-  deleted_at: string
-  message_count: number
-}
-
-// 空态快捷示例：让新用户一眼看到 Copilot 的能力入口（含 Playwright UI 用例生成）
 const SUGGESTIONS = [
   '当前项目有哪些接口',
   '帮我分析最近一次失败的运行',
@@ -150,14 +136,8 @@ export default function Copilot() {
 
   const [sessionId, setSessionId] = useState('')
   const sessionIdRef = useRef('') // 供 transport 回调读取最新会话（不回环依赖 state）
-  const [sessions, setSessions] = useState<Session[]>([])
-  const [sessionsTotal, setSessionsTotal] = useState(0)
-  const [sessionsPage, setSessionsPage] = useState(1)
   const [view, setView] = useState<'chat' | 'trash'>('chat')
-  const [trash, setTrash] = useState<TrashSession[]>([])
-  const [trashTotal, setTrashTotal] = useState(0)
-  const [trashPage, setTrashPage] = useState(1)
-  const [trashPageSize, setTrashPageSize] = useState(10)
+  const [sessionRefresh, setSessionRefresh] = useState(0) // 递增触发侧栏回第一页重拉
   const [input, setInput] = useState('')
   const bottomRef = useRef<HTMLDivElement>(null)
   // 多行输入框：修饰键换行时手工插 \n，随后恢复光标位置
@@ -173,62 +153,12 @@ export default function Copilot() {
     }
   }, [input])
 
-  // 会话列表：服务端分页（50/页，底部小翻页器，无页大小切换）
-  const loadSessions = (page = sessionsPage) =>
-    get<ListResp<Session>>(`/api/v1/copilot/sessions?page=${page}&page_size=50`)
-      .then((r) => {
-        setSessions(r.items ?? [])
-        setSessionsTotal(r.total ?? 0)
-      })
-      .catch((e: any) => message.error(e.message))
-
-  // 回收站：服务端分页（Pagination 翻页器）
-  const loadTrash = (page = trashPage, size = trashPageSize) =>
-    get<ListResp<TrashSession>>(`/api/v1/copilot/trash?page=${page}&page_size=${size}`)
-      .then((r) => {
-        setTrash(r.items ?? [])
-        setTrashTotal(r.total ?? 0)
-      })
-      .catch((e: any) => message.error(e.message))
-
   const openTrash = () => {
     if (busy) stop()
-    setView('trash')
-    setTrashPage(1)
-    loadTrash(1)
+    setView('trash') // TrashView 挂载时自行拉第一页
   }
 
   const backToChat = () => setView('chat')
-
-  const confirmDeleteSession = async (s: Session) => {
-    try {
-      await del(`/api/v1/copilot/sessions/${s.id}`)
-      message.success('已移入回收站')
-      // 当前页删空则回退一页（与回收站翻页器同策略）
-      const left = sessionsTotal - 1
-      const maxPage = Math.max(1, Math.ceil(left / SESSIONS_PAGE_SIZE))
-      const next = Math.min(sessionsPage, maxPage)
-      if (next !== sessionsPage) setSessionsPage(next)
-      await loadSessions(next)
-      if (sessionId === s.id) newChat()
-    } catch (e: any) {
-      message.error(e.message)
-    }
-  }
-
-  const purgeTrash = async (id: string) => {
-    try {
-      await del(`/api/v1/copilot/trash/${id}`)
-      message.success('已彻底删除')
-      const left = trashTotal - 1
-      const maxPage = Math.max(1, Math.ceil(left / trashPageSize))
-      const next = Math.min(trashPage, maxPage)
-      if (next !== trashPage) setTrashPage(next)
-      await loadTrash(next)
-    } catch (e: any) {
-      message.error(e.message)
-    }
-  }
 
   const transport = useMemo(
     () =>
@@ -260,8 +190,7 @@ export default function Copilot() {
           if (sid && sid !== sessionIdRef.current) {
             sessionIdRef.current = sid
             setSessionId(sid)
-            setSessionsPage(1) // 新会话置顶，回到第一页
-            loadSessions(1)
+            setSessionRefresh((k) => k + 1) // 新会话置顶，侧栏回第一页
           }
           return res
         },
@@ -333,9 +262,6 @@ export default function Copilot() {
     return groups
   }, [messages])
 
-  useEffect(() => {
-    loadSessions(1)
-  }, [])
   useEffect(() => {
     // 流式期间按帧滚动；用户向上翻阅历史（离底部 >120px）时不抢滚动位置
     const frame = window.requestAnimationFrame(() => {
@@ -476,127 +402,20 @@ export default function Copilot() {
 
   return (
     <div style={{ display: 'flex', height: '100%' }}>
-      {/* 会话列表：常驻左栏，全高，内部滚动 */}
-      <div style={{
-        flex: '0 0 260px', minWidth: 0, borderRight: `1px solid ${PALETTE.border}`,
-        display: 'flex', flexDirection: 'column', padding: 8, background: '#FFFFFF',
-      }}>
-        <Button block icon={<PlusOutlined />} onClick={newChat} style={{ marginBottom: 8, flexShrink: 0 }}>
-          新会话
-        </Button>
-        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-          {sessions.map((s) => (
-            <div
-              key={s.id}
-              onClick={() => openSession(s.id)}
-              style={{
-                cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8,
-                border: `1px solid ${PALETTE.border}`, borderRadius: 6,
-                padding: '8px 10px', marginBottom: 8,
-                background: s.id === sessionId ? PALETTE.selectedRow : undefined,
-              }}
-            >
-              <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>{s.title || '新对话'}</Typography.Text>
-              <Space size={4} onClick={(e) => e.stopPropagation()}>
-                <Popconfirm
-                  title="删除会话？"
-                  description="删除后会移入回收站，30 天后自动清理"
-                  onConfirm={async () => {
-                    await confirmDeleteSession(s)
-                  }}
-                >
-                  <Button size="small" danger type="text" icon={<DeleteOutlined />} />
-                </Popconfirm>
-              </Space>
-            </div>
-          ))}
-          {sessions.length === 0 && (
-            <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无会话</div>
-          )}
-        </div>
-        {sessionsTotal > 0 && (
-          <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', paddingTop: 6 }}>
-            <Pagination
-              size="small" current={sessionsPage} pageSize={SESSIONS_PAGE_SIZE} total={sessionsTotal}
-              hideOnSinglePage
-              onChange={(pg) => { setSessionsPage(pg); loadSessions(pg) }}
-            />
-          </div>
-        )}
-        {/* 固定底栏：回收站入口（负外边距抵消侧栏 padding，分隔线贯穿左右） */}
-        <div style={{ flexShrink: 0, margin: '8px -8px 0', padding: '8px 8px 0', borderTop: `1px solid ${PALETTE.border}` }}>
-          <Button
-            size="small" block icon={<DeleteOutlined />}
-            type={view === 'trash' ? 'primary' : 'default'}
-            onClick={openTrash}
-          >
-            回收站
-          </Button>
-        </div>
-      </div>
+      {/* 会话列表：常驻左栏（数据自持，见 SessionList） */}
+      <SessionList
+        activeId={sessionId}
+        trashActive={view === 'trash'}
+        refreshKey={sessionRefresh}
+        onOpen={openSession}
+        onDeleted={(sid) => { if (sessionId === sid) newChat() }}
+        onNew={newChat}
+        onOpenTrash={openTrash}
+      />
 
       {/* 主工作区：对话 或 回收站 */}
       {view === 'trash' ? (
-        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF' }}>
-          <div style={{
-            padding: '8px 12px', borderBottom: `1px solid ${PALETTE.border}`,
-            display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
-          }}>
-            <Button size="small" icon={<ArrowLeftOutlined />} onClick={backToChat}>返回对话</Button>
-            <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>回收站</span>
-            <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>30 天后自动清理</span>
-          </div>
-          <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}>
-            {trash.length === 0 ? (
-              <div style={{ textAlign: 'center', color: PALETTE.textTertiary, paddingTop: 80 }}>
-                <DeleteOutlined style={{ fontSize: 28 }} />
-                <div style={{ marginTop: 8 }}>回收站是空的</div>
-              </div>
-            ) : (<>
-              {trash.map((item) => (
-              <div
-                key={item.id}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  border: `1px solid ${PALETTE.border}`, borderRadius: 6,
-                  padding: '8px 10px', marginBottom: 8,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <Typography.Text ellipsis style={{ fontSize: 13 }}>{item.title || '新对话'}</Typography.Text>
-                  <div style={{ fontSize: 12, color: PALETTE.textTertiary, marginTop: 2 }}>
-                    {item.message_count} 条消息 · 删除于 {formatTime(item.deleted_at)}
-                  </div>
-                </div>
-                <Popconfirm
-                  title="彻底删除后不可恢复"
-                  okText="彻底删除"
-                  okButtonProps={{ danger: true }}
-                  onConfirm={() => void purgeTrash(item.id)}
-                >
-                  <Button size="small" danger icon={<DeleteOutlined />}>彻底删除</Button>
-                </Popconfirm>
-              </div>
-            ))}
-              </>
-            )}
-          </div>
-          {trashTotal > 0 && (
-            <div style={{ flexShrink: 0, padding: '8px 12px', borderTop: `1px solid ${PALETTE.border}`, display: 'flex', justifyContent: 'flex-end' }}>
-              <Pagination
-                size="small" current={trashPage} pageSize={trashPageSize} total={trashTotal}
-                showSizeChanger pageSizeOptions={[10, 20, 50]}
-                showTotal={(t) => `共 ${t} 条`}
-                onChange={(pg, ps) => {
-                  setTrashPage(pg)
-                  setTrashPageSize(ps)
-                  loadTrash(pg, ps)
-                }}
-              />
-            </div>
-          )}
-        </div>
+        <TrashView onBack={backToChat} />
       ) : (
         <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: '#FFFFFF' }}>
           <div style={{
@@ -703,165 +522,4 @@ export default function Copilot() {
       )}
     </div>
   )
-}
-
-function formatTime(v: string) {
-  if (!v) return ''
-  const d = new Date(v)
-  if (Number.isNaN(d.getTime())) return v
-  return d.toLocaleString('zh-CN', { hour12: false })
-}
-
-// busy 期间的状态条：计时状态放在独立组件里，避免每秒触发 Copilot 整页重渲染
-function BusyIndicator({ idleTimeoutLabel }: { idleTimeoutLabel: string }) {
-  const [seconds, setSeconds] = useState(0)
-  useEffect(() => {
-    const startedAt = Date.now()
-    const timer = window.setInterval(() => {
-      setSeconds(Math.floor((Date.now() - startedAt) / 1000))
-    }, 1000)
-    return () => window.clearInterval(timer)
-  }, [])
-  return (
-    <div style={{
-      display: 'flex', alignItems: 'center', gap: 8,
-      padding: '2px 0 6px', fontSize: 12, color: PALETTE.textSecondary,
-    }}>
-      <LoadingOutlined spin style={{ color: PALETTE.primary }} />
-      <span>Copilot 正在处理，已等待 {seconds}s</span>
-      <span style={{ color: PALETTE.textTertiary }}>
-        · 连续 {idleTimeoutLabel}无新输出会自动停止
-      </span>
-      <ClockCircleOutlined />
-    </div>
-  )
-}
-
-
-// 整段 JSON 检测：工具返回/模型直接输出的 JSON 保持 pre + prettify，
-// 避免被 Markdown 当段落渲染后丢失缩进与换行
-const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
-
-function parseJSONObject(text: string): object | null {
-  const trimmed = text.trim()
-  if (!trimmed || (trimmed[0] !== '{' && trimmed[0] !== '[')) return null
-  try {
-    const value = JSON.parse(trimmed)
-    if (value !== null && typeof value === 'object') return value as object
-  } catch {
-    // 非 JSON
-  }
-  return null
-}
-
-// 工具返回/模型输出可能非常大：显示层先截断再做 JSON 解析/Markdown，
-// 避免一次 JSON.stringify/DOMPurify 把主线程卡死。完整数据仍由服务端持久化。
-const MAX_TOOL_VALUE_CHARS = 20_000
-const MAX_RICH_TEXT_CHARS = 200_000
-
-function truncateForDisplay(text: string, max: number): string {
-  if (text.length <= max) return text
-  return `${text.slice(0, max)}\n…[内容过长，显示已截断，共 ${text.length} 字符]`
-}
-
-// 工具卡 input/output 的显示值：
-// - JSON 字符串（常见于 Vercel AI 工具 args/result）→ parse 后按 1 空格缩进 prettify
-// - 普通字符串（错误信息等）→ 原文
-// - 对象/数组 → JSON.stringify prettify
-function stringifyToolValue(value: unknown): string {
-  if (typeof value === 'string') {
-    if (value.length > MAX_TOOL_VALUE_CHARS) return truncateForDisplay(value, MAX_TOOL_VALUE_CHARS)
-    const parsed = parseJSONObject(value)
-    if (parsed !== null) return JSON.stringify(parsed, null, 1)
-    return value
-  }
-  const text = JSON.stringify(value, null, 1) ?? String(value)
-  return truncateForDisplay(text, MAX_TOOL_VALUE_CHARS)
-}
-
-function prettifyJSONText(text: string): string | null {
-  const value = parseJSONObject(text)
-  return value === null ? null : JSON.stringify(value, null, 2)
-}
-
-// 单条 UIMessagePart 渲染：text / reasoning / tool（含审批态）。
-// memo：文本流每个 delta 都会产生新 message 快照，但未变化的工具卡应跳过重渲染。
-const PartView = memo(function PartView({ part, role, onRespond }: {
-  part: any
-  role: string
-  onRespond: (p: any, ok: boolean) => void
-}) {
-  if (part.type === 'text') {
-    const text = String(part.text ?? '')
-    if (role === 'assistant') {
-      const preStyle = {
-        margin: 0, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-        fontFamily: MONO, fontSize: 12, textAlign: 'left',
-      } as const
-      // 超长回复不再走 marked/DOMPurify（同步解析会冻结主线程），直接按纯文本展示
-      if (text.length > MAX_RICH_TEXT_CHARS) {
-        return <pre style={preStyle}>{text}</pre>
-      }
-      // 整段 JSON：沿用工具返回的 pre/prettify 呈现；否则 LLM 文本按 Markdown 渲染
-      const pretty = prettifyJSONText(text)
-      if (pretty !== null) {
-        return <pre style={preStyle}>{pretty}</pre>
-      }
-      return <MarkdownView text={text} />
-    }
-    // 用户输入保持纯文本，避免把用户敲的 # 等误渲染
-    // 用 span 继承气泡颜色（用户蓝底白字）；Typography 自带色会覆盖继承
-    return <span style={{ whiteSpace: 'pre-wrap' }}>{text}</span>
-  }
-  if (part.type === 'reasoning') {
-    return (
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }} ellipsis={{ expandable: true, symbol: '思考过程' }}>
-        {part.text}
-      </Typography.Paragraph>
-    )
-  }
-  // 工具 part：静态工具 type 形如 tool-<name>，动态工具为 dynamic-tool + toolName
-  const toolName = part.type === 'dynamic-tool' ? part.toolName : String(part.type).replace(/^tool-/, '')
-  if (part.type === 'dynamic-tool' || String(part.type).startsWith('tool-')) {
-    return (
-      <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: 8, margin: '4px 0', fontSize: 12 }}>
-        <Space>
-          <Tag color="blue">{toolName}</Tag>
-          <StateTag state={part.state} />
-        </Space>
-        {part.input != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {stringifyToolValue(part.input)}
-          </pre>
-        )}
-        {part.state === 'approval-requested' && (
-          <Space>
-            <Button size="small" type="primary" onClick={() => onRespond(part, true)}>批准执行</Button>
-            <Button size="small" danger onClick={() => onRespond(part, false)}>拒绝</Button>
-          </Space>
-        )}
-        {part.state === 'approval-responded' && <Typography.Text type="secondary">已审批，等待执行…</Typography.Text>}
-        {part.state === 'output-available' && part.output != null && (
-          <pre style={{ margin: '4px 0', maxHeight: 120, overflow: 'auto' }}>
-            {stringifyToolValue(part.output)}
-          </pre>
-        )}
-        {part.state === 'output-error' && <Typography.Text type="danger">{part.errorText}</Typography.Text>}
-      </div>
-    )
-  }
-  return null
-})
-
-function StateTag({ state }: { state?: string }) {
-  const map: Record<string, [string, string]> = {
-    'input-streaming': ['default', '参数生成中'],
-    'input-available': ['default', '待调用'],
-    'approval-requested': ['orange', '待审批'],
-    'approval-responded': ['gold', '已审批'],
-    'output-available': ['green', '已完成'],
-    'output-error': ['red', '失败'],
-  }
-  const [color, label] = map[state || ''] || ['default', state || '']
-  return <Tag color={color}>{label}</Tag>
 }
