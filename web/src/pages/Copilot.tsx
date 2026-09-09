@@ -294,19 +294,26 @@ export default function Copilot() {
         if (part) {
           part.state = 'output-available'
           part.output = tc.result
+          delete part.approval // 挂起态恢复时临时填的 approval，出结果后不应残留
           return true
         }
         return false
       }
       for (const m of r.items) {
-        const calls = JSON.parse(m.tool_calls || '[]')
+        const parsed = JSON.parse(m.tool_calls || '[]')
+        // 两种形状：数组（旧数据 / role=3）| {reasoning, calls}（新；thinking
+        // 模型如 deepseek-v4-flash 续跑工具调用时必须回传 reasoning_content，
+        // 刷新重建的历史若丢了 reasoning，批准后会被 DeepSeek 400 拒绝）
+        const norm = Array.isArray(parsed)
+          ? { reasoning: '', calls: parsed }
+          : { reasoning: parsed?.reasoning ?? '', calls: parsed?.calls ?? [] }
         if (m.role === 1) {
           msgs.push({ id: String(m.id), role: 'user', parts: [{ type: 'text', text: m.content }] })
           continue
         }
         if (m.role === 3) {
           // 工具结果行：合并回前面待输出的调用；找不到配对（旧数据孤行）才单独展示
-          const tc = calls[0]
+          const tc = norm.calls[0]
           if (tc && !mergeResult(tc)) {
             msgs.push({
               id: String(m.id), role: 'assistant',
@@ -319,14 +326,22 @@ export default function Copilot() {
           continue
         }
         const parts: any[] = []
+        if (norm.reasoning) parts.push({ type: 'reasoning', text: norm.reasoning })
         if (m.content) parts.push({ type: 'text', text: m.content })
-        calls.forEach((tc: any, idx: number) => {
+        norm.calls.forEach((tc: any, idx: number) => {
           const toolCallId = tc.tool_call_id || `${m.id}:${idx}`
           if (tc.result === undefined || tc.result === null) {
-            // 后端 schema：input-available 只需要 input；result 稍后按 ID 合并
-            const part = {
+            // 无结果调用 = 待审批（写工具 HITL 挂起后落库即此形状；run 中途
+            // 崩溃的只读调用也落这里，批准后走历史重放无害）。恢复
+            // approval-requested 让刷新后批准/拒绝按钮重现；approval.id 不参与
+            // 匹配（后端按 tool_call_id 配对），照 pydantic-ai adapter 官方
+            // 回放策略直接填 toolCallId。若后面真有结果行，mergeResult 会
+            // 兜底翻回 output-available。
+            const part: any = {
               type: 'dynamic-tool', toolName: tc.name, toolCallId,
-              state: 'input-available', input: tc.args ?? null,
+              state: 'approval-requested',
+              input: tc.args ?? null,
+              approval: { id: toolCallId },
             }
             parts.push(part)
             pendingCalls.set(toolCallId, part)

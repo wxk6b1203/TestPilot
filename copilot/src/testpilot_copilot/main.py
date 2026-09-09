@@ -24,6 +24,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -286,20 +287,31 @@ def _render_rows(messages: list[ModelMessage]) -> list[dict[str, Any]]:
                         ensure_ascii=False)})
         elif isinstance(m, ModelResponse):
             text: list[str] = []
+            thinking: list[str] = []
             calls: list[dict[str, Any]] = []
             for part in m.parts:
                 if isinstance(part, TextPart):
                     text.append(part.content)
+                elif isinstance(part, ThinkingPart):
+                    # thinking 模型（如 deepseek-v4-flash）要求历史 assistant 消息
+                    # 回传 reasoning_content，否则续跑工具调用直接 400（
+                    # "The `reasoning_content` in the thinking mode must be passed
+                    # back to the API"）。刷新后历史从落库重建，丢了就永久卡死。
+                    thinking.append(part.content)
                 elif isinstance(part, ToolCallPart):
                     # 落库时保留 tool_call_id：前端重载历史后必须按同一 ID
                     # 重建 call/result 配对，否则多工具调用会被拍平成重复 ID
                     calls.append({"name": part.tool_name,
                                   "args": part.args_as_json_str(),
                                   "tool_call_id": part.tool_call_id})
-            if text or calls:
+            if text or calls or thinking:
                 row: dict[str, Any] = {"role": 2, "content": "\n".join(text)}
-                if calls:
-                    row["tool_calls"] = json.dumps(calls, ensure_ascii=False)
+                if calls or thinking:
+                    # JSON 形状：数组 = 旧数据兼容；对象 = 新格式（reasoning + calls）。
+                    # Scheduler 纯透传，消费方只有前端 openSession（已兼容两种）。
+                    row["tool_calls"] = json.dumps(
+                        {"reasoning": "\n".join(thinking), "calls": calls},
+                        ensure_ascii=False)
                 rows.append(row)
     return rows
 

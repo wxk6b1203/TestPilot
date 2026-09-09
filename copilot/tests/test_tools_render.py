@@ -17,6 +17,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     TextPart,
+    ThinkingPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -113,9 +114,10 @@ def test_render_assistant_tool_call():
     row = rows[0]
     assert row["role"] == 2
     assert row["content"] == "我来查一下"
-    calls = json.loads(row["tool_calls"])
-    assert calls == [{"name": "list_projects", "args": '{"query":"demo"}',
-                      "tool_call_id": "t1"}]
+    payload = json.loads(row["tool_calls"])
+    assert payload["reasoning"] == ""
+    assert payload["calls"] == [{"name": "list_projects", "args": '{"query":"demo"}',
+                                 "tool_call_id": "t1"}]
 
 
 def test_render_assistant_tool_call_only_no_text():
@@ -125,8 +127,22 @@ def test_render_assistant_tool_call_only_no_text():
     rows = _render_rows([resp])
     assert rows[0]["role"] == 2
     assert rows[0]["content"] == ""
-    assert json.loads(rows[0]["tool_calls"])[0]["args"] == '{"run_id":"r1"}'
-    assert json.loads(rows[0]["tool_calls"])[0]["tool_call_id"] == "t2"
+    payload = json.loads(rows[0]["tool_calls"])
+    assert payload["calls"][0]["args"] == '{"run_id":"r1"}'
+    assert payload["calls"][0]["tool_call_id"] == "t2"
+
+
+def test_render_assistant_thinking_persisted():
+    """thinking 模型的 reasoning 必须落库：刷新重建的历史缺了它，
+    DeepSeek 会以 'reasoning_content must be passed back' 400 拒绝续跑。"""
+    resp = ModelResponse(parts=[
+        ThinkingPart(content="先查项目再创建"),
+        ToolCallPart(tool_name="create_project", args='{"name":"p"}', tool_call_id="t3"),
+    ])
+    rows = _render_rows([resp])
+    payload = json.loads(rows[0]["tool_calls"])
+    assert payload["reasoning"] == "先查项目再创建"
+    assert payload["calls"][0]["tool_call_id"] == "t3"
 
 
 def test_render_empty_response_skipped():
