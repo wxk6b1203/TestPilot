@@ -155,7 +155,7 @@ class CopilotDeps:
 # 只读工具（免审批）
 # ---------------------------------------------------------------------------
 
-readonly = FunctionToolset()
+readonly: FunctionToolset[CopilotDeps] = FunctionToolset()
 
 
 @readonly.tool
@@ -356,8 +356,7 @@ async def check_variable_refs(ctx: RunContext[CopilotDeps],
 # 写/触发工具（requires_approval → 前端 HITL 审批后执行，Scheduler 落审计）
 # ---------------------------------------------------------------------------
 
-writes = FunctionToolset()
-
+writes: FunctionToolset[CopilotDeps] = FunctionToolset()
 
 @writes.tool(requires_approval=True)
 async def create_project(ctx: RunContext[CopilotDeps], name: str,
@@ -942,7 +941,7 @@ _ = Any
 # 会话空闲 TTL 由 Scheduler 回收；快照在工具结果层二次截断（上下文预算）。
 # ---------------------------------------------------------------------------
 
-probe = FunctionToolset()
+probe: FunctionToolset[CopilotDeps] = FunctionToolset()
 
 
 def _clip_probe_snapshot(d: dict) -> dict:
