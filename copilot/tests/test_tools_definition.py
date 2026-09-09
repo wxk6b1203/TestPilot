@@ -62,3 +62,50 @@ def test_unwrapped_parse_still_rejects_unknown_fields():
         json_format_parse({"no_such_field": 1},
                           __import__("testpilot.common.v1.types_pb2",
                                      fromlist=["LowCodeCase"]).LowCodeCase())
+
+
+# ---- update_api：LLM 把 repeated 字段传成 map 形式的归一（线上报错回归）----
+
+def _types(name):
+    return __import__("testpilot.common.v1.types_pb2", fromlist=[name])
+
+
+def test_reported_update_api_map_headers():
+    """线上报错形状：LLM 传 api={"headers": {"x-test-type": "1"}}（map 形式），
+    protojson 对 repeated headers 抛 'repeated field headers must be in []'"""
+    from testpilot_copilot.tools import normalize_repeated_maps
+    incoming = {"headers": {"x-test-type": "1"}}
+    merged = {"method": "HTTP_METHOD_GET", "uri": "/echo", "headers": [
+        {"key": "Authorization", "value": "***"}]}
+    api = normalize_repeated_maps(incoming, "http")
+    h = _types("HttpApi").HttpApi()
+    json_format_parse({**merged, **api}, h)
+    kv = {x.key: x.value for x in h.headers}
+    # 字段级替换语义：incoming 的 headers 数组整体覆盖 base（与原实现一致）
+    assert kv == {"x-test-type": "1"}
+
+
+def test_normalize_keeps_array_form_and_covers_fields():
+    from testpilot_copilot.tools import normalize_repeated_maps
+    # 数组形式原样保留
+    arr = [{"key": "A", "value": "1"}]
+    out = normalize_repeated_maps({"headers": arr, "params": {"q": "x"}}, "http")
+    assert out["headers"] is arr
+    assert out["params"] == [{"key": "q", "value": "x"}]
+    # cookies 是 CookieParam（name/value），grpc 是 metadata
+    out = normalize_repeated_maps({"cookies": {"sid": "abc"}}, "http")
+    assert out["cookies"] == [{"name": "sid", "value": "abc"}]
+    out = normalize_repeated_maps({"metadata": {"token": "t"}}, "grpc")
+    assert out["metadata"] == [{"key": "token", "value": "t"}]
+    # 归一后掩码值仍能被 _contains_redacted 识别（map 形式带 *** 也不写回）
+    from testpilot_copilot.tools import _contains_redacted
+    redacted = normalize_repeated_maps({"headers": {"X-Auth": "***"}}, "http")
+    assert _contains_redacted(redacted["headers"]) is True
+
+
+def test_normalize_parse_grpc_api_metadata():
+    from testpilot_copilot.tools import normalize_repeated_maps
+    api = normalize_repeated_maps({"full_service": "pkg.Svc", "metadata": {"k": "v"}}, "grpc")
+    g = _types("GrpcApi").GrpcApi()
+    json_format_parse(api, g)
+    assert [(m.key, m.value) for m in g.metadata] == [("k", "v")]

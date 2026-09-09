@@ -423,9 +423,11 @@ async def create_grpc_api(ctx: RunContext[CopilotDeps],
 async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
                      kind: str = "http") -> dict:
     """修改已有接口。kind: http|grpc；api 为需要变更的字段（camelCase，如
-    {"uri": "/v2/echo", "headers": {...}, "body": {...}}），未提供的字段保持原值。
-    建议先 get_api 获取完整定义再改；api 直接传变更字段对象，不要按 get
-    返回的 JSON 包 http/grpc 包装键（多传了也会自动剥掉）；敏感 header/cookie
+    {"uri": "/v2/echo", "body": {...}}），未提供的字段保持原值。
+    headers/params/cookies/metadata 传 map（{"X-Test": "1"}）或数组
+    （[{"key":..,"value":..}]）均可，map 会自动转换。建议先 get_api 获取
+    完整定义再改；api 直接传变更字段对象，不要按 get 返回的 JSON 包
+    http/grpc 包装键（多传了也会自动剥掉）；敏感 header/cookie
     未修改时不会被覆盖。"""
     k = str(kind or "http").strip().lower()
     if k not in ("http", "grpc"):
@@ -439,7 +441,7 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
         raise ValueError(f"{k} api {api_id} not found")
     merged = {**base}
     if isinstance(api, dict):
-        api = strip_def_wrappers(api, ("http", "grpc", "api"))
+        api = normalize_repeated_maps(strip_def_wrappers(api, ("http", "grpc", "api")), k)
     for field, value in (api or {}).items():
         if value is None:
             continue
@@ -548,6 +550,38 @@ async def update_test_case(ctx: RunContext[CopilotDeps], case_id: str,
     r = await ctx.deps.sched.stub.UpdateTestCase(
         cpb.UpdateTestCaseRequest(ctx=ctx.deps.ctx(), case_id=str(case_id), case=case))
     return await to_dict_async(r)
+
+
+def _map_to_kv(value: Any) -> Any:
+    """map 形式 {k: v} → repeated KeyValue 数组 [{key, value}]；数组原样返回。"""
+    if isinstance(value, dict):
+        return [{"key": str(k), "value": "" if v is None else str(v)}
+                for k, v in value.items()]
+    return value
+
+
+def _map_to_cookie(value: Any) -> Any:
+    """map 形式 {名: 值} → repeated CookieParam 数组 [{name, value}]；数组原样返回。"""
+    if isinstance(value, dict):
+        return [{"name": str(k), "value": "" if v is None else str(v)}
+                for k, v in value.items()]
+    return value
+
+
+def normalize_repeated_maps(api: dict, kind: str) -> dict:
+    """把 LLM 传成 map 形式的 repeated 字段归一为数组（protojson 只认数组）。
+
+    update_api 的 docstring 示例曾写作 "headers": {...}，LLM 照抄 map 形式，
+    json_format.ParseDict 抛 'repeated field headers must be in []'；
+    headers/params/metadata → KeyValue，cookies → CookieParam(name/value)。
+    """
+    out = {**api}
+    for field in (("headers", "params") if kind == "http" else ("metadata",)):
+        if field in out:
+            out[field] = _map_to_kv(out[field])
+    if kind == "http" and "cookies" in out:
+        out["cookies"] = _map_to_cookie(out["cookies"])
+    return out
 
 
 def json_format_parse(d: dict, msg) -> None:
