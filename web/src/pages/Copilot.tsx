@@ -283,8 +283,8 @@ export default function Copilot() {
       const r = await get<ListResp<any>>(`/api/v1/copilot/sessions/${sid}/messages`)
       const msgs: UIMessage[] = []
       // 持久化把 assistant 的工具调用与其结果分成 role=2 / role=3 两行；
-      // 这里按 tool_call_id（旧数据无 id 时按工具名 FIFO）合并回同一个
-      // dynamic-tool part。绝不能把行 ID 当 toolCallId：一行多个工具调用会
+      // 这里按 tool_call_id（旧数据无 id 时按工具名 FIFO）合并回同一个工具
+      // part。绝不能把行 ID 当 toolCallId：一行多个工具调用会
       // 产生重复 tool_call_id，第二次发消息时 DeepSeek 直接 400。
       const pendingCalls = new Map<string, any>()
       const pendingByName = new Map<string, any[]>()
@@ -318,7 +318,7 @@ export default function Copilot() {
             msgs.push({
               id: String(m.id), role: 'assistant',
               parts: [{
-                type: 'dynamic-tool', toolName: tc.name, toolCallId: `${m.id}:0`,
+                type: `tool-${tc.name}`, toolCallId: `${m.id}:0`,
                 state: 'output-available', input: null, output: tc.result,
               }],
             })
@@ -337,8 +337,11 @@ export default function Copilot() {
             // 匹配（后端按 tool_call_id 配对），照 pydantic-ai adapter 官方
             // 回放策略直接填 toolCallId。若后面真有结果行，mergeResult 会
             // 兜底翻回 output-available。
+            // 必须建成静态形状 tool-<名>（与实时流一致）：后端续跑发的是不带
+            // dynamic 的静态 chunk，SDK 只原地更新静态 part；若建成
+            // dynamic-tool，SDK 匹配不上会再 push 一张卡死在「待调用」的重复卡。
             const part: any = {
-              type: 'dynamic-tool', toolName: tc.name, toolCallId,
+              type: `tool-${tc.name}`, toolCallId,
               state: 'approval-requested',
               input: tc.args ?? null,
               approval: { id: toolCallId },
@@ -350,7 +353,7 @@ export default function Copilot() {
             }
           } else {
             parts.push({
-              type: 'dynamic-tool', toolName: tc.name, toolCallId,
+              type: `tool-${tc.name}`, toolCallId,
               state: 'output-available', input: tc.args ?? null, output: tc.result,
             })
           }
