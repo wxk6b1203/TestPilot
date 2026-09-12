@@ -30,6 +30,10 @@ func (s *Server) createGrpcAPI(ctx fiber.Ctx) error {
 		return writeErr(ctx, fiber.StatusBadRequest, "full_service and method required")
 	}
 	assignIDs(&in, c.TenantID)
+	// C6：project_id 必须属于本租户（自定义创建路径不走 createOf，需单独校验）
+	if !validateRefs(s.db, ctx, &in) {
+		return nil
+	}
 	if err := s.db.Create(&in).Error; err != nil {
 		return writeInternalErr(ctx, err)
 	}
@@ -62,6 +66,10 @@ func (s *Server) createProtoFile(ctx fiber.Ctx) error {
 		return writeErr(ctx, fiber.StatusBadRequest, "filename and content required")
 	}
 	assignIDs(&in, c.TenantID)
+	// C6：project_id 必须属于本租户（自定义创建路径不走 createOf，需单独校验）
+	if !validateRefs(s.db, ctx, &in) {
+		return nil
+	}
 	if err := s.db.Create(&in).Error; err != nil {
 		return writeInternalErr(ctx, err)
 	}

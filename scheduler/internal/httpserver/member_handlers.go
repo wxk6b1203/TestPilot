@@ -55,6 +55,10 @@ func (s *Server) addMember(ctx fiber.Ctx) error {
 	if in.Username == "" || in.Role < auth.RoleOwner || in.Role > auth.RoleViewer {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "username 必填，role ∈ [1..4]"))
 	}
+	// 路由门槛只到 admin：授予 owner 必须 caller 本身是 owner，否则 admin 可自我提权
+	if in.Role == auth.RoleOwner && c.Role != auth.RoleOwner {
+		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeForbidden, "only owner can grant the owner role"))
+	}
 	var u model.User
 	err := s.db.Where("username = ?", in.Username).First(&u).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -112,6 +116,10 @@ func (s *Server) updateMemberRole(ctx fiber.Ctx) error {
 	if in.Role < auth.RoleOwner || in.Role > auth.RoleViewer {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "role ∈ [1..4]"))
 	}
+	// 路由门槛只到 admin：提为 owner 必须 caller 本身是 owner（admin 提权绕过）
+	if in.Role == auth.RoleOwner && c.Role != auth.RoleOwner {
+		return writeAppErr(ctx, apperr.Forbidden(apperr.CodeForbidden, "only owner can grant the owner role"))
+	}
 	var m model.TenantMember
 	if err := s.db.Where("tenant_id = ? AND user_id = ?", c.TenantID, uid).First(&m).Error; err != nil {
 		return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "member not found"))
@@ -124,7 +132,10 @@ func (s *Server) updateMemberRole(ctx fiber.Ctx) error {
 	if m.Role == auth.RoleOwner && in.Role != auth.RoleOwner && s.ownerCount(c.TenantID) <= 1 {
 		return writeAppErr(ctx, apperr.Conflict(apperr.CodeLastOwner, "cannot demote the last owner"))
 	}
-	s.db.Model(&m).Update("role", in.Role)
+	// 落库失败仍返 200 会谎报成功（前端不再重试，角色变更丢失）
+	if err := s.db.Model(&m).Update("role", in.Role).Error; err != nil {
+		return writeInternalErr(ctx, err)
+	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"user_id": uid, "role": in.Role})
 }
 
@@ -141,7 +152,10 @@ func (s *Server) removeMember(ctx fiber.Ctx) error {
 	if m.Role == auth.RoleOwner && s.ownerCount(c.TenantID) <= 1 {
 		return writeAppErr(ctx, apperr.Conflict(apperr.CodeLastOwner, "cannot remove the last owner"))
 	}
-	s.db.Delete(&m)
+	// 落库失败仍返 200 会谎报成功（成员未真正移除）
+	if err := s.db.Delete(&m).Error; err != nil {
+		return writeInternalErr(ctx, err)
+	}
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 

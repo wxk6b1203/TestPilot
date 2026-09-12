@@ -9,6 +9,7 @@ package grpcserver
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -85,17 +86,84 @@ func CopilotAuthUnary(jwtSecret string) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.PermissionDenied,
 				"request context tenant/user does not match jwt claims")
 		}
+		// 角色边界与 REST 面对齐（server.go：viewer 只读 GET，member 才有领域
+		// CRUD/触发）：读工具对 viewer 开放，写/触发工具要求 member 及以上。
+		// 未知方法按需写权限处理（fail-closed），新增写 RPC 不至于漏防。
+		if copilotMethodRequiresWrite(info.FullMethod) && claims.Role > auth.RoleMember {
+			return nil, status.Error(codes.PermissionDenied,
+				"role "+auth.RoleName(claims.Role)+" lacks permission (requires "+auth.RoleName(auth.RoleMember)+")")
+		}
 		return handler(ctx, req)
 	}
 }
 
-// WorkerAuthStream 校验 Worker 流的共享令牌。
-func WorkerAuthStream(workerToken string) grpc.StreamServerInterceptor {
+// copilotMethodRequiresWrite 按 RPC 方法名判定是否写/触发类工具。
+// 读前缀：List/Get/Query/Check；写前缀：Create/Update/Delete/Import/Apply/Trigger。
+func copilotMethodRequiresWrite(fullMethod string) bool {
+	name := fullMethod
+	if i := strings.LastIndexByte(name, '/'); i >= 0 {
+		name = name[i+1:]
+	}
+	for _, prefix := range []string{"List", "Get", "Query", "Check"} {
+		if strings.HasPrefix(name, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
+// workerTokenFromContext 从流的 incoming metadata 再取一次 x-worker-token
+// （Connect 内注册时用：租户绑定需要"出示令牌 vs 声明租户"精确比对）。
+func workerTokenFromContext(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	toks := md.Get("x-worker-token")
+	if len(toks) != 1 {
+		return ""
+	}
+	return toks[0]
+}
+
+// ParseWorkerTenantTokens 解析 TP_WORKER_TENANT_TOKENS：
+// "租户ID=令牌,租户ID=令牌"。空串返回 nil（不启用租户绑定）。
+func ParseWorkerTenantTokens(spec string) (map[int64]string, error) {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		return nil, nil
+	}
+	out := make(map[int64]string)
+	for _, part := range strings.Split(spec, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		id, tok, found := strings.Cut(part, "=")
+		if !found || strings.TrimSpace(id) == "" || strings.TrimSpace(tok) == "" {
+			return nil, fmt.Errorf("invalid TP_WORKER_TENANT_TOKENS entry %q (want tenant_id=token)", part)
+		}
+		tenant, err := strconv.ParseInt(strings.TrimSpace(id), 10, 64)
+		if err != nil || tenant <= 0 {
+			return nil, fmt.Errorf("invalid TP_WORKER_TENANT_TOKENS tenant id %q", id)
+		}
+		out[tenant] = strings.TrimSpace(tok)
+	}
+	return out, nil
+}
+
+// WorkerAuthStream 校验 Worker 流令牌：共享令牌，或（配置了租户映射时）
+// 任一租户令牌——精确的租户↔令牌绑定在 Connect 注册帧时校验。
+func WorkerAuthStream(workerToken string, tenantTokens map[int64]string) grpc.StreamServerInterceptor {
+	known := make(map[string]struct{})
+	for _, t := range tenantTokens {
+		known[t] = struct{}{}
+	}
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if info.FullMethod != workerServiceConnect {
 			return handler(srv, ss)
 		}
-		if workerToken == "" {
+		if workerToken == "" && len(known) == 0 {
 			return status.Error(codes.Unauthenticated,
 				"scheduler worker_token 未配置：拒绝一切 Worker 注册（请设置 TP_WORKER_TOKEN）")
 		}
@@ -104,8 +172,13 @@ func WorkerAuthStream(workerToken string) grpc.StreamServerInterceptor {
 			return status.Error(codes.Unauthenticated, "missing worker token metadata")
 		}
 		toks := md.Get("x-worker-token")
-		if len(toks) != 1 || toks[0] == "" || toks[0] != workerToken {
+		if len(toks) != 1 || toks[0] == "" {
 			return status.Error(codes.Unauthenticated, "invalid worker token")
+		}
+		if toks[0] != workerToken {
+			if _, isTenant := known[toks[0]]; !isTenant {
+				return status.Error(codes.Unauthenticated, "invalid worker token")
+			}
 		}
 		return handler(srv, ss)
 	}

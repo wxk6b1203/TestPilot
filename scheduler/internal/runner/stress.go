@@ -2,6 +2,7 @@ package runner
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -11,6 +12,7 @@ import (
 	"github.com/testpilot/testpilot/internal/dispatch"
 	"github.com/testpilot/testpilot/internal/logging"
 	"github.com/testpilot/testpilot/internal/model"
+	"github.com/testpilot/testpilot/internal/quota"
 	"github.com/testpilot/testpilot/internal/tracing"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
@@ -24,6 +26,14 @@ import (
 func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int64, triggeredBy string) (int64, error) {
 	ctx, span := otel.Tracer("testpilot/scheduler").Start(ctx, "runner.trigger_stress")
 	defer span.End()
+	// 配额闸门：REST（runStressPlan）与 gRPC（Copilot TriggerStress）共用本入口，
+	// 一处检查两条路径同时生效（此前两侧均无配额，与功能 Trigger 不对称）。
+	// quota 包无压测专用 metric，取 monthly_runs 做超限闸门——quota.Usage 按
+	// test_runs 表计量，StressRun 不计入用量，故只做门槛不做计量；concurrent_runs
+	// 语义是功能 run 并发，与压测独占 Worker 的模型不对应，不取。
+	if err := quota.Check(r.db, tenantID, quota.MetricMonthlyRuns, 1); err != nil {
+		return 0, err
+	}
 	var plan model.StressTestPlan
 	if err := r.db.Where("id = ? AND tenant_id = ?", planID, tenantID).First(&plan).Error; err != nil {
 		return 0, apperr.NotFound(apperr.CodeNotFound, "stress plan not found")
@@ -145,9 +155,14 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 	r.disp.RegisterStressRun(run.ID, n)
 	base, extra := totalTarget/n, totalTarget%n
 	dispatched := 0
-	for i := 0; i < n; i++ {
+	// 候选逐个尝试直至凑满 n 台：DispatchStress CAS 失败说明该 Worker 已被并发
+	// 压测抢占，跳过换下一个；候选耗尽仍不足时按实发数收尾（remaining 已逐次回退）
+	for _, w := range workers {
+		if dispatched >= n {
+			break
+		}
 		assigned := base
-		if i < extra {
+		if dispatched < extra {
 			assigned++
 		}
 		if assigned <= 0 {
@@ -162,7 +177,7 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 			Payload: &workerv1.TaskAssignment_Stress{
 				Stress: &workerv1.StressTask{
 					Plan:                protoPlan,
-					WorkerIndex:         int32(i),
+					WorkerIndex:         int32(dispatched),
 					AssignedConcurrency: int32(assigned),
 					MetricsLabel:        idStr(run.ID),
 					InlineApi:           ToProtoHTTP(&api),
@@ -176,11 +191,15 @@ func (r *Runner) TriggerStress(ctx context.Context, tenantID, planID, envID int6
 			Env:         execEnv,
 			Traceparent: traceparent,
 		}
-		if err := r.disp.DispatchStress(workers[i], task); err != nil {
+		if err := r.disp.DispatchStress(w, task); err != nil {
 			// 失败不递减的话 remaining 与实际派发数不一致 → 压测永久挂起、
 			// 已派发 Worker 永久独占。这里同步回退计数。
 			r.disp.AdjustStressRun(run.ID, -1)
-			logging.L.Warnw("stress dispatch failed", "run_id", run.ID, "worker", workers[i].ID, "err", err)
+			if errors.Is(err, dispatch.ErrWorkerBusy) {
+				logging.L.Infow("stress worker taken by another run, skip", "run_id", run.ID, "worker", w.ID)
+			} else {
+				logging.L.Warnw("stress dispatch failed", "run_id", run.ID, "worker", w.ID, "err", err)
+			}
 			continue
 		}
 		dispatched++

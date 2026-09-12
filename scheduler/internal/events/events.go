@@ -69,11 +69,13 @@ func (b *Broker) Subscribe(channels []string) *Subscription {
 }
 
 // Publish 向 channel 的所有订阅者投递事件。无订阅者时直接丢弃。
+// 迭代必须在整个 RLock 内完成：Close/Subscribe 持写锁增删同一内层 map，
+// 锁外迭代会触发 "concurrent map iteration and map write" fatal（不可 recover）。
+// 锁内 non-block send 安全：channel 带缓冲且 select 有 default，不会阻塞。
 func (b *Broker) Publish(channel string, e Event) {
 	b.mu.RLock()
-	set := b.subs[channel]
-	b.mu.RUnlock()
-	for s := range set {
+	defer b.mu.RUnlock()
+	for s := range b.subs[channel] {
 		select {
 		case s.C <- e:
 		default:

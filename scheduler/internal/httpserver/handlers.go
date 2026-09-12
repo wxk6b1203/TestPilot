@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -277,6 +278,10 @@ func (s *Server) createAPI(ctx fiber.Ctx) error {
 	}
 	v := in.HttpApi
 	assignIDs(&v, c.TenantID)
+	// C6：project_id 必须属于本租户（自定义创建路径不走 createOf，需单独校验）
+	if !validateRefs(s.db, ctx, &v) {
+		return nil
+	}
 	// 指定目录时校验并取父路径；未指定挂根（根即普通目录）
 	parentPath := ""
 	if in.ParentID != 0 {
@@ -480,25 +485,62 @@ func (s *Server) updatePlan(ctx fiber.Ctx) error {
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, c.TenantID).First(&p).Error; err != nil {
 		return writeErr(ctx, fiber.StatusNotFound, "not found")
 	}
-	var in planPayload
-	if !decode(ctx, &in) {
+	// items 单独解码；plan 本体合并到取回的实体上（未传字段保持原值）——
+	// 解码到全新 struct 再 Save 全字段写，会把 created_at/project_id 等清零。
+	// items 未传 = 保持原成员（显式空数组才是清空），避免省略键误删全部条目
+	var probe struct {
+		Items json.RawMessage `json:"items"`
+	}
+	if !decode(ctx, &probe) {
 		return nil
 	}
-	in.TestPlan.ID = p.ID
-	in.TestPlan.TenantID = c.TenantID
+	hasItems := len(probe.Items) > 0 && !bytes.Equal(probe.Items, []byte("null"))
+	var items struct {
+		Items []model.TestPlanItem `json:"items"`
+	}
+	if hasItems {
+		if !decode(ctx, &items) {
+			return nil
+		}
+	}
+	if !decode(ctx, &p) {
+		return nil
+	}
+	forceIntField(&p, "ID", id) // ID/TenantID 不可变（body 注入不得改写主键/归属）
+	forceIntField(&p, "TenantID", c.TenantID)
+	// C6：body 可能改写 project_id/env_id——校验归属后再落库
+	if !validateRefs(s.db, ctx, &p) {
+		return nil
+	}
+	// items 的 case/suite 引用必须属于本租户（对齐 createPlan）
+	for i := range items.Items {
+		switch items.Items[i].RefType {
+		case 1:
+			if !ensureEntity(s.db, ctx, "case", items.Items[i].RefID) {
+				return nil
+			}
+		case 2:
+			if !ensureEntity(s.db, ctx, "suite", items.Items[i].RefID) {
+				return nil
+			}
+		}
+	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&in.TestPlan).Error; err != nil {
+		if err := tx.Save(&p).Error; err != nil {
 			return err
+		}
+		if !hasItems {
+			return nil
 		}
 		if err := tx.Where("plan_id = ? AND tenant_id = ?", p.ID, c.TenantID).
 			Delete(&model.TestPlanItem{}).Error; err != nil {
 			return err
 		}
-		for i := range in.Items {
-			in.Items[i].ID = model.NextID()
-			in.Items[i].TenantID = c.TenantID
-			in.Items[i].PlanID = p.ID
-			if err := tx.Create(&in.Items[i]).Error; err != nil {
+		for i := range items.Items {
+			items.Items[i].ID = model.NextID()
+			items.Items[i].TenantID = c.TenantID
+			items.Items[i].PlanID = p.ID
+			if err := tx.Create(&items.Items[i]).Error; err != nil {
 				return err
 			}
 		}
@@ -507,11 +549,53 @@ func (s *Server) updatePlan(ctx fiber.Ctx) error {
 	if err != nil {
 		return writeInternalErr(ctx, err)
 	}
-	return writeJSON(ctx, fiber.StatusOK, &in)
+	return writeJSON(ctx, fiber.StatusOK, &planPayload{TestPlan: p, Items: items.Items})
 }
 
+// deletePlan 软删计划并级联禁用引用它的 enabled schedule。
+// 否则 cron 条目仍按表达式触发：fire 因 plan 已删持续空转告警，重启时
+// NextRunAt 过期还会 misfire 补跑。Schedule 无 DeletedAt 无法软删，按禁用处理
+// （保留配置便于排查）；cron 条目摘除与 deleteSchedule 的 Remove 对齐。
 func (s *Server) deletePlan(ctx fiber.Ctx) error {
-	return deleteOf[model.TestPlan](s.db, ctx)
+	c := claimsOf(ctx)
+	id, ok := pathID(ctx, "id")
+	if !ok {
+		return nil
+	}
+	var disabled []model.Schedule
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		res := tx.Where("id = ? AND tenant_id = ?", id, c.TenantID).Delete(&model.TestPlan{})
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		if err := tx.Where("plan_id = ? AND tenant_id = ? AND enabled = ?", id, c.TenantID, true).
+			Find(&disabled).Error; err != nil {
+			return err
+		}
+		if len(disabled) == 0 {
+			return nil
+		}
+		ids := make([]int64, 0, len(disabled))
+		for _, sc := range disabled {
+			ids = append(ids, sc.ID)
+		}
+		return tx.Model(&model.Schedule{}).Where("id IN ?", ids).Update("enabled", false).Error
+	})
+	if err == gorm.ErrRecordNotFound {
+		return writeErr(ctx, fiber.StatusNotFound, "not found")
+	}
+	if err != nil {
+		return writeInternalErr(ctx, err)
+	}
+	for _, sc := range disabled {
+		if s.cron != nil {
+			s.cron.Remove(sc.ID)
+		}
+	}
+	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
 // ---- 运行 ----

@@ -20,6 +20,13 @@ type WorkerService struct {
 	workerv1.UnimplementedWorkerServiceServer
 	Disp  *dispatch.Dispatcher
 	Probe *probe.Hub // UI 探测回执分发（nil = 功能关闭）
+
+	// SharedToken / TenantTokens 租户绑定（见 ParseWorkerTenantTokens）。
+	// TenantTokens 非空时，注册帧声明的 tenant_id 必须与流上出示的
+	// x-worker-token 一一对应，防止共享令牌持有者自报他人租户
+	// （任务负载含明文敏感变量/接口快照，租户边界必须在注册时锁定）。
+	SharedToken  string
+	TenantTokens map[int64]string
 }
 
 func NewWorkerService(d *dispatch.Dispatcher, probe *probe.Hub) *WorkerService {
@@ -50,6 +57,24 @@ func (s *WorkerService) Connect(stream workerv1.WorkerService_ConnectServer) err
 		SDKVersion:     reg.GetSdkVersion(),
 		Send:           make(chan *workerv1.SchedulerCommand, 32),
 	}
+	// 租户绑定：配置了租户令牌映射时，声明的租户必须与出示的令牌匹配。
+	// tenant_id=0（全租户共享 Worker）仍用共享令牌；未映射的租户直接拒绝
+	// （fail-closed，防注册帧自报任意租户）。
+	if len(s.TenantTokens) > 0 {
+		expected, mapped := s.TenantTokens[w.TenantID]
+		if !mapped {
+			if w.TenantID == 0 && s.SharedToken != "" {
+				expected = s.SharedToken
+			} else {
+				return status.Error(codes.PermissionDenied,
+					"worker register rejected: tenant has no worker-token binding")
+			}
+		}
+		if presented := workerTokenFromContext(stream.Context()); presented != expected {
+			return status.Error(codes.PermissionDenied,
+				"worker register rejected: token does not match tenant binding")
+		}
+	}
 	if err := s.Disp.Register(w); err != nil {
 		logging.L.Warnw("worker register rejected", "id", w.ID, "err", err)
 		return status.Error(codes.ResourceExhausted, err.Error())
@@ -62,7 +87,7 @@ func (s *WorkerService) Connect(stream workerv1.WorkerService_ConnectServer) err
 		if s.Probe != nil {
 			s.Probe.OnWorkerDisconnect(w.ID) // 探测会话随 Worker 下线
 		}
-		s.Disp.Unregister(w.ID)
+		s.Disp.Unregister(w)
 		w.Shutdown() // 关闭信号：派发方/泵协程感知退出（Send 永不 close，防 send-on-closed panic）
 		logging.L.Infow("worker disconnected", "id", w.ID)
 		s.Disp.Events().Publish("workers", events.Event{Type: "worker_updated", Data: map[string]any{

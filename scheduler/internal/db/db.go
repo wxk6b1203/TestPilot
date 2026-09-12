@@ -89,6 +89,10 @@ func seed(d *gorm.DB) error {
 		adminPw := os.Getenv("TP_ADMIN_PASSWORD")
 		if adminPw == "" {
 			adminPw = "admin123"
+			// 弱口令回落必须显性告警（走 stderr：db.Open 早于 logging 初始化）。
+			// 生产 8080 暴露时弱口令等于公开 owner 凭据；compose 配置转发缺失
+			// 也会静默落到这里，不能只依赖运维看文档。
+			fmt.Fprintln(os.Stderr, "[WARN] TP_ADMIN_PASSWORD 未设置，admin 账号已用默认口令 admin123 创建——生产环境请立即设置强口令")
 		}
 		hash, err := bcrypt.GenerateFromPassword([]byte(adminPw), bcrypt.DefaultCost)
 		if err != nil {

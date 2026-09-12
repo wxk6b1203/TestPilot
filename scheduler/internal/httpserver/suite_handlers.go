@@ -1,6 +1,9 @@
 package httpserver
 
 import (
+	"bytes"
+	"encoding/json"
+
 	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/model"
 	"gorm.io/gorm"
@@ -78,25 +81,52 @@ func (s *Server) updateSuite(ctx fiber.Ctx) error {
 	if err := s.db.Where("id = ? AND tenant_id = ?", id, c.TenantID).First(&su).Error; err != nil {
 		return writeErr(ctx, fiber.StatusNotFound, "not found")
 	}
-	var in suitePayload
-	if !decode(ctx, &in) {
+	// case_ids 单独解码；套件本体合并到取回的实体上（未传字段保持原值）——
+	// 解码到全新 struct 再 Save 全字段写，会把 created_at/project_id 等清零。
+	// case_ids 未传 = 保持原成员（显式空数组才是清空），避免省略键误删全部条目
+	var probe struct {
+		CaseIDs json.RawMessage `json:"case_ids"`
+	}
+	if !decode(ctx, &probe) {
 		return nil
 	}
-	in.TestSuite.ID = su.ID
-	in.TestSuite.TenantID = c.TenantID
-	err := s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Save(&in.TestSuite).Error; err != nil {
-			return err
+	hasCases := len(probe.CaseIDs) > 0 && !bytes.Equal(probe.CaseIDs, []byte("null"))
+	var in struct {
+		CaseIDs idList `json:"case_ids"`
+	}
+	if hasCases {
+		if !decode(ctx, &in) {
+			return nil
 		}
-		if err := replaceSuiteItems(tx, su.ID, in.CaseIDs); err != nil {
-			return err
-		}
+	}
+	if !decode(ctx, &su) {
 		return nil
+	}
+	forceIntField(&su, "ID", id) // ID/TenantID 不可变（body 注入不得改写主键/归属）
+	forceIntField(&su, "TenantID", c.TenantID)
+	// C6：body 可能改写 project_id——校验归属后再落库
+	if !validateRefs(s.db, ctx, &su) {
+		return nil
+	}
+	// 套件引用的 case 必须属于本租户（对齐 createSuite）
+	for _, cid := range in.CaseIDs {
+		if !ensureEntity(s.db, ctx, "case", cid) {
+			return nil
+		}
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&su).Error; err != nil {
+			return err
+		}
+		if !hasCases {
+			return nil
+		}
+		return replaceSuiteItems(tx, su.ID, in.CaseIDs)
 	})
 	if err != nil {
 		return writeInternalErr(ctx, err)
 	}
-	return writeJSON(ctx, fiber.StatusOK, &in)
+	return writeJSON(ctx, fiber.StatusOK, &suitePayload{TestSuite: su, CaseIDs: suiteCaseIDs(s.db, su.ID)})
 }
 
 func (s *Server) deleteSuite(ctx fiber.Ctx) error {

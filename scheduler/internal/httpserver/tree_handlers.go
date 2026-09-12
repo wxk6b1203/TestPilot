@@ -215,6 +215,10 @@ func (s *Server) createFolder(ctx fiber.Ctx) error {
 	if in.ProjectID == 0 || strings.TrimSpace(in.Name) == "" {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 与 name 必填"))
 	}
+	// C6：project_id 必须属于本租户（ProjectID 直接取自 body）
+	if !ensureEntity(s.db, ctx, "project", in.ProjectID) {
+		return nil
+	}
 	path, err := s.nodePath(c.TenantID, in.ParentID)
 	if err != nil {
 		return writeAppErr(ctx, apperr.From(err))
@@ -323,6 +327,10 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 	}
 	if in.ProjectID == 0 {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 必填"))
+	}
+	// C6：project_id 必须属于本租户（ProjectID 直接取自 body；ref 实体下方已按租户查证）
+	if !ensureEntity(s.db, ctx, "project", in.ProjectID) {
+		return nil
 	}
 	refType := in.RefType
 	refID := in.RefID

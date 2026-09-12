@@ -58,3 +58,23 @@ func TestBrokerIsolationAndOverflow(t *testing.T) {
 	default:
 	}
 }
+
+// Publish 与 Subscribe/Close 并发：迭代必须在读锁内，否则
+// "concurrent map iteration and map write" 是不可 recover 的 fatal。-race 下必现。
+func TestBrokerPublishConcurrentWithSubscribeClose(t *testing.T) {
+	b := NewBroker()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 2000; i++ {
+			ch := []string{"run:" + string(rune('a'+i%8))}
+			sub := b.Subscribe(ch)
+			b.Publish(ch[0], Event{Type: "tick"})
+			sub.Close()
+		}
+	}()
+	for i := 0; i < 2000; i++ {
+		b.Publish("run:a", Event{Type: "tick"})
+	}
+	<-done
+}

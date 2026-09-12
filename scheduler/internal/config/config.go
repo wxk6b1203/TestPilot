@@ -38,6 +38,12 @@ type Config struct {
 
 	WorkerToken string `yaml:"worker_token"` // Worker 连接 gRPC 共享令牌（TP_WORKER_TOKEN；空=拒绝无令牌 Worker）
 
+	// WorkerTenantTokens 租户级 Worker 令牌映射（TP_WORKER_TENANT_TOKENS，
+	// 格式 "租户ID=令牌,租户ID=令牌"）。配置后：声明 tenant_id 的 Worker 注册
+	// 必须出示该租户的令牌（防共享令牌持有者自报他人租户窃取任务/敏感变量）；
+	// tenant_id=0（全租户共享 Worker）仍用 worker_token。空=不启用（仅共享令牌）。
+	WorkerTenantTokens string `yaml:"worker_tenant_tokens"`
+
 	RegistrationEnabled bool `yaml:"registration_enabled"` // 公开注册（POST /auth/register）；默认关闭
 
 	LogLevel  string `yaml:"log_level"`  // debug/info/warn/error

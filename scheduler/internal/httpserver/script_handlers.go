@@ -30,6 +30,10 @@ func (s *Server) createScript(ctx fiber.Ctx) error {
 		return writeErr(ctx, fiber.StatusBadRequest, "content is required")
 	}
 	assignIDs(&in, c.TenantID)
+	// C6：project_id 必须属于本租户（自定义创建路径不走 createOf，需单独校验）
+	if !validateRefs(s.db, ctx, &in) {
+		return nil
+	}
 	if in.Language == "" {
 		in.Language = "python"
 	}

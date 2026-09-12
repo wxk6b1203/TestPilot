@@ -102,6 +102,13 @@ func main() {
 
 	// gRPC（Worker 双向流 + Copilot 工具面同端口）
 	// A3：keepalive 让网络分区/静默断连的流在 ~40s 内被服务端发现（Recv 报错 → 连接清理）
+	// 租户级 Worker 令牌（可选）：配置后注册帧的 tenant_id 与令牌一一绑定，
+	// 防共享令牌持有者自报他人租户接收任务（任务负载含明文敏感变量/接口快照）。
+	workerTenantTokens, err := grpcserver.ParseWorkerTenantTokens(cfg.WorkerTenantTokens)
+	if err != nil {
+		logging.L.Fatalw("invalid worker_tenant_tokens", "err", err)
+	}
+	// A1：gRPC 认证——Worker 流校验 x-worker-token；Copilot 工具面校验 JWT
 	gs := grpc.NewServer(
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.KeepaliveParams(keepalive.ServerParameters{
@@ -112,11 +119,13 @@ func main() {
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-		// A1：gRPC 认证——Worker 流校验 x-worker-token；Copilot 工具面校验 JWT
 		grpc.ChainUnaryInterceptor(grpcserver.CopilotAuthUnary(cfg.JWTSecret)),
-		grpc.ChainStreamInterceptor(grpcserver.WorkerAuthStream(cfg.WorkerToken)),
+		grpc.ChainStreamInterceptor(grpcserver.WorkerAuthStream(cfg.WorkerToken, workerTenantTokens)),
 	)
-	workerv1.RegisterWorkerServiceServer(gs, grpcserver.NewWorkerService(disp, probeHub))
+	workerSvc := grpcserver.NewWorkerService(disp, probeHub)
+	workerSvc.SharedToken = cfg.WorkerToken
+	workerSvc.TenantTokens = workerTenantTokens
+	workerv1.RegisterWorkerServiceServer(gs, workerSvc)
 	copilotv1.RegisterCopilotToolServiceServer(gs, grpcserver.NewCopilotService(gormDB, run, probeHub))
 	reflection.Register(gs)
 

@@ -1127,25 +1127,99 @@ func (s *CopilotService) ImportOpenApi(_ context.Context, req *copilotv1.ImportO
 // lookupIP 域名解析（测试可替换，隔离私网防护与真实连接）。
 var lookupIP = net.DefaultResolver.LookupIPAddr
 
+// openAPIDial 真实拨号（测试可替换：IP 绑定后离线环境到不了本地 httptest 服务）。
+var openAPIDial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+	d := net.Dialer{Timeout: 10 * time.Second}
+	return d.DialContext(ctx, network, addr)
+}
+
+// ssrfRejectIP 判定 SSRF 拒绝地址（环回/私网/链路本地/组播/未指定）。
+func ssrfRejectIP(ip net.IP) bool {
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified()
+}
+
+// checkPublicHost 预检 host：字面 IP 直接判定；域名解析后任一地址命中私网即拒绝
+// （与 notify.webhookTargetAllowed 同语义；解析失败报错，由连接阶段自然兜底）。
+func checkPublicHost(host string) error {
+	if ip := net.ParseIP(host); ip != nil {
+		if ssrfRejectIP(ip) {
+			return fmt.Errorf("host %s resolves to private/loopback address", host)
+		}
+		return nil
+	}
+	ips, err := lookupIP(context.Background(), host)
+	if err != nil {
+		return fmt.Errorf("resolve host: %w", err)
+	}
+	for _, ipa := range ips {
+		if ssrfRejectIP(ipa.IP) {
+			return fmt.Errorf("host %s resolves to private/loopback address", host)
+		}
+	}
+	return nil
+}
+
+// newOpenAPIClient 构造绑定解析结果的 HTTP client（参照 notify 的安全做法）：
+//   - DialContext 内解析 DNS → 校验私网 → 用同一次解析出的 IP 拨号，消除
+//     「预检通过后 DNS 重解析改指内网」的 rebinding TOCTOU 窗口；
+//   - CheckRedirect 逐跳复检：预检只覆盖首个 URL，302 跳转到私网/云元数据
+//     端点必须重新拦截。
+func newOpenAPIClient() *http.Client {
+	return &http.Client{
+		Timeout: 15 * time.Second,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, err := net.SplitHostPort(addr)
+				if err != nil {
+					return nil, err
+				}
+				dialAddr := addr
+				if ip := net.ParseIP(host); ip != nil {
+					if ssrfRejectIP(ip) {
+						return nil, fmt.Errorf("host %s resolves to private/loopback address", host)
+					}
+				} else {
+					ips, err := lookupIP(ctx, host)
+					if err != nil {
+						return nil, err
+					}
+					chosen := ""
+					for _, ipa := range ips {
+						if !ssrfRejectIP(ipa.IP) {
+							chosen = ipa.IP.String()
+							break
+						}
+					}
+					if chosen == "" {
+						return nil, fmt.Errorf("host %s resolves to private/loopback address", host)
+					}
+					dialAddr = net.JoinHostPort(chosen, port)
+				}
+				return openAPIDial(ctx, network, dialAddr)
+			},
+		},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return fmt.Errorf("stopped after 5 redirects")
+			}
+			return checkPublicHost(req.URL.Hostname())
+		},
+	}
+}
+
 // fetchOpenAPIURL 拉取 OpenAPI 文档（15s 超时、≤16MB）。SSRF 防护：拒绝
-// 解析到环回/私网/链路本地地址的 host（Copilot 可被诱导访问内网元数据端点）。
+// 解析到环回/私网/链路本地地址的 host（Copilot 可被诱导访问内网元数据端点）；
+// 重定向逐跳复检 + 连接绑定预解析 IP，防 302 绕过与 DNS rebinding。
 func fetchOpenAPIURL(rawURL string) ([]byte, error) {
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 		return nil, fmt.Errorf("invalid url (http/https only)")
 	}
-	ips, err := lookupIP(context.Background(), u.Hostname())
-	if err != nil {
-		return nil, fmt.Errorf("resolve host: %w", err)
+	if err := checkPublicHost(u.Hostname()); err != nil {
+		return nil, err
 	}
-	for _, ipa := range ips {
-		ip := ipa.IP
-		if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
-			return nil, fmt.Errorf("host %s resolves to private/loopback address", u.Hostname())
-		}
-	}
-	client := &http.Client{Timeout: 15 * time.Second}
-	resp, err := client.Get(rawURL)
+	resp, err := newOpenAPIClient().Get(rawURL)
 	if err != nil {
 		return nil, err
 	}

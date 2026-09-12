@@ -122,7 +122,7 @@ func (f *fakeServerStream) Context() context.Context { return f.ctx }
 func TestWorkerAuthStream(t *testing.T) {
 	run := func(t *testing.T, tokenCfg, tok string, method string) (called bool, err error) {
 		t.Helper()
-		inter := grpcserver.WorkerAuthStream(tokenCfg)
+		inter := grpcserver.WorkerAuthStream(tokenCfg, nil)
 		called = false
 		var md metadata.MD
 		if tok != "" {
@@ -166,6 +166,57 @@ func TestWorkerAuthStream(t *testing.T) {
 		called, err := run(t, "tok123", "tok123", "/testpilot.worker.v1.WorkerService/Connect")
 		if err != nil || !called {
 			t.Fatalf("want pass, err=%v called=%v", err, called)
+		}
+	})
+}
+
+// 角色边界（与 REST 面 server.go 对齐）：读工具 viewer 可用，写/触发工具要求 member+。
+func TestCopilotAuthUnaryRoleBoundary(t *testing.T) {
+	inter := grpcserver.CopilotAuthUnary(testJWTSecret)
+
+	run := func(t *testing.T, role int16, method string) (called bool, err error) {
+		t.Helper()
+		ctx := metadata.NewIncomingContext(context.Background(),
+			metadata.Pairs("authorization", "Bearer "+mkToken(t, 9, 7, role)))
+		req := &copilotv1.CreateApiRequest{Ctx: copilotCtx(7, "9")}
+		called = false
+		_, err = inter(ctx, req, &grpc.UnaryServerInfo{FullMethod: method},
+			func(ctx context.Context, req any) (any, error) { called = true; return nil, nil })
+		return called, err
+	}
+
+	t.Run("viewer cannot call write tool", func(t *testing.T) {
+		called, err := run(t, auth.RoleViewer, "/testpilot.copilot.v1.CopilotToolService/CreateApi")
+		if called || status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("want PermissionDenied, called=%v err=%v", called, err)
+		}
+	})
+
+	t.Run("viewer cannot trigger run", func(t *testing.T) {
+		called, err := run(t, auth.RoleViewer, "/testpilot.copilot.v1.CopilotToolService/TriggerRun")
+		if called || status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("want PermissionDenied, called=%v err=%v", called, err)
+		}
+	})
+
+	t.Run("member can call write tool", func(t *testing.T) {
+		called, err := run(t, auth.RoleMember, "/testpilot.copilot.v1.CopilotToolService/CreateApi")
+		if err != nil || !called {
+			t.Fatalf("want pass, err=%v called=%v", err, called)
+		}
+	})
+
+	t.Run("viewer can call read tool", func(t *testing.T) {
+		called, err := run(t, auth.RoleViewer, "/testpilot.copilot.v1.CopilotToolService/ListProjects")
+		if err != nil || !called {
+			t.Fatalf("want pass, err=%v called=%v", err, called)
+		}
+	})
+
+	t.Run("unknown method fails closed to write access", func(t *testing.T) {
+		called, err := run(t, auth.RoleViewer, "/testpilot.copilot.v1.CopilotToolService/FutureTool")
+		if called || status.Code(err) != codes.PermissionDenied {
+			t.Fatalf("want PermissionDenied, called=%v err=%v", called, err)
 		}
 	})
 }

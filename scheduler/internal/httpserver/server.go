@@ -211,13 +211,15 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodGet, "/stress-runs", auth.RoleViewer, s.listStressRuns)
 	h(fiber.MethodGet, "/stress-runs/:id", auth.RoleViewer, s.getStressRun)
 
-	// Copilot 会话：写消息/建会话视为成员动作（消耗 ai_calls 配额）；读历史 viewer 即可
+	// Copilot 会话是个人工作区数据（handler 严格按 tenant+user 隔离，不触领域
+	// 资源），viewer 也可使用；会话内对领域资源的写操作由 Copilot gRPC 工具面
+	// 的角色拦截器另行把关。彻底删除回收站仍属成员动作。
 	h(fiber.MethodGet, "/copilot/sessions", auth.RoleViewer, s.listCopilotSessions)
-	h(fiber.MethodPost, "/copilot/sessions", auth.RoleMember, s.createCopilotSession)
+	h(fiber.MethodPost, "/copilot/sessions", auth.RoleViewer, s.createCopilotSession)
 	h(fiber.MethodGet, "/copilot/sessions/:id/messages", auth.RoleViewer, s.listCopilotMessages)
-	h(fiber.MethodPost, "/copilot/sessions/:id/messages", auth.RoleMember, s.appendCopilotMessage)
-	h(fiber.MethodPut, "/copilot/sessions/:id", auth.RoleMember, s.updateCopilotSession)
-	h(fiber.MethodDelete, "/copilot/sessions/:id", auth.RoleMember, s.deleteCopilotSession)
+	h(fiber.MethodPost, "/copilot/sessions/:id/messages", auth.RoleViewer, s.appendCopilotMessage)
+	h(fiber.MethodPut, "/copilot/sessions/:id", auth.RoleViewer, s.updateCopilotSession)
+	h(fiber.MethodDelete, "/copilot/sessions/:id", auth.RoleViewer, s.deleteCopilotSession)
 	// 回收站：读列表 viewer 即可；彻底删除属成员动作
 	h(fiber.MethodGet, "/copilot/trash", auth.RoleViewer, s.listCopilotTrash)
 	h(fiber.MethodDelete, "/copilot/trash/:id", auth.RoleMember, s.purgeCopilotTrash)

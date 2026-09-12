@@ -1,8 +1,10 @@
 package httpserver
 
 import (
+	"strconv"
 	"testing"
 
+	"github.com/gofiber/fiber/v3"
 	"github.com/testpilot/testpilot/internal/auth"
 	"github.com/testpilot/testpilot/internal/config"
 	"github.com/testpilot/testpilot/internal/model"
@@ -46,6 +48,68 @@ func TestAddMemberNewUser(t *testing.T) {
 	d.Model(&model.TenantMember{}).Where("user_id = ?", nu.ID).Count(&members2)
 	if members2 != 1 {
 		t.Fatalf("after duplicate member rows = %d, want 1", members2)
+	}
+}
+
+// TestAdminCannotGrantOwner 回归：成员路由只挡在 admin，admin 可直接添加 owner
+// 或把自己以外的成员提成 owner（自我提权绕过）。目标角色为 owner 时要求
+// caller 本身是 owner。
+func TestAdminCannotGrantOwner(t *testing.T) {
+	cfg := config.Defaults()
+	cfg.JWTSecret = "test-secret-0123456789abcdef"
+	app, d := newTestApp(t, cfg)
+	ownerTok := tokenFor(t, d, 1, 1, auth.RoleOwner)
+	adminTok := tokenFor(t, d, 2, 1, auth.RoleAdmin)
+
+	// admin 添加 owner → 403
+	code, _ := postJSON(t, app, "/api/v1/tenant/members", adminTok,
+		`{"username":"pwn","role":1}`)
+	if code != 403 {
+		t.Fatalf("admin add owner should 403, got %d", code)
+	}
+	// admin 把既有成员提为 owner → 403
+	if err := d.Create(&model.User{ID: model.NextID(), Username: "member1",
+		PasswordHash: "x", Status: 1}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var u model.User
+	if err := d.Where("username = ?", "member1").First(&u).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := d.Create(&model.TenantMember{ID: model.NextID(), TenantID: 1,
+		UserID: u.ID, Role: auth.RoleMember}).Error; err != nil {
+		t.Fatal(err)
+	}
+	code, _ = sendJSON(t, app, fiber.MethodPut, "/api/v1/tenant/members/"+strconv.FormatInt(u.ID, 10),
+		adminTok, `{"role":1}`)
+	if code != 403 {
+		t.Fatalf("admin promote to owner should 403, got %d", code)
+	}
+	// admin 仍可做常规成员管理（授予非 owner 角色）
+	code, _ = postJSON(t, app, "/api/v1/tenant/members", adminTok,
+		`{"username":"pwn","role":2}`)
+	if code != 200 {
+		t.Fatalf("admin add admin should 200, got %d", code)
+	}
+	code, _ = sendJSON(t, app, fiber.MethodPut, "/api/v1/tenant/members/"+strconv.FormatInt(u.ID, 10),
+		adminTok, `{"role":2}`)
+	if code != 200 {
+		t.Fatalf("admin promote to admin should 200, got %d", code)
+	}
+	// owner 不受限
+	code, _ = postJSON(t, app, "/api/v1/tenant/members", ownerTok,
+		`{"username":"heir","role":1}`)
+	if code != 200 {
+		t.Fatalf("owner add owner should 200, got %d", code)
+	}
+	var heir model.User
+	if err := d.Where("username = ?", "heir").First(&heir).Error; err != nil {
+		t.Fatal(err)
+	}
+	code, _ = sendJSON(t, app, fiber.MethodPut, "/api/v1/tenant/members/"+strconv.FormatInt(heir.ID, 10),
+		ownerTok, `{"role":1}`)
+	if code != 200 {
+		t.Fatalf("owner set owner should 200, got %d", code)
 	}
 }
 

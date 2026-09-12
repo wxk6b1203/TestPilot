@@ -293,12 +293,15 @@ func (d *Dispatcher) OnlineForTenant(tenantID int64) int64 {
 	return n
 }
 
-// Unregister 移除 Worker。
-func (d *Dispatcher) Unregister(id string) {
+// Unregister 移除 Worker。按指针比对：同 ID 重连时旧连接的 defer 只删自己，
+// 不能把池里已替换的新连接一并踢掉（否则新连接派发全部 no suitable worker）。
+func (d *Dispatcher) Unregister(w *Worker) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	delete(d.workers, id)
-	d.workerMetricsLocked()
+	if cur, ok := d.workers[w.ID]; ok && cur == w {
+		delete(d.workers, w.ID)
+		d.workerMetricsLocked()
+	}
 }
 
 // SetLoad 更新 Worker 负载。
@@ -483,14 +486,21 @@ func (d *Dispatcher) ReapStaleWorkers(staleAfter time.Duration) []string {
 	return stale
 }
 
+// ErrWorkerBusy 该 Worker 已被另一场压测独占（CAS 抢占失败；调用方应跳过换下一个候选）。
+var ErrWorkerBusy = errors.New("worker already reserved by another stress run")
+
 // DispatchStress 向指定 Worker 下发压测子任务并标记独占。
+// 独占必须 CAS 抢占：StressWorkers 的检查与派发之间存在竞态，两个并发压测若
+// 都无条件 Store(true) 会互相覆盖独占，同一 Worker 被两场压测同时驱动。
 func (d *Dispatcher) DispatchStress(w *Worker, task *workerv1.TaskAssignment) error {
 	select {
 	case <-w.Closed():
 		return errors.New("worker disconnected")
 	default:
 	}
-	w.stress.Store(true)
+	if !w.stress.CompareAndSwap(false, true) {
+		return ErrWorkerBusy
+	}
 	w.stressUntil.Store(time.Now().Add(task.GetTimeout().AsDuration() + 5*time.Minute).UnixNano())
 	w.load.Add(1)
 	defer w.load.Add(-1)

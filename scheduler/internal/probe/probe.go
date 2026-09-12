@@ -228,16 +228,19 @@ func (h *Hub) Close(tenantID int64, sessionID, reason string) error {
 		h.mu.Unlock()
 		return errSessionGone
 	}
-	delete(h.sessions, sessionID)
-	workerID := s.WorkerID
 	h.mu.Unlock()
 
+	// 先发 close 再删会话：roundTrip 以注册表为路由依据（查不到直接 errSessionGone），
+	// 先删会导致 close 命令发不出去，Worker 侧浏览器进程泄漏
 	cmd := &workerv1.ProbeCommand{SessionId: sessionID, TenantId: tenantID}
 	cmd.Op = &workerv1.ProbeCommand_Close{Close: &workerv1.ProbeClose{Reason: reason}}
 	ctx, cancel := context.WithTimeout(context.Background(), h.cfg.CmdTimeout)
 	defer cancel()
 	_, _ = h.roundTrip(ctx, sessionID, cmd) // 尽力而为；失败也无妨（Worker TTL 兜底）
-	_ = workerID
+
+	h.mu.Lock()
+	delete(h.sessions, sessionID)
+	h.mu.Unlock()
 	return nil
 }
 
@@ -269,16 +272,16 @@ func (h *Hub) OnWorkerDisconnect(workerID string) {
 	h.mu.Unlock()
 }
 
-// Sweep TTL 回收（main reaper 周期调用）：空闲超限发 close(ttl) 后删除；
-// 生命周期超限直接删除（浏览器由 Worker 侧会话上限/进程回收兜底）。
+// Sweep TTL 回收（main reaper 周期调用）：空闲超限先发 close(ttl) 再删除
+// （roundTrip 以注册表路由，先删会话 close 命令就发不出去了）；生命周期超限
+// 直接删除（浏览器由 Worker 侧会话上限/进程回收兜底）。
 func (h *Hub) Sweep() {
 	now := time.Now()
 	h.mu.Lock()
 	expired := make([]*Session, 0, 2)
-	for id, s := range h.sessions {
+	for _, s := range h.sessions {
 		if now.Sub(s.LastActive) > h.cfg.IdleTTL || now.Sub(s.CreatedAt) > h.cfg.MaxLifetime {
 			expired = append(expired, s)
-			delete(h.sessions, id)
 		}
 	}
 	h.mu.Unlock()
@@ -288,6 +291,13 @@ func (h *Hub) Sweep() {
 		ctx, cancel := context.WithTimeout(context.Background(), h.cfg.CmdTimeout)
 		_, _ = h.roundTrip(ctx, s.ID, cmd)
 		cancel()
+		// 收集与删除之间存在窗口（Act/require 会刷新 LastActive）：仅当注册表里
+		// 仍是同一会话才删，避免误删刚被重新激活的会话
+		h.mu.Lock()
+		if cur, ok := h.sessions[s.ID]; ok && cur == s {
+			delete(h.sessions, s.ID)
+		}
+		h.mu.Unlock()
 	}
 }
 
@@ -314,7 +324,12 @@ func (h *Hub) require(tenantID int64, sessionID string) (*Session, error) {
 func (h *Hub) workerOf(sessionID string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	return h.sessions[sessionID].WorkerID
+	// 会话可能在 Open 返回前被 Sweep/OnWorkerDisconnect 删除（TTL 到期/断连竞态），
+	// 查不到返回空串；对 nil map 值取字段会 panic
+	if s, ok := h.sessions[sessionID]; ok {
+		return s.WorkerID
+	}
+	return ""
 }
 
 func (h *Hub) checkLimitsLocked(tenantID int64) error {

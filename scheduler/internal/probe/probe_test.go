@@ -184,6 +184,117 @@ func TestSweepExpiresIdleSessions(t *testing.T) {
 	}
 }
 
+// recordingWorker 记录到达 Worker 的 probe 命令（按 op 名），并对全部命令回执。
+func recordingWorker(t *testing.T, d *dispatch.Dispatcher, h *Hub, id string, ops chan string) *dispatch.Worker {
+	t.Helper()
+	w := &dispatch.Worker{
+		ID:           id,
+		Capabilities: []int32{3}, // CAPABILITY_PLAYWRIGHT
+		Send:         make(chan *workerv1.SchedulerCommand, 8),
+	}
+	if err := d.Register(w); err != nil {
+		t.Fatalf("register worker: %v", err)
+	}
+	go func() {
+		for cmd := range w.Send {
+			p := cmd.GetProbe()
+			if p == nil {
+				continue
+			}
+			switch {
+			case p.GetOpen() != nil:
+				ops <- "open"
+			case p.GetClose() != nil:
+				ops <- "close"
+			}
+			rep := &workerv1.ProbeReply{RequestId: p.GetRequestId(), SessionId: p.GetSessionId()}
+			if p.GetClose() != nil {
+				rep.Payload = &workerv1.ProbeReply_Ack{Ack: &workerv1.ProbeAck{SessionId: p.GetSessionId()}}
+			} else {
+				rep.Payload = &workerv1.ProbeReply_State{State: &workerv1.ProbeState{Title: "T"}}
+			}
+			h.Deliver(rep)
+		}
+	}()
+	return w
+}
+
+// TestCloseDeliversCloseCommand 回归：Close 先 delete 会话再 roundTrip，而
+// roundTrip 以注册表路由——close 命令 100% 发不到 Worker，浏览器进程泄漏。
+// 修复后必须先发 close 再删会话。
+func TestCloseDeliversCloseCommand(t *testing.T) {
+	d := dispatch.New(nil)
+	h := New(d, testCfg())
+	ops := make(chan string, 8)
+	recordingWorker(t, d, h, "w1", ops)
+
+	mustOpen(t, h, 7, "s1")
+	if got := <-ops; got != "open" {
+		t.Fatalf("first op = %s, want open", got)
+	}
+	if err := h.Close(7, "s1", "user"); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	select {
+	case got := <-ops:
+		if got != "close" {
+			t.Fatalf("op = %s, want close", got)
+		}
+	default:
+		t.Fatal("close command never reached the worker")
+	}
+	if h.Sessions() != 0 {
+		t.Fatalf("sessions after close = %d", h.Sessions())
+	}
+}
+
+// TestSweepDeliversCloseCommand 回归：Sweep 同样先删后发导致 close 发不出去；
+// 修复后 TTL 回收必须先投递 close(ttl) 再移除会话。
+func TestSweepDeliversCloseCommand(t *testing.T) {
+	d := dispatch.New(nil)
+	cfg := testCfg()
+	cfg.IdleTTL = 5 * time.Millisecond
+	h := New(d, cfg)
+	ops := make(chan string, 8)
+	recordingWorker(t, d, h, "w1", ops)
+
+	mustOpen(t, h, 7, "s1")
+	if got := <-ops; got != "open" {
+		t.Fatalf("first op = %s, want open", got)
+	}
+	time.Sleep(10 * time.Millisecond)
+	h.Sweep()
+	select {
+	case got := <-ops:
+		if got != "close" {
+			t.Fatalf("op = %s, want close", got)
+		}
+	default:
+		t.Fatal("ttl close command never reached the worker")
+	}
+	if h.Sessions() != 0 {
+		t.Fatalf("sessions after sweep = %d", h.Sessions())
+	}
+}
+
+// TestWorkerOfMissingSessionDoesNotPanic 回归：workerOf 对不存在的 sessionID
+// 直接取 map 值字段，Sweep/OnWorkerDisconnect 删除后的窗口内 nil 解引用 panic。
+func TestWorkerOfMissingSessionDoesNotPanic(t *testing.T) {
+	d := dispatch.New(nil)
+	h := New(d, testCfg())
+	if got := h.workerOf("missing"); got != "" {
+		t.Fatalf("workerOf(missing) = %q, want empty", got)
+	}
+	d2 := dispatch.New(nil)
+	h2 := New(d2, testCfg())
+	fakeWorker(t, d2, h2, "w1", true)
+	mustOpen(t, h2, 7, "s1")
+	h2.OnWorkerDisconnect("w1") // 会话已被删除
+	if got := h2.workerOf("s1"); got != "" {
+		t.Fatalf("workerOf after disconnect = %q, want empty", got)
+	}
+}
+
 func (h *Hub) workerOfForTest(sessionID string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
