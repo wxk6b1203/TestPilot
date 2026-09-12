@@ -127,6 +127,24 @@ def _eval(node: ast.AST, scope: Mapping[str, Any], depth: int = 0) -> Any:
     raise ExprError(f"unsupported expression node: {type(node).__name__}")
 
 
+
+# % 格式化守卫：宽度/精度域（含 %.Nf）直接决定结果分配大小；`*` 宽度来自
+# 运行期参数无法静态定界，一律拒绝。
+_FMT_SPEC_RE = re.compile(r"%(?:\([^)]*\))?[-+ #0]*(\d+|\*)?(?:\.(\d+|\*))?")
+
+
+def _guard_str_format(fmt: Any, _arg: Any) -> None:
+    spec = fmt.decode("utf-8", "replace") if isinstance(fmt, bytes) else fmt
+    estimate = len(spec)
+    for m in _FMT_SPEC_RE.finditer(spec):
+        width, prec = m.group(1), m.group(2)
+        if width == "*" or prec == "*":
+            raise ExprError("%-format with '*' width/precision is not allowed")
+        estimate += int(width or 0) + int(prec or 0)
+    if estimate > _MAX_STR_MUL:
+        raise ExprError(f"%-format result too large (> {_MAX_STR_MUL})")
+
+
 def _apply_binop(op: ast.operator, left: Any, right: Any) -> Any:
     try:
         if isinstance(op, ast.Add):
@@ -154,6 +172,10 @@ def _apply_binop(op: ast.operator, left: Any, right: Any) -> Any:
         if isinstance(op, ast.Div):
             return left / right
         if isinstance(op, ast.Mod):
+            # % 对字符串是 printf 风格格式化：宽度域直接决定分配大小
+            # （"%999999999d" % 1 即 ~1GB），与字符串乘法同级别 OOM 面，需守卫。
+            if isinstance(left, (str, bytes)):
+                _guard_str_format(left, right)
             return left % right
         if isinstance(op, ast.FloorDiv):
             return left // right

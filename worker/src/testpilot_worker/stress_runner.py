@@ -113,19 +113,27 @@ def _run(spec: dict) -> None:
     gevent.sleep(0.2)  # 让在途请求统计落账
 
     total = env.stats.total
-    ok = ctrl_exc is None and total.num_requests > 0  # 0 请求 = 发压器未真正工作
+    n, f = total.num_requests, total.num_failures
+    error_rate = (f / n) if n else 0.0
+    # ok 语义：压测任务衡量「发压是否按计划完成」——部分失败（如 5xx 混杂）仍算
+    # PASSED，错误率作为指标随 metric 流落库供报告/告警使用，不在完成度判定里
+    # 混入阈值。但 100% 失败（没有任何成功请求）说明被测服务不可用或目标配置错误，
+    # 「发压完成」已无意义，必须判 FAILED 并在 error 里带上错误率。
+    ok = ctrl_exc is None and n > 0 and error_rate < 1.0
     error = ""
     if ctrl_exc is not None:
         error = f"controller failed: {type(ctrl_exc).__name__}: {ctrl_exc}"
-    elif total.num_requests == 0:
-        error = "stress runner made 0 requests"
+    elif n == 0:
+        error = "stress runner made 0 requests"  # 0 请求 = 发压器未真正工作
+    elif error_rate >= 1.0:
+        error = f"all {n} requests failed (error rate 100%)"
     done = {
         "type": "done",
         "ok": ok,
         "error": error,
         "total": {
-            "requests": total.num_requests,
-            "failures": total.num_failures,
+            "requests": n,
+            "failures": f,
             "avg_ms": round(total.avg_response_time, 1),
             "p95_ms": total.get_response_time_percentile(0.95) or 0,
         },

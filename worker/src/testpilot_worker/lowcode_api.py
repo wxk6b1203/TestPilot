@@ -23,6 +23,13 @@ from .sandbox import SubprocessBackend, bridge_http_handler
 
 _MAX_BRIDGE_API_VARS = 4096  # 每次 api_request 携带的变量快照条目上限
 
+# 「同一调用链上一响应」的存放键：放在该次 op 携带的 per-沙箱 merged_vars 里，
+# 而不是 caller 的共享字段。行为压测（stress._run_behavior）下同一 caller 被
+# K 个沙箱并发使用，共享字段会被并发调用互相覆盖 → 请求渲染作用域的 response
+# 串台。merged_vars 随沙箱 run 生灭，天然按沙箱隔离；dunder 前缀避免与用户
+# set_var 的变量冲突（merged_vars 同时是 set_var/get_var 的存储命名空间）。
+_CHAIN_LAST_RESPONSE = "__tp_last_response__"
+
 
 class LowCodeApiError(Exception):
     """按 ID 调用的业务错误（经能力桥返回给脚本）。"""
@@ -117,7 +124,6 @@ class LowCodeApiCaller:
         self.parameters = dict(parameters or {})
         self.timeout_s = max(timeout_s, 1)
         self.logs: list[str] = []
-        self.last_response: dict[str, Any] | None = None
         self.client = httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport())
         self.insecure_client = httpx.AsyncClient(verify=False, transport=http_exec.pinned_transport())
         self._script_backend = SubprocessBackend(
@@ -177,7 +183,14 @@ class LowCodeApiCaller:
                 api.headers.add(key=k, value=v)
 
     async def call_http(self, api_id: str, overrides: Mapping[str, Any],
-                        vars_in: Mapping[str, Any]) -> dict[str, Any]:
+                        vars_in: Mapping[str, Any],
+                        chain_vars: dict[str, Any] | None = None) -> dict[str, Any]:
+        """执行按 ID 的 HTTP 调用。
+
+        chain_vars = 该沙箱调用链的私有状态（桥 op 透传的 merged_vars）：
+        「上一响应」存这里实现 per-沙箱隔离（并发沙箱互不串台）；
+        None 时退化为无上一响应（直连调用，行为与首次调用一致）。
+        """
         api = self.http_apis.get(str(api_id))
         if api is None:
             raise LowCodeApiError(
@@ -191,12 +204,16 @@ class LowCodeApiCaller:
 
         self._inject_auto_headers(api)
         scope: dict[str, Any] = {**vars_now, "vars": vars_now}
-        if self.last_response is not None:
-            scope["response"] = self.last_response
+        # 请求渲染作用域的 response = 同一调用链上一次调用的响应（链式取值
+        # {{ response... }}），per-沙箱存放，不再读并发不安全的共享字段
+        prev_response = (chain_vars or {}).get(_CHAIN_LAST_RESPONSE)
+        if prev_response is not None:
+            scope["response"] = prev_response
 
         req_snap, resp_snap, resp_scope = await http_exec.execute(
             self._client_for(api), api, self.base_url, scope, self.inline_files)
-        self.last_response = resp_scope
+        if chain_vars is not None:
+            chain_vars[_CHAIN_LAST_RESPONSE] = resp_scope
         self.logs.append(
             f"{req_snap['method']} {req_snap['url']} -> {resp_snap['status']} "
             f"({resp_snap['elapsed_ms']}ms)")
@@ -218,7 +235,8 @@ class LowCodeApiCaller:
         }
 
     async def call_grpc(self, api_id: str, overrides: Mapping[str, Any],
-                        _vars_in: Mapping[str, Any]) -> dict[str, Any]:
+                        _vars_in: Mapping[str, Any],
+                        chain_vars: dict[str, Any] | None = None) -> dict[str, Any]:
         api = self.grpc_apis.get(str(api_id))
         if api is None:
             raise LowCodeApiError(
@@ -238,7 +256,8 @@ class LowCodeApiCaller:
         except grpc_exec.GrpcCallError as e:
             raise LowCodeApiError(f"grpc call {api_id}: {e}") from e
         elapsed_ms = int((time.perf_counter() - started) * 1000)
-        self.last_response = resp_scope
+        if chain_vars is not None:
+            chain_vars[_CHAIN_LAST_RESPONSE] = resp_scope
         self.logs.append(f"grpc {api.full_service}.{api.method} -> {target}")
         return {
             "kind": "grpc",
@@ -281,7 +300,11 @@ class LowCodeApiCaller:
 
     async def handle(self, args: dict[str, Any], merged_vars: dict[str, Any],
                      _payload: dict[str, Any]) -> dict[str, Any]:
-        """SubprocessBackend.api_handler：op=api_request。"""
+        """SubprocessBackend.api_handler：op=api_request。
+
+        merged_vars 是该沙箱私有的桥变量存储，作为调用链状态向下透传
+        （「上一响应」按沙箱隔离，见 _CHAIN_LAST_RESPONSE 注释）。
+        """
         kind = str(args.get("kind") or "http").lower()
         api_id = str(args.get("api_id") or "")
         if not api_id:
@@ -289,9 +312,9 @@ class LowCodeApiCaller:
         vars_in = args.get("vars") if isinstance(args.get("vars"), dict) else merged_vars
         overrides = args.get("overrides") if isinstance(args.get("overrides"), dict) else {}
         if kind == "http":
-            return await self.call_http(api_id, overrides, vars_in)
+            return await self.call_http(api_id, overrides, vars_in, chain_vars=merged_vars)
         if kind == "grpc":
-            return await self.call_grpc(api_id, overrides, vars_in)
+            return await self.call_grpc(api_id, overrides, vars_in, chain_vars=merged_vars)
         raise LowCodeApiError(f"unsupported api_request kind: {kind}")
 
 

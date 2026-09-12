@@ -472,3 +472,29 @@ def test_probe_sandbox_error_shapes():
         await sb.close()
 
     asyncio.run(run())
+
+
+def test_close_tenant_mismatch_keeps_session_intact():
+    """回归：close 必须先校验租户再摘除——若 pop 先行，跨租户 close 会无声
+    摧毁他人会话（注册表消失）且不 finish() → Chromium 进程泄漏。"""
+    hub = _hub()
+
+    async def run():
+        await hub.handle(_open_cmd(tenant_id=7))
+        ui_sess = _FakeUiSession.instances[0]
+        # 跨租户 close：按"不存在"处理（幂等 ack），不得摘除会话/关闭浏览器
+        close = await hub.handle(_cmd(close=wpb.ProbeClose(reason="x"), tenant_id=8))
+        assert close.probe_reply.WhichOneof("payload") == "ack"
+        assert "s1" in hub._sessions
+        assert not ui_sess.finished
+        # 原租户会话仍可用
+        snap = await hub.handle(_cmd(
+            snapshot=wpb.ProbeSnapshot(snapshot_max_bytes=SNAPSHOT_ABS_MAX), tenant_id=7))
+        assert snap.probe_reply.WhichOneof("payload") == "state"
+        # 原租户 close 正常释放
+        close2 = await hub.handle(_cmd(close=wpb.ProbeClose(reason="x"), tenant_id=7))
+        assert close2.probe_reply.WhichOneof("payload") == "ack"
+        assert ui_sess.finished
+        assert "s1" not in hub._sessions
+
+    asyncio.run(run())

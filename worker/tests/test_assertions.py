@@ -4,7 +4,7 @@ import pytest
 from testpilot.common.v1 import types_pb2 as pb
 
 from testpilot_sdk.assertions import assert_that, records, reset_records
-from testpilot_worker.assertions import _json_path, evaluate
+from testpilot_worker.assertions import _json_path, _regex_guard, evaluate
 
 RESP = {
     "status": 200,
@@ -249,3 +249,38 @@ def test_matches_normal_still_works():
     assert r.passed, r.message
     b = _assertion(pb.ASSERTION_TARGET_BODY, pb.ASSERTION_OP_MATCHES, expected=r"a{1,5}")
     assert evaluate(b, {"text": "aaa"}, {}).passed
+
+
+# ---- ReDoS 双层防护：静态守卫绕过向量 + 执行限时 ----
+
+def test_regex_guard_rejects_ungrouped_quantified_run():
+    # 旧启发式只识别括号组嵌套；无分组的 a?a?a?… 是经典指数回溯绕过
+    err = _regex_guard("a?" * 40 + "a" * 20)
+    assert err and "adjacent quantified" in err
+
+
+def test_regex_guard_rejects_backreference():
+    assert "backreferences" in (_regex_guard(r"(a*)\1+$") or "")
+
+
+def test_regex_guard_allows_normal_patterns():
+    for pat in [r"^\d{4}-\d{2}-\d{2}$", r"^(?:GET|POST)\s+/v\d+/\w+$", r"\berror\b"]:
+        assert _regex_guard(pat) is None, pat
+
+
+def test_matches_timeout_returns_failure(monkeypatch):
+    import testpilot_worker.assertions as am
+
+    class _Never:
+        def submit(self, *a, **k):
+            from concurrent.futures import Future
+
+            f = Future()  # 模拟线程卡死：永不完成
+            return f
+
+    monkeypatch.setattr(am, "_REGEX_EXECUTOR", _Never())
+    res = evaluate(_assertion(pb.ASSERTION_TARGET_STATUS, pb.ASSERTION_OP_MATCHES,
+                              expected="(?:x+)y"),
+                   RESP, SCOPE)
+    assert not res.passed
+    assert "regex timeout" in res.message

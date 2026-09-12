@@ -368,8 +368,17 @@ class SubprocessBackend(ExecutionBackend):
             op_inflight = max(0, op_inflight - 1)
 
         async def _drain(stream):
+            # stderr 泵与协议通道同规格（_LineReader 行长上限）：asyncio 裸
+            # readline 对超过流限（默认 64KB）的单行抛 ValueError → 泵协程被
+            # gather(return_exceptions=True) 吞掉 → 脚本继续写 stderr 即阻塞，
+            # 沙箱假死到超时。超限视为滥用输出：记日志并终止沙箱（与 fd1 一致）。
+            reader = _LineReader(stream, _MAX_PROTO_LINE)
             while True:
-                line = await stream.readline()
+                line = await reader.readline()
+                if line is None:
+                    _append_log("[stderr line exceeded limit; killing sandbox]")
+                    _kill_process_group(proc)
+                    break
                 if not line:
                     break
                 _append_log(line.decode("utf-8", "replace").rstrip())

@@ -79,19 +79,35 @@ class UiSession:
                 "playwright 未安装：uv pip install 'testpilot-worker[playwright]' "
                 "&& playwright install chromium") from e
         self.case_dir.mkdir(parents=True, exist_ok=True)
-        self._pw = await async_playwright().start()
-        # channel=chromium：用完整 Chromium 跑 headless（兼容未装 headless_shell 的环境，
-        # 标准 playwright install chromium 两种都装，行为一致）
-        self._browser = await self._pw.chromium.launch(headless=True, channel="chromium")
-        ctx_kwargs: dict[str, Any] = {"base_url": self.base_url or None}
-        if self.record:
-            ctx_kwargs["record_har_path"] = str(self.case_dir / "network.har")
-            ctx_kwargs["record_har_content"] = "omit"
-        self._ctx = await self._browser.new_context(**ctx_kwargs)
-        if self.record:
-            await self._ctx.tracing.start(screenshots=True, snapshots=True)
-        self.page = await self._ctx.new_page()
-        self.page.set_default_timeout(_DEFAULT_TIMEOUT_MS)
+        # 局部变量构建：全部成功后才挂到 self。若中途失败就把半初始化资源
+        # 挂上 self（如 _pw 已赋值而 page 为 None），重试 ensure() 会整体覆盖
+        # self._pw/_browser → 旧 driver/浏览器进程永久泄漏。
+        pw = browser = ctx = page = None
+        try:
+            # channel=chromium：用完整 Chromium 跑 headless（兼容未装 headless_shell 的环境，
+            # 标准 playwright install chromium 两种都装，行为一致）
+            pw = await async_playwright().start()
+            browser = await pw.chromium.launch(headless=True, channel="chromium")
+            ctx_kwargs: dict[str, Any] = {"base_url": self.base_url or None}
+            if self.record:
+                ctx_kwargs["record_har_path"] = str(self.case_dir / "network.har")
+                ctx_kwargs["record_har_content"] = "omit"
+            ctx = await browser.new_context(**ctx_kwargs)
+            if self.record:
+                await ctx.tracing.start(screenshots=True, snapshots=True)
+            page = await ctx.new_page()
+            page.set_default_timeout(_DEFAULT_TIMEOUT_MS)
+        except Exception:
+            # 失败路径回收已启动的资源（幂等关闭，尽力而为；取消不在此捕获）
+            for closer in ([ctx.close] if ctx is not None else []) \
+                    + ([browser.close] if browser is not None else []) \
+                    + ([pw.stop] if pw is not None else []):
+                try:
+                    await closer()
+                except Exception:
+                    pass
+            raise
+        self._pw, self._browser, self._ctx, self.page = pw, browser, ctx, page
 
     def _artifact(self, kind: str, path: Path) -> UiArtifact:
         size = path.stat().st_size if path.exists() else 0
@@ -117,6 +133,13 @@ class UiSession:
             resp = await page.goto(url, wait_until="domcontentloaded")
             # 重定向复核：goto 内部跟随 302/307，最终地址必须同样通过出口校验
             # （否则 example.com -> 127.0.0.1:8080/metadata 可绕过单次检查）
+            # 已知缺口（REVIEW_SANDBOX_STACK.md S3/S6，根治需本地转发代理，
+            # 超出本次修复范围，勿在此自行实现代理）：
+            # 1) 本检查是事后复核——重定向中间跳的请求已由浏览器真实发出，
+            #    私网/metadata 已被触及一次后才可能被拒绝；
+            # 2) 浏览器按域名自行 DNS 解析，未 pin 到校验通过的 IP（DNS rebinding
+            #    可绕过下面的私网拦截）。
+            # 当前保证：首跳前 acheck + 最终 URL 复核（尽力收窄，非根治）。
             final_url = page.url
             if final_url:
                 fu = urlparse(final_url)

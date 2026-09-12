@@ -21,7 +21,11 @@ from .sandbox import ExecutionBackend, SubprocessBackend, bridge_http_handler
 
 # 并行循环最大并发（P0 资源上限：每个迭代一个 httpx client，UI 步骤各起一个浏览器）
 _MAX_PARALLEL_LOOP = 16          # 并行迭代并发上限
-_MAX_LOOP_PARALLEL_TOTAL = 1000  # 并行迭代总量上限（gather 会先物化全部协程，巨量 count 直接 OOM）
+_MAX_LOOP_TOTAL = 1000           # 循环迭代总量上限：并行 gather 会先物化全部协程直接
+                                 # OOM；串行无此问题但每迭代每步 _record 无界累积
+                                 # step_results/logs，长超时窗口内同样 OOM —— 二者同限
+_MAX_STEP_RESULTS = 2000         # 单用例步骤结果累积上限（_record 超限抛错，不静默丢）
+_MAX_STEP_LOG_LINES = 5000       # 单用例步骤日志总行数累积上限（同上）
 
 _SDK_OP_MAP = {
     "eq": pb.ASSERTION_OP_EQ, "ne": pb.ASSERTION_OP_NE, "exists": pb.ASSERTION_OP_EXISTS,
@@ -85,6 +89,7 @@ class CaseRunner:
         self.base_url = self.env.base_url or self.env.environment.base_url
         self.last_response: dict[str, Any] | None = None
         self.step_results: list[pb.TestStepResult] = []
+        self._total_log_lines = 0  # 已累积步骤日志行数（_MAX_STEP_LOG_LINES 预算）
         self.client = httpx.AsyncClient(verify=True, transport=http_exec.pinned_transport())
         # tls_verify=false 的接口需要独立 insecure client（httpx 不支持单请求级 verify）
         self.insecure_client = httpx.AsyncClient(verify=False, transport=http_exec.pinned_transport())
@@ -145,6 +150,14 @@ class CaseRunner:
             step_path=path,
             status=status,
         )
+        # 累积上限：超限抛错终止用例——既不能无界累积（长循环 OOM Worker），
+        # 也不允许静默丢弃（步骤结果缺失会让报告与真实执行不一致）
+        if len(self.step_results) >= _MAX_STEP_RESULTS:
+            raise StepFailure(f"case exceeded step result limit {_MAX_STEP_RESULTS}; aborting")
+        if self._total_log_lines + len(logs or []) > _MAX_STEP_LOG_LINES:
+            raise StepFailure(
+                f"case exceeded step log limit ({_MAX_STEP_LOG_LINES} lines); aborting")
+        self._total_log_lines += len(logs or [])
         sr.duration.FromTimedelta(timedelta(milliseconds=elapsed_ms))
         if request:
             sr.request.CopyFrom(_to_struct(request))
@@ -430,6 +443,10 @@ class CaseRunner:
         else:
             raise StepFailure("loop: no bounds set")
         var = spec.iterator or "i"
+        # 串行迭代总量上限（与并行分支同一常量）：无上限时巨量 count 在超时
+        # 窗口内持续累积 step_results/logs（每迭代每步一条）→ OOM Worker
+        if len(rng) > _MAX_LOOP_TOTAL:
+            raise StepFailure(f"loop iterations {len(rng)} exceed limit {_MAX_LOOP_TOTAL}")
         if spec.parallel:
             await self._do_loop_parallel(spec, rng, var, path)
             return
@@ -453,11 +470,11 @@ class CaseRunner:
         语义：全部迭代跑完（不 fail-fast 取消）；任一迭代失败则该 LOOP 步骤失败，
         错误信息带迭代号。
         并发上限 _MAX_PARALLEL_LOOP：无上限时单用例可拉起上千浏览器/连接池（租户可触发 DoS）。
-        总量上限 _MAX_LOOP_PARALLEL_TOTAL：asyncio.gather(*生成器) 会在信号量生效前
+        总量上限 _MAX_LOOP_TOTAL：asyncio.gather(*生成器) 会在信号量生效前
         物化全部迭代协程——10^6 级 count 直接 OOM Worker，必须限总量。"""
-        if len(rng) > _MAX_LOOP_PARALLEL_TOTAL:
+        if len(rng) > _MAX_LOOP_TOTAL:
             raise StepFailure(
-                f"loop parallel iterations {len(rng)} exceed limit {_MAX_LOOP_PARALLEL_TOTAL}")
+                f"loop parallel iterations {len(rng)} exceed limit {_MAX_LOOP_TOTAL}")
         base_vars = dict(self.vars)
         base_response = self.last_response
         sem = asyncio.Semaphore(_MAX_PARALLEL_LOOP)
@@ -485,6 +502,9 @@ class CaseRunner:
                 if first_failure is None:
                     first_failure = (iteration, res)
                 continue
+            # 合并也受步骤结果上限约束（并行总量虽受限，但迭代数×每迭代步数仍可超预算）
+            if len(self.step_results) + len(res) > _MAX_STEP_RESULTS:
+                raise StepFailure(f"case exceeded step result limit {_MAX_STEP_RESULTS}; aborting")
             self.step_results.extend(res)
         if first_failure is not None:
             iteration, res = first_failure

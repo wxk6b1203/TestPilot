@@ -233,11 +233,15 @@ class ProbeHub:
                               eval=wpb.ProbeEvalResult(result_json=out, result_truncated=truncated))
 
     async def _close(self, cmd: wpb.ProbeCommand) -> wpb.ProbeReply:
-        sess = self._sessions.pop(cmd.session_id, None)
+        # 先校验租户再摘除：若先 pop，租户不符的 close 会无声摧毁他人会话
+        # （从注册表消失）且不 finish() → Chromium 进程泄漏。租户不符按
+        # "不存在"处理：不 pop、不收资源，回执与不存在时一致（不泄漏存在性）。
+        sess = self._sessions.get(cmd.session_id)
         if sess is None or (cmd.tenant_id and sess.tenant_id != cmd.tenant_id):
             # 关闭不存在的会话视为幂等成功（close 语义：确保已释放）
             return wpb.ProbeReply(request_id=cmd.request_id, session_id=cmd.session_id,
                                   ack=wpb.ProbeAck(session_id=cmd.session_id))
+        self._sessions.pop(cmd.session_id, None)
         if sess.ui is not None:
             try:
                 await sess.ui.finish()

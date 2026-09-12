@@ -54,12 +54,46 @@ class WorkerClient:
         self._stop = asyncio.Event()
         self._channel: grpc.aio.Channel | None = None
 
+    @staticmethod
+    def _kind_of(ev: wpb.WorkerEvent) -> str:
+        return ev.WhichOneof("event") or ""
+
     async def _emit(self, ev: wpb.WorkerEvent) -> None:
-        """outbox 投递：满时丢弃并告警（保 Worker 存活优先）。"""
+        """outbox 投递：满时丢弃并告警（保 Worker 存活优先）。
+
+        心跳例外：心跳是 Worker 活性信号，与 task_result 同队列时若被结果
+        事件挤掉，调度器会误判 Worker 死亡并重派在途任务（重复执行副作用）。
+        因此满时心跳可驱逐队列里最旧的一条非心跳事件腾位；结果类事件仍按
+        丢弃+告警策略（丢失由 Scheduler reaper 兜底）。取舍：不引入双队列——
+        单队列 + 定向驱逐改动最小，且消费停滞时旧结果本就注定迟到。
+        安全性：put/get 均为 nowait 同步调用，中间无 await 交插，单事件循环内原子。
+        """
         try:
             self.outbox.put_nowait(ev)
+            return
         except asyncio.QueueFull:
+            pass
+        if self._kind_of(ev) != "heartbeat":
             log.warning("outbox full (%d); dropping event", _OUTBOX_MAX)
+            return
+        # 心跳腾位：出队直到弹出最旧的一条非心跳事件作牺牲品；途中弹出的
+        # 过期心跳直接丢弃（已被本条新心跳取代，无重排价值）
+        evicted: wpb.WorkerEvent | None = None
+        while True:
+            try:
+                old = self.outbox.get_nowait()
+            except asyncio.QueueEmpty:
+                break  # 队列已空，必有空位
+            if self._kind_of(old) != "heartbeat":
+                evicted = old
+                break
+        if evicted is not None:
+            log.warning("outbox full; evicted oldest %s event for heartbeat",
+                        self._kind_of(evicted))
+        try:
+            self.outbox.put_nowait(ev)  # 已腾出空位（同步段内无并发投递者）
+        except asyncio.QueueFull:  # pragma: no cover - 防御：理论不可达
+            log.warning("outbox full (%d); dropping heartbeat", _OUTBOX_MAX)
 
     def request_stop(self) -> None:
         """信号回调（add_signal_handler 同 loop 线程）：停止主循环、取消任务、关流。"""

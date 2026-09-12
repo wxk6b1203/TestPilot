@@ -214,3 +214,24 @@ def test_mult_within_limit_ok():
     assert eval_expr("'ab' * 2", {}) == "abab"
     assert eval_expr("3 * [1, 2]", {}) == [1, 2, 1, 2, 1, 2]
 
+
+
+# % 格式化守卫：宽度/精度域直接决定分配大小（"%999999999d" % 1 ≈ 1GB），
+# 与字符串乘法同级 OOM 面。详见 expr._guard_str_format。
+def test_mod_str_format_huge_width_rejected():
+    with pytest.raises(ExprError, match="too large"):
+        eval_expr('"%999999999d" % 1', {})
+
+
+def test_mod_str_format_huge_precision_rejected():
+    with pytest.raises(ExprError, match="too large"):
+        eval_expr('"%.999999999f" % 1.0', {})
+
+
+def test_mod_str_format_normal_ok():
+    assert eval_expr('"%05d" % 42', {}) == "00042"
+    assert eval_expr('"v=%s" % "x"', {}) == "v=x"
+
+
+def test_mod_int_still_works():
+    assert eval_expr("7 % 3", {}) == 1

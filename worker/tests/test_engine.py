@@ -436,3 +436,39 @@ def test_passed_step_has_empty_error(tmp_path, monkeypatch):
     sr = r.step_results[-1]
     assert sr.status == pb.STEP_STATUS_PASSED
     assert sr.error == ""
+
+
+# ---- 串行 LOOP 总量上限 / _record 累积上限（P2：长循环 OOM 防护）----
+
+def test_serial_loop_total_limit():
+    """回归：串行 LOOP 必须有迭代总量上限（与并行分支同限）——无上限时巨量
+    count 在超时窗口内每迭代每步累积 step_results → OOM Worker。"""
+    from testpilot_worker import engine as engine_mod
+    r = _runner()
+    spec = pb.LoopStep(iterator="i", count=engine_mod._MAX_LOOP_TOTAL + 1,
+                       body_steps=[_set_var_step("x", "1")])
+    with pytest.raises(StepFailure, match="exceed limit"):
+        asyncio.run(r._do_loop(spec, "1"))
+    assert r.step_results == []  # 超限在进入循环前拒绝
+
+
+def test_record_step_results_cap(monkeypatch):
+    """_record 步骤结果累积超上限必须抛错终止用例（不静默丢弃、不无界累积）。"""
+    from testpilot_worker import engine as engine_mod
+    monkeypatch.setattr(engine_mod, "_MAX_STEP_RESULTS", 3)
+    r = _runner()
+    for i in range(3):
+        r._record(str(i), pb.STEP_STATUS_PASSED, 1)
+    with pytest.raises(StepFailure, match="step result limit"):
+        r._record("over", pb.STEP_STATUS_PASSED, 1)
+    assert len(r.step_results) == 3
+
+
+def test_record_log_lines_cap(monkeypatch):
+    """_record 步骤日志总行数累积超上限必须抛错终止用例。"""
+    from testpilot_worker import engine as engine_mod
+    monkeypatch.setattr(engine_mod, "_MAX_STEP_LOG_LINES", 4)
+    r = _runner()
+    r._record("1", pb.STEP_STATUS_PASSED, 1, logs=["a", "b", "c", "d"])
+    with pytest.raises(StepFailure, match="step log limit"):
+        r._record("2", pb.STEP_STATUS_PASSED, 1, logs=["e"])

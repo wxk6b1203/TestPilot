@@ -64,3 +64,20 @@ def test_protocol_line_overflow_kills_sandbox():
     res = run_coro(b.run(src, "run", {"vars": {}, "base_url": "http://x"}, timeout_s=10))
     assert not res.ok, res
     assert any("line exceeded limit" in l for l in res.logs), res.logs[-3:]
+
+
+def test_stderr_line_overflow_kills_sandbox():
+    """回归：stderr 泵与协议通道同规格（_LineReader 行长上限）。裸 readline 对
+    超过流限（64KB）的单行抛 ValueError → 泵协程被 gather(return_exceptions=True)
+    吞掉 → 脚本继续写 stderr 阻塞 → 沙箱假死到超时。"""
+    b = SubprocessBackend(lambda args: {"ok": True})
+    src = (
+        "import sys, time\n"
+        "sys.stderr.write('e' * (3 * 1024 * 1024))\n"  # 无换行巨量单行
+        "sys.stderr.flush()\n"
+        "time.sleep(60)\n"                             # 泵失效时：写阻塞 → 假死
+    )
+    res = run_coro(b.run(src, "run", {"vars": {}, "base_url": "http://x"}, timeout_s=5))
+    assert not res.ok, res
+    # 标记日志只可能由带行长上限的泵发出（旧实现的泵已死于 ValueError）
+    assert any("stderr line exceeded limit" in l for l in res.logs), res.logs[-3:]

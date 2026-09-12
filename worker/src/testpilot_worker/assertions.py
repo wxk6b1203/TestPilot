@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Any, Mapping
 
 from testpilot.common.v1 import types_pb2 as pb
@@ -11,19 +13,33 @@ from testpilot.common.v1 import types_pb2 as pb
 from .expr import ExprError, eval_expr, render
 
 # ---- MATCHES 正则防护（ReDoS）----
-# 租户可控正则 + 最多 64KB 响应体：灾难性回溯（(a+)+$、(a|a)+ 类）可冻结
-# 事件循环数十秒（心跳/所有任务停摆）。Python re 无超时机制，用启发式拒绝：
-# 1) 长度上限；2) 内层量词/交替被外层量词包裹的嵌套模式。
+# 租户可控正则 + 最多 64KB 响应体：灾难性回溯（(a+)+$、(a|a)+、a?a?a?… 类）
+# 可冻结事件循环数十秒（心跳/所有任务停摆）。Python re 无超时机制，双层防护：
+# 1) 静态启发式拒绝已知灾难形态（嵌套量词 / 反向引用 / 相邻重复量词化原子）；
+# 2) 执行放独立小线程池并限时（见 _REGEX_TIMEOUT_S），超时判失败不冻结循环。
 _MAX_REGEX_LEN = 200
+_REGEX_TIMEOUT_S = 2.0
 _RE_DOS_PATTERN = re.compile(r"\([^()]*[+*|][^()]*\)[+*]")
+_RE_BACKREF = re.compile(r"\\[1-9]")
+# 相邻的"同一原子+量词"连续出现（a?a?a?、(ab)+(ab)+ 类）：匹配集相同则
+# 失配时回溯按指数叠加，且不含括号、绕过嵌套量词启发式。
+_RE_ADJ_REPEAT = re.compile(r"(\\.|\(\?:[^)]*\)|\([^)]*\)|[^+*?{()\\])([*+?]|\{\d+(,\d*)?\})\1\2(?:\1\2)+")
+
+# 独立于事件循环执行（concurrent.futures 线程无法强杀，用小池限制僵尸数量：
+# 两个并发病态正则会占满池，后续 MATCHES 依次超时失败——安全降级而非冻结）。
+_REGEX_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tp-regex")
 
 
 def _regex_guard(pattern: str) -> str | None:
     """返回拒绝原因；None=放行。"""
     if len(pattern) > _MAX_REGEX_LEN:
         return f"regex too long (> {_MAX_REGEX_LEN} chars)"
+    if _RE_BACKREF.search(pattern):
+        return "backreferences rejected (ReDoS guard)"
     if _RE_DOS_PATTERN.search(pattern):
         return "regex with nested quantifiers rejected (ReDoS guard)"
+    if _RE_ADJ_REPEAT.search(pattern):
+        return "regex with repeated adjacent quantified atoms rejected (ReDoS guard)"
     return None
 
 
@@ -117,10 +133,17 @@ def _compare(op: int, actual: Any, expected: str) -> tuple[bool, str]:
     if op == pb.ASSERTION_OP_MATCHES:
         if err := _regex_guard(expected):
             return False, err
+        fut = _REGEX_EXECUTOR.submit(re.search, expected, str(actual))
         try:
-            return re.search(expected, str(actual)) is not None, f"matches /{expected}/"
+            m = fut.result(timeout=_REGEX_TIMEOUT_S)
+        except FuturesTimeoutError:
+            fut.cancel()
+            # 线程可能仍在回溯（无法强杀），但事件循环不再被冻结：
+            # 心跳/其他任务继续，worker 不会因假死被误判下线重派。
+            return False, f"regex timeout after {_REGEX_TIMEOUT_S:.0f}s (possible ReDoS)"
         except re.error as e:
             return False, f"invalid regex: {e}"
+        return m is not None, f"matches /{expected}/"
     if op == pb.ASSERTION_OP_TYPE_IS:
         type_name = {
             dict: "object", list: "array", str: "string",

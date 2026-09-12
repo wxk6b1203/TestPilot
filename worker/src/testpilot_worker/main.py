@@ -14,8 +14,12 @@ from testpilot.common.v1 import types_pb2 as pb
 from . import config
 from .client import WorkerClient
 
-# 敏感环境变量匹配：TOKEN/KEY/SECRET/PASSWORD 等（用于进程环境清理）
-_SENSITIVE_ENV_RE: re.Pattern | None = re.compile(r"(TOKEN|KEY|SECRET|PASSWORD|PASSWD)", re.I)
+# 敏感环境变量匹配：TOKEN/KEY/SECRET/口令/凭据/AUTH/_PAT 等（进程环境清理）。
+# 宁多勿漏：清理发生在配置读取+回写之后，多删环境变量对 Worker 无害，漏删即凭据
+# 泄漏（Linux 沙箱可读 /proc/<PPID>/environ）。注意 _PAT 必须带下划线前缀——裸
+# "PAT" 会误伤 PATH/PYTHONPATH（沙箱隔离工具探测 shutil.which 依赖 PATH）。
+_SENSITIVE_ENV_RE: re.Pattern | None = re.compile(
+    r"(TOKEN|KEY|SECRET|PASSWORD|PASSWD|PASSPHRASE|CREDENTIAL|AUTH|_PAT)", re.I)
 
 _CAP_MAP = {
     "functional": pb.CAPABILITY_FUNCTIONAL,

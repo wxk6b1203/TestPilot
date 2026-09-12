@@ -371,3 +371,67 @@ async def run(ctx):
     assert result.status == pb.RUN_STATUS_PASSED, result.error
     points = [p for b in batches for p in b.points]
     assert points and sum(p.rps for p in points) > 0, points
+
+
+# ---- P2 回归：response 按调用链（沙箱）隔离，非共享字段 ----
+
+class _MarkHandler(BaseHTTPRequestHandler):
+    """回显 X-Chain/X-Prev 头为 JSON body：观察请求渲染作用域里的 response 来源。"""
+
+    def _reply(self, payload):
+        body = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self._reply({"chain": self.headers.get("X-Chain", ""),
+                     "prev": self.headers.get("X-Prev", "")})
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture(scope="module")
+def mark_addr():
+    srv = HTTPServer(("127.0.0.1", 0), _MarkHandler)
+    t = threading.Thread(target=srv.serve_forever, daemon=True)
+    t.start()
+    yield f"http://127.0.0.1:{srv.server_port}"
+    srv.shutdown()
+    t.join(timeout=5)
+
+
+def test_caller_response_scope_is_per_chain_not_shared(mark_addr):
+    """回归：behavior 压测同一 caller 被 K 个沙箱并发使用，请求渲染作用域的
+    response 必须按调用链（merged_vars）隔离——旧实现读共享 last_response 字段，
+    并发调用互相覆盖 → A 链请求模板拿到 B 链的响应（串台）。"""
+    from testpilot_worker.lowcode_api import LowCodeApiCaller
+
+    api = pb.HttpApi(id="1", method=pb.HTTP_METHOD_POST, uri="/echo")
+    caller = LowCodeApiCaller(base_url=mark_addr, tenant_id=1, auto_headers={},
+                              http_apis={"1": api}, timeout_s=10)
+    chain_a: dict = {"tag": "A"}
+    chain_b: dict = {"tag": "B"}
+
+    async def main():
+        try:
+            ov = {"headers": {"X-Chain": "{{ tag }}"}}
+            # 两链各打一枪（交错写入共享状态的场景）；再各自二次调用，模板引用
+            # 上一响应 {{ response.json.chain }} —— 必须是本链自己的上一响应
+            await caller.call_http("1", ov, {"tag": "A"}, chain_vars=chain_a)
+            await caller.call_http("1", ov, {"tag": "B"}, chain_vars=chain_b)
+            ov2 = {"headers": {"X-Chain": "{{ tag }}",
+                               "X-Prev": "{{ response.json.chain }}"}}
+            ra = await caller.call_http("1", ov2, {"tag": "A"}, chain_vars=chain_a)
+            rb = await caller.call_http("1", ov2, {"tag": "B"}, chain_vars=chain_b)
+            return ra, rb
+        finally:
+            await caller.close()
+
+    ra, rb = run_coro(main())
+    assert ra["response"]["body"]["prev"] == "A", ra["response"]["body"]
+    assert rb["response"]["body"]["prev"] == "B", rb["response"]["body"]
