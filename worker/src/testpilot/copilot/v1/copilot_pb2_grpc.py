@@ -94,6 +94,26 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsResponse.FromString,
                 _registered_method=True)
+        self.ListPlans = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/ListPlans',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansResponse.FromString,
+                _registered_method=True)
+        self.GetPlan = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/GetPlan',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanResponse.FromString,
+                _registered_method=True)
+        self.ListScripts = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/ListScripts',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsResponse.FromString,
+                _registered_method=True)
+        self.GetScript = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/GetScript',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptResponse.FromString,
+                _registered_method=True)
         self.CreateProject = channel.unary_unary(
                 '/testpilot.copilot.v1.CopilotToolService/CreateProject',
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectRequest.SerializeToString,
@@ -108,6 +128,36 @@ class CopilotToolServiceStub:
                 '/testpilot.copilot.v1.CopilotToolService/UpdateApi',
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiResponse.FromString,
+                _registered_method=True)
+        self.DeleteApi = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/DeleteApi',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiResponse.FromString,
+                _registered_method=True)
+        self.UpdatePlan = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/UpdatePlan',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanResponse.FromString,
+                _registered_method=True)
+        self.DeletePlan = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/DeletePlan',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.FromString,
+                _registered_method=True)
+        self.CreateScript = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/CreateScript',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptResponse.FromString,
+                _registered_method=True)
+        self.UpdateScript = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/UpdateScript',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptResponse.FromString,
+                _registered_method=True)
+        self.DeleteScript = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/DeleteScript',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptResponse.FromString,
                 _registered_method=True)
         self.CreateTestCase = channel.unary_unary(
                 '/testpilot.copilot.v1.CopilotToolService/CreateTestCase',
@@ -252,6 +302,30 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListPlans(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetPlan(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListScripts(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetScript(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CreateProject(self, request, context):
         """---- 写工具（默认 HITL 审批） ----
         """
@@ -266,6 +340,42 @@ class CopilotToolServiceServicer:
         raise NotImplementedError('Method not implemented!')
 
     def UpdateApi(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteApi(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdatePlan(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeletePlan(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateScript(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateScript(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def DeleteScript(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -415,6 +525,26 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CheckVariableRefsResponse.SerializeToString,
             ),
+            'ListPlans': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListPlans,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansResponse.SerializeToString,
+            ),
+            'GetPlan': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetPlan,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanResponse.SerializeToString,
+            ),
+            'ListScripts': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListScripts,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsResponse.SerializeToString,
+            ),
+            'GetScript': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetScript,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptResponse.SerializeToString,
+            ),
             'CreateProject': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateProject,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateProjectRequest.FromString,
@@ -429,6 +559,36 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.UpdateApi,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiResponse.SerializeToString,
+            ),
+            'DeleteApi': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteApi,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiResponse.SerializeToString,
+            ),
+            'UpdatePlan': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdatePlan,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanResponse.SerializeToString,
+            ),
+            'DeletePlan': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeletePlan,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.SerializeToString,
+            ),
+            'CreateScript': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateScript,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptResponse.SerializeToString,
+            ),
+            'UpdateScript': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateScript,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptResponse.SerializeToString,
+            ),
+            'DeleteScript': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteScript,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptResponse.SerializeToString,
             ),
             'CreateTestCase': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateTestCase,
@@ -831,6 +991,114 @@ class CopilotToolService:
             _registered_method=True)
 
     @staticmethod
+    def ListPlans(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/ListPlans',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListPlansResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetPlan(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/GetPlan',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetPlanResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListScripts(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/ListScripts',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.ListScriptsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetScript(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/GetScript',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.GetScriptResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
     def CreateProject(request,
             target,
             options=(),
@@ -901,6 +1169,168 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/UpdateApi',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteApi(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/DeleteApi',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteApiResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdatePlan(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/UpdatePlan',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdatePlanResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeletePlan(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/DeletePlan',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateScript(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/CreateScript',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateScript(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/UpdateScript',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.UpdateScriptResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteScript(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/DeleteScript',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeleteScriptResponse.FromString,
             options,
             channel_credentials,
             insecure,

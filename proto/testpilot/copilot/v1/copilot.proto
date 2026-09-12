@@ -27,11 +27,21 @@ service CopilotToolService {
   rpc QueryCoverage(QueryCoverageRequest) returns (QueryCoverageResponse);
   rpc QueryApiDirectory(QueryApiDirectoryRequest) returns (QueryApiDirectoryResponse);
   rpc CheckVariableRefs(CheckVariableRefsRequest) returns (CheckVariableRefsResponse);
+  rpc ListPlans(ListPlansRequest) returns (ListPlansResponse);
+  rpc GetPlan(GetPlanRequest) returns (GetPlanResponse);
+  rpc ListScripts(ListScriptsRequest) returns (ListScriptsResponse);
+  rpc GetScript(GetScriptRequest) returns (GetScriptResponse);
 
   // ---- 写工具（默认 HITL 审批） ----
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse);
   rpc CreateApi(CreateApiRequest) returns (CreateApiResponse);
   rpc UpdateApi(UpdateApiRequest) returns (UpdateApiResponse);
+  rpc DeleteApi(DeleteApiRequest) returns (DeleteApiResponse);
+  rpc UpdatePlan(UpdatePlanRequest) returns (UpdatePlanResponse);
+  rpc DeletePlan(DeletePlanRequest) returns (DeletePlanResponse);
+  rpc CreateScript(CreateScriptRequest) returns (CreateScriptResponse);
+  rpc UpdateScript(UpdateScriptRequest) returns (UpdateScriptResponse);
+  rpc DeleteScript(DeleteScriptRequest) returns (DeleteScriptResponse);
   rpc CreateTestCase(CreateTestCaseRequest) returns (CreateTestCaseResponse);
   rpc UpdateTestCase(UpdateTestCaseRequest) returns (UpdateTestCaseResponse);
   rpc CreateTestPlan(CreateTestPlanRequest) returns (CreateTestPlanResponse);
@@ -260,6 +270,14 @@ message UpdateApiResponse {
   string api_id = 1;
 }
 
+message DeleteApiRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string api_id = 2;
+  ApiKind kind = 3;
+}
+message DeleteApiResponse {}
+
+
 message CreateTestCaseRequest {
   testpilot.common.v1.RequestContext ctx = 1;
   string project_id = 2;
@@ -290,6 +308,81 @@ message CreateTestPlanResponse {
   string plan_id = 1;
   string node_id = 2;
 }
+
+message ListPlansRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;   // 空 = 租户全部
+}
+message ListPlansResponse {
+  // 摘要列表：不含 items，详情用 GetPlan
+  repeated testpilot.common.v1.TestPlan plans = 1;
+}
+message GetPlanRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string plan_id = 2;
+}
+message GetPlanResponse {
+  testpilot.common.v1.TestPlan plan = 1;
+  repeated testpilot.common.v1.PlanItem items = 2;   // 按 order 升序
+}
+message UpdatePlanRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string plan_id = 2;
+  testpilot.common.v1.TestPlan plan = 3;             // 完整新定义（items 全量替换，按序）
+}
+message UpdatePlanResponse {
+  string plan_id = 1;
+}
+message DeletePlanRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string plan_id = 2;
+}
+message DeletePlanResponse {}
+
+message ScriptAsset {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+  string language = 4;   // python
+  string content = 5;
+}
+message ListScriptsRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string query = 3;      // 按 name/description 模糊过滤
+}
+message ListScriptsResponse {
+  repeated ScriptAsset scripts = 1;
+}
+message GetScriptRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string script_id = 2;
+}
+message GetScriptResponse {
+  ScriptAsset script = 1;
+}
+message CreateScriptRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  ScriptAsset script = 3;   // language 缺省 python
+}
+message CreateScriptResponse {
+  string script_id = 1;
+}
+message UpdateScriptRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string script_id = 2;
+  ScriptAsset script = 3;   // 完整新定义
+}
+message UpdateScriptResponse {
+  string script_id = 1;
+}
+message DeleteScriptRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string script_id = 2;
+}
+message DeleteScriptResponse {}
+
 
 message ImportOpenApiRequest {
   testpilot.common.v1.RequestContext ctx = 1;
@@ -324,6 +417,7 @@ message ApplyOpenApiDiffResponse {
   repeated string updated_api_ids = 2;
   repeated string updated_case_ids = 3;
 }
+
 
 // ---------------------------------------------------------------------------
 // 触发

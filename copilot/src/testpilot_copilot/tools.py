@@ -352,6 +352,43 @@ async def check_variable_refs(ctx: RunContext[CopilotDeps],
     return await to_dict_async(r)
 
 
+@readonly.tool
+async def list_plans(ctx: RunContext[CopilotDeps], project_id: str | None = None) -> list[dict]:
+    """列出测试计划（摘要：名称/环境/cron/并发等，不含用例清单）。
+    project_id 省略时使用页面左上角当前选择的项目。查看计划内用例清单用 get_plan。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    r = await ctx.deps.sched.stub.ListPlans(
+        cpb.ListPlansRequest(ctx=ctx.deps.ctx(), project_id=pid))
+    return await to_dict_async(r)
+
+
+@readonly.tool
+async def get_plan(ctx: RunContext[CopilotDeps], plan_id: str) -> dict:
+    """获取测试计划详情，含计划内用例清单（按执行顺序）。"""
+    r = await ctx.deps.sched.stub.GetPlan(
+        cpb.GetPlanRequest(ctx=ctx.deps.ctx(), plan_id=plan_id))
+    return await to_dict_async(r)
+
+
+@readonly.tool
+async def list_scripts(ctx: RunContext[CopilotDeps], project_id: str | None = None,
+                       query: str = "") -> list[dict]:
+    """列出脚本资产（脚本库，可被用例/接口前后脚本引用）。query 按名称/描述模糊过滤。
+    project_id 省略时使用页面左上角当前选择的项目。只返回元信息，看源码用 get_script。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    r = await ctx.deps.sched.stub.ListScripts(
+        cpb.ListScriptsRequest(ctx=ctx.deps.ctx(), project_id=pid, query=query))
+    return await to_dict_async(r)
+
+
+@readonly.tool
+async def get_script(ctx: RunContext[CopilotDeps], script_id: str) -> dict:
+    """获取脚本资产详情（含源码全文）。"""
+    r = await ctx.deps.sched.stub.GetScript(
+        cpb.GetScriptRequest(ctx=ctx.deps.ctx(), script_id=script_id))
+    return await to_dict_async(r)
+
+
 # ---------------------------------------------------------------------------
 # 写/触发工具（requires_approval → 前端 HITL 审批后执行，Scheduler 落审计）
 # ---------------------------------------------------------------------------
@@ -961,6 +998,107 @@ async def trigger_stress(ctx: RunContext[CopilotDeps], stress_plan_id: str,
     r = await ctx.deps.sched.stub.TriggerStress(
         cpb.TriggerStressRequest(ctx=ctx.deps.ctx(), stress_plan_id=stress_plan_id,
                                  env_id=eid))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def update_plan(ctx: RunContext[CopilotDeps], plan_id: str,
+                      name: str | None = None,
+                      env_id: str | None = None,
+                      case_ids: list[str] | None = None,
+                      concurrency: int | None = None,
+                      retry_on_failure: bool | None = None,
+                      schedule_cron: str | None = None,
+                      timeout_ms: int | None = None) -> dict:
+    """修改测试计划（先 get_plan 再改）。只传需要变更的字段，未传字段保持原值；
+    case_ids 提供时全量替换计划内用例清单（按序执行），不传则保持不变。
+    schedule_cron 传 "" 可取消定时调度。"""
+    cur = await ctx.deps.sched.stub.GetPlan(
+        cpb.GetPlanRequest(ctx=ctx.deps.ctx(), plan_id=plan_id))
+    cur_d = await to_dict_async(cur)
+    base, items = cur_d.get("plan") or {}, cur_d.get("items") or []
+    # proto3 标量无 presence，服务端对以下字段无条件赋值 → None 时回填原值
+    plan = {
+        "name": name if name is not None else base.get("name", ""),
+        "projectId": base.get("projectId", ""),
+        "envId": ctx.deps.resolve_env_id(env_id, required=True) if env_id is not None
+                 else base.get("envId", ""),
+        "concurrency": concurrency if concurrency is not None else base.get("concurrency", 0),
+        "retryOnFailure": retry_on_failure if retry_on_failure is not None
+                          else bool(base.get("retryOnFailure", False)),
+        "scheduleCron": schedule_cron if schedule_cron is not None
+                        else base.get("scheduleCron", ""),
+    }
+    if timeout_ms is not None:
+        plan["timeout"] = {"seconds": timeout_ms // 1000,
+                           "nanos": (timeout_ms % 1000) * 1_000_000}
+    if case_ids is not None:
+        items = [{"caseId": cid, "enabled": True} for cid in case_ids]
+    plan["items"] = items
+    pm = pb.TestPlan()
+    json_format_parse(plan, pm)
+    r = await ctx.deps.sched.stub.UpdatePlan(
+        cpb.UpdatePlanRequest(ctx=ctx.deps.ctx(), plan_id=plan_id, plan=pm))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def delete_plan(ctx: RunContext[CopilotDeps], plan_id: str) -> dict:
+    """删除测试计划（软删，同时停止其 cron 定时调度）。不可恢复，慎用。"""
+    r = await ctx.deps.sched.stub.DeletePlan(
+        cpb.DeletePlanRequest(ctx=ctx.deps.ctx(), plan_id=plan_id))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def create_script(ctx: RunContext[CopilotDeps], name: str, content: str,
+                        description: str = "", language: str = "python",
+                        project_id: str | None = None) -> dict:
+    """创建脚本资产（脚本库）。脚本可被接口/用例的前后脚本引用。
+    language 目前仅支持 python。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    sc = cpb.ScriptAsset()
+    json_format_parse({"name": name, "description": description,
+                       "language": language, "content": content}, sc)
+    r = await ctx.deps.sched.stub.CreateScript(
+        cpb.CreateScriptRequest(ctx=ctx.deps.ctx(), project_id=pid, script=sc))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def update_script(ctx: RunContext[CopilotDeps], script_id: str,
+                        name: str | None = None,
+                        description: str | None = None,
+                        language: str | None = None,
+                        content: str | None = None) -> dict:
+    """修改脚本资产。只传需要变更的字段，未传字段保持原值。"""
+    sc = cpb.ScriptAsset()
+    fields = {"name": name, "description": description,
+              "language": language, "content": content}
+    json_format_parse({k: v for k, v in fields.items() if v is not None}, sc)
+    r = await ctx.deps.sched.stub.UpdateScript(
+        cpb.UpdateScriptRequest(ctx=ctx.deps.ctx(), script_id=script_id, script=sc))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def delete_script(ctx: RunContext[CopilotDeps], script_id: str) -> dict:
+    """删除脚本资产（软删）。已被接口/用例引用的脚本删除后引用会失效，慎用。"""
+    r = await ctx.deps.sched.stub.DeleteScript(
+        cpb.DeleteScriptRequest(ctx=ctx.deps.ctx(), script_id=script_id))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def delete_api(ctx: RunContext[CopilotDeps], api_id: str,
+                     kind: str = "http") -> dict:
+    """删除接口（软删，不可恢复，慎用）。kind: http|grpc，省略时 http。"""
+    k = str(kind or "http").strip().lower()
+    if k not in ("http", "grpc"):
+        raise ValueError(f"kind must be http or grpc, got {kind!r}")
+    r = await ctx.deps.sched.stub.DeleteApi(
+        cpb.DeleteApiRequest(ctx=ctx.deps.ctx(), api_id=api_id,
+                             kind=cpb.API_KIND_GRPC if k == "grpc" else cpb.API_KIND_HTTP))
     return await to_dict_async(r)
 
 

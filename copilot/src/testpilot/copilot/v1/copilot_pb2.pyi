@@ -346,6 +346,20 @@ class UpdateApiResponse(_message.Message):
     api_id: str
     def __init__(self, api_id: _Optional[str] = ...) -> None: ...
 
+class DeleteApiRequest(_message.Message):
+    __slots__ = ("ctx", "api_id", "kind")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    API_ID_FIELD_NUMBER: _ClassVar[int]
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    api_id: str
+    kind: ApiKind
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., api_id: _Optional[str] = ..., kind: _Optional[_Union[ApiKind, str]] = ...) -> None: ...
+
+class DeleteApiResponse(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
 class CreateTestCaseRequest(_message.Message):
     __slots__ = ("ctx", "project_id", "case", "parent_node_id")
     CTX_FIELD_NUMBER: _ClassVar[int]
@@ -401,6 +415,152 @@ class CreateTestPlanResponse(_message.Message):
     plan_id: str
     node_id: str
     def __init__(self, plan_id: _Optional[str] = ..., node_id: _Optional[str] = ...) -> None: ...
+
+class ListPlansRequest(_message.Message):
+    __slots__ = ("ctx", "project_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ...) -> None: ...
+
+class ListPlansResponse(_message.Message):
+    __slots__ = ("plans",)
+    PLANS_FIELD_NUMBER: _ClassVar[int]
+    plans: _containers.RepeatedCompositeFieldContainer[_types_pb2.TestPlan]
+    def __init__(self, plans: _Optional[_Iterable[_Union[_types_pb2.TestPlan, _Mapping]]] = ...) -> None: ...
+
+class GetPlanRequest(_message.Message):
+    __slots__ = ("ctx", "plan_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PLAN_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    plan_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., plan_id: _Optional[str] = ...) -> None: ...
+
+class GetPlanResponse(_message.Message):
+    __slots__ = ("plan", "items")
+    PLAN_FIELD_NUMBER: _ClassVar[int]
+    ITEMS_FIELD_NUMBER: _ClassVar[int]
+    plan: _types_pb2.TestPlan
+    items: _containers.RepeatedCompositeFieldContainer[_types_pb2.PlanItem]
+    def __init__(self, plan: _Optional[_Union[_types_pb2.TestPlan, _Mapping]] = ..., items: _Optional[_Iterable[_Union[_types_pb2.PlanItem, _Mapping]]] = ...) -> None: ...
+
+class UpdatePlanRequest(_message.Message):
+    __slots__ = ("ctx", "plan_id", "plan")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PLAN_ID_FIELD_NUMBER: _ClassVar[int]
+    PLAN_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    plan_id: str
+    plan: _types_pb2.TestPlan
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., plan_id: _Optional[str] = ..., plan: _Optional[_Union[_types_pb2.TestPlan, _Mapping]] = ...) -> None: ...
+
+class UpdatePlanResponse(_message.Message):
+    __slots__ = ("plan_id",)
+    PLAN_ID_FIELD_NUMBER: _ClassVar[int]
+    plan_id: str
+    def __init__(self, plan_id: _Optional[str] = ...) -> None: ...
+
+class DeletePlanRequest(_message.Message):
+    __slots__ = ("ctx", "plan_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PLAN_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    plan_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., plan_id: _Optional[str] = ...) -> None: ...
+
+class DeletePlanResponse(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
+
+class ScriptAsset(_message.Message):
+    __slots__ = ("id", "name", "description", "language", "content")
+    ID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    DESCRIPTION_FIELD_NUMBER: _ClassVar[int]
+    LANGUAGE_FIELD_NUMBER: _ClassVar[int]
+    CONTENT_FIELD_NUMBER: _ClassVar[int]
+    id: str
+    name: str
+    description: str
+    language: str
+    content: str
+    def __init__(self, id: _Optional[str] = ..., name: _Optional[str] = ..., description: _Optional[str] = ..., language: _Optional[str] = ..., content: _Optional[str] = ...) -> None: ...
+
+class ListScriptsRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "query")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    QUERY_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    query: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., query: _Optional[str] = ...) -> None: ...
+
+class ListScriptsResponse(_message.Message):
+    __slots__ = ("scripts",)
+    SCRIPTS_FIELD_NUMBER: _ClassVar[int]
+    scripts: _containers.RepeatedCompositeFieldContainer[ScriptAsset]
+    def __init__(self, scripts: _Optional[_Iterable[_Union[ScriptAsset, _Mapping]]] = ...) -> None: ...
+
+class GetScriptRequest(_message.Message):
+    __slots__ = ("ctx", "script_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    script_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., script_id: _Optional[str] = ...) -> None: ...
+
+class GetScriptResponse(_message.Message):
+    __slots__ = ("script",)
+    SCRIPT_FIELD_NUMBER: _ClassVar[int]
+    script: ScriptAsset
+    def __init__(self, script: _Optional[_Union[ScriptAsset, _Mapping]] = ...) -> None: ...
+
+class CreateScriptRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "script")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    SCRIPT_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    script: ScriptAsset
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., script: _Optional[_Union[ScriptAsset, _Mapping]] = ...) -> None: ...
+
+class CreateScriptResponse(_message.Message):
+    __slots__ = ("script_id",)
+    SCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    script_id: str
+    def __init__(self, script_id: _Optional[str] = ...) -> None: ...
+
+class UpdateScriptRequest(_message.Message):
+    __slots__ = ("ctx", "script_id", "script")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    SCRIPT_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    script_id: str
+    script: ScriptAsset
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., script_id: _Optional[str] = ..., script: _Optional[_Union[ScriptAsset, _Mapping]] = ...) -> None: ...
+
+class UpdateScriptResponse(_message.Message):
+    __slots__ = ("script_id",)
+    SCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    script_id: str
+    def __init__(self, script_id: _Optional[str] = ...) -> None: ...
+
+class DeleteScriptRequest(_message.Message):
+    __slots__ = ("ctx", "script_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    SCRIPT_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    script_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., script_id: _Optional[str] = ...) -> None: ...
+
+class DeleteScriptResponse(_message.Message):
+    __slots__ = ()
+    def __init__(self) -> None: ...
 
 class ImportOpenApiRequest(_message.Message):
     __slots__ = ("ctx", "project_id", "openapi_url", "openapi_document", "parent_node_id", "generate_cases")

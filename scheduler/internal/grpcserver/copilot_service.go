@@ -722,6 +722,323 @@ func (s *CopilotService) CreateTestPlan(_ context.Context, req *copilotv1.Create
 	return &copilotv1.CreateTestPlanResponse{PlanId: idStr(m.ID)}, nil
 }
 
+// planToProto 转换 TestPlan（不含 items；items 由调用方按需附加）。
+func planToProto(m *model.TestPlan) *commonv1.TestPlan {
+	p := &commonv1.TestPlan{
+		Id:             idStr(m.ID),
+		TenantId:       m.TenantID,
+		ProjectId:      idStr(m.ProjectID),
+		EnvId:          idStr(m.EnvID),
+		Name:           m.Name,
+		Concurrency:    int32(m.Concurrency),
+		RetryOnFailure: m.RetryOnFailure,
+		OverlapPolicy:  commonv1.OverlapPolicy(m.OverlapPolicy),
+		ScheduleCron:   m.ScheduleCron,
+	}
+	if m.TimeoutMs > 0 {
+		p.Timeout = durationpb.New(time.Duration(m.TimeoutMs) * time.Millisecond)
+	}
+	return p
+}
+
+// upsertPlanItems 用 items 全量重建计划的用例引用（按序），并校验引用属于本租户。
+func (s *CopilotService) upsertPlanItems(tx *gorm.DB, tenant, planID int64, items []*commonv1.PlanItem) error {
+	if err := tx.Where("plan_id = ? AND tenant_id = ?", planID, tenant).
+		Delete(&model.TestPlanItem{}).Error; err != nil {
+		return err
+	}
+	for i, item := range items {
+		row := &model.TestPlanItem{
+			ID:       model.NextID(),
+			TenantID: tenant,
+			PlanID:   planID,
+			Enabled:  item.GetEnabled(),
+			Order:    i + 1,
+		}
+		switch ref := item.GetRef().(type) {
+		case *commonv1.PlanItem_CaseId:
+			row.RefType = 1
+			row.RefID = mustID(ref.CaseId)
+		case *commonv1.PlanItem_SuiteId:
+			row.RefType = 2
+			row.RefID = mustID(ref.SuiteId)
+		}
+		if row.RefID == 0 {
+			continue
+		}
+		if err := tx.Create(row).Error; err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ListPlans 返回测试计划摘要（不含 items，详情用 GetPlan）。
+func (s *CopilotService) ListPlans(_ context.Context, req *copilotv1.ListPlansRequest) (*copilotv1.ListPlansResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	q := s.db.Where("tenant_id = ?", tid(req.GetCtx()))
+	if pid := mustID(req.GetProjectId()); pid != 0 {
+		q = q.Where("project_id = ?", pid)
+	}
+	var rows []model.TestPlan
+	if err := q.Order("id desc").Limit(200).Find(&rows).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &copilotv1.ListPlansResponse{}
+	for i := range rows {
+		out.Plans = append(out.Plans, planToProto(&rows[i]))
+	}
+	return out, nil
+}
+
+func (s *CopilotService) GetPlan(_ context.Context, req *copilotv1.GetPlanRequest) (*copilotv1.GetPlanResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	var m model.TestPlan
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetPlanId()), tenant).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "plan not found")
+	}
+	var items []model.TestPlanItem
+	if err := s.db.Where("plan_id = ? AND tenant_id = ?", m.ID, tenant).Order("\"order\" asc").Find(&items).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &copilotv1.GetPlanResponse{Plan: planToProto(&m)}
+	for i := range items {
+		item := &commonv1.PlanItem{Enabled: items[i].Enabled}
+		if items[i].RefType == 1 {
+			item.Ref = &commonv1.PlanItem_CaseId{CaseId: idStr(items[i].RefID)}
+		} else {
+			item.Ref = &commonv1.PlanItem_SuiteId{SuiteId: idStr(items[i].RefID)}
+		}
+		out.Items = append(out.Items, item)
+	}
+	return out, nil
+}
+
+func (s *CopilotService) UpdatePlan(_ context.Context, req *copilotv1.UpdatePlanRequest) (*copilotv1.UpdatePlanResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	p := req.GetPlan()
+	if p == nil || p.GetName() == "" {
+		return nil, status.Error(codes.InvalidArgument, "plan and name required")
+	}
+	var m model.TestPlan
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetPlanId()), tenant).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "plan not found")
+	}
+	if pid := mustID(p.GetProjectId()); pid != 0 && pid != m.ProjectID {
+		if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+			return nil, err
+		}
+		m.ProjectID = pid
+	}
+	if eid := mustID(p.GetEnvId()); eid != 0 {
+		m.EnvID = eid
+	}
+	m.Name = p.GetName()
+	if p.GetConcurrency() > 0 {
+		m.Concurrency = int(p.GetConcurrency())
+	}
+	m.RetryOnFailure = p.GetRetryOnFailure()
+	m.ScheduleCron = p.GetScheduleCron()
+	if p.GetOverlapPolicy() != 0 {
+		m.OverlapPolicy = int16(p.GetOverlapPolicy())
+	}
+	if t := p.GetTimeout(); t != nil {
+		m.TimeoutMs = int(t.AsDuration().Milliseconds())
+	}
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(&m).Error; err != nil {
+			return err
+		}
+		if p.GetItems() != nil {
+			if err := s.upsertPlanItems(tx, tenant, m.ID, p.GetItems()); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "update", "test_plan", idStr(m.ID), map[string]any{"name": m.Name})
+	return &copilotv1.UpdatePlanResponse{PlanId: idStr(m.ID)}, nil
+}
+
+func (s *CopilotService) DeletePlan(_ context.Context, req *copilotv1.DeletePlanRequest) (*copilotv1.DeletePlanResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	var m model.TestPlan
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetPlanId()), tenant).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "plan not found")
+	}
+	if err := s.db.Delete(&m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "delete", "test_plan", idStr(m.ID), map[string]any{"name": m.Name})
+	return &copilotv1.DeletePlanResponse{}, nil
+}
+
+func scriptAssetToProto(m *model.Script) *copilotv1.ScriptAsset {
+	return &copilotv1.ScriptAsset{
+		Id:          idStr(m.ID),
+		Name:        m.Name,
+		Description: m.Description,
+		Language:    m.Language,
+		Content:     m.Content,
+	}
+}
+
+func (s *CopilotService) ListScripts(_ context.Context, req *copilotv1.ListScriptsRequest) (*copilotv1.ListScriptsResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	q := s.db.Where("tenant_id = ?", tid(req.GetCtx()))
+	if pid := mustID(req.GetProjectId()); pid != 0 {
+		q = q.Where("project_id = ?", pid)
+	}
+	if qstr := strings.TrimSpace(req.GetQuery()); qstr != "" {
+		like := "%" + qstr + "%"
+		q = q.Where("name LIKE ? OR description LIKE ?", like, like)
+	}
+	var rows []model.Script
+	if err := q.Order("id desc").Limit(200).Find(&rows).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	out := &copilotv1.ListScriptsResponse{}
+	for i := range rows {
+		out.Scripts = append(out.Scripts, scriptAssetToProto(&rows[i]))
+	}
+	return out, nil
+}
+
+func (s *CopilotService) GetScript(_ context.Context, req *copilotv1.GetScriptRequest) (*copilotv1.GetScriptResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	var m model.Script
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetScriptId()), tid(req.GetCtx())).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "script not found")
+	}
+	return &copilotv1.GetScriptResponse{Script: scriptAssetToProto(&m)}, nil
+}
+
+func (s *CopilotService) CreateScript(_ context.Context, req *copilotv1.CreateScriptRequest) (*copilotv1.CreateScriptResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	sc := req.GetScript()
+	if sc == nil || sc.GetName() == "" || sc.GetContent() == "" {
+		return nil, status.Error(codes.InvalidArgument, "script name and content required")
+	}
+	pid := mustID(req.GetProjectId())
+	if pid != 0 {
+		if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+			return nil, err
+		}
+	}
+	lang := sc.GetLanguage()
+	if lang == "" {
+		lang = "python"
+	}
+	m := &model.Script{
+		ID:          model.NextID(),
+		TenantID:    tid(req.GetCtx()),
+		ProjectID:   pid,
+		Name:        sc.GetName(),
+		Description: sc.GetDescription(),
+		Language:    lang,
+		Content:     sc.GetContent(),
+	}
+	if err := s.db.Create(m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "create", "script", idStr(m.ID), map[string]any{"name": m.Name, "language": m.Language})
+	return &copilotv1.CreateScriptResponse{ScriptId: idStr(m.ID)}, nil
+}
+
+func (s *CopilotService) UpdateScript(_ context.Context, req *copilotv1.UpdateScriptRequest) (*copilotv1.UpdateScriptResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	sc := req.GetScript()
+	if sc == nil {
+		return nil, status.Error(codes.InvalidArgument, "script required")
+	}
+	var m model.Script
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetScriptId()), tid(req.GetCtx())).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "script not found")
+	}
+	if name := sc.GetName(); name != "" {
+		m.Name = name
+	}
+	if sc.GetDescription() != "" {
+		m.Description = sc.GetDescription()
+	}
+	if lang := sc.GetLanguage(); lang != "" {
+		m.Language = lang
+	}
+	if content := sc.GetContent(); content != "" {
+		m.Content = content
+	}
+	if err := s.db.Save(&m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "update", "script", idStr(m.ID), map[string]any{"name": m.Name})
+	return &copilotv1.UpdateScriptResponse{ScriptId: idStr(m.ID)}, nil
+}
+
+func (s *CopilotService) DeleteScript(_ context.Context, req *copilotv1.DeleteScriptRequest) (*copilotv1.DeleteScriptResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	var m model.Script
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetScriptId()), tid(req.GetCtx())).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "script not found")
+	}
+	if err := s.db.Delete(&m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "delete", "script", idStr(m.ID), map[string]any{"name": m.Name})
+	return &copilotv1.DeleteScriptResponse{}, nil
+}
+
+func (s *CopilotService) DeleteApi(_ context.Context, req *copilotv1.DeleteApiRequest) (*copilotv1.DeleteApiResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	apiID := mustID(req.GetApiId())
+	if req.GetKind() == copilotv1.ApiKind_API_KIND_GRPC {
+		var m model.GrpcApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err != nil {
+			return nil, status.Error(codes.NotFound, "api not found")
+		}
+		if err := s.db.Delete(&m).Error; err != nil {
+			return nil, status.Error(codes.Internal, err.Error())
+		}
+		s.audit(req.GetCtx(), "delete", "grpc_api", idStr(m.ID), map[string]any{"service": m.FullService})
+		return &copilotv1.DeleteApiResponse{}, nil
+	}
+	var m model.HttpApi
+	if err := s.db.Where("id = ? AND tenant_id = ?", apiID, tenant).First(&m).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "api not found")
+	}
+	if err := s.db.Delete(&m).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "delete", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
+	return &copilotv1.DeleteApiResponse{}, nil
+}
+
 func (s *CopilotService) ImportOpenApi(_ context.Context, req *copilotv1.ImportOpenApiRequest) (*copilotv1.ImportOpenApiResponse, error) {
 	if err := s.checkAICalls(req.GetCtx()); err != nil {
 		return nil, err

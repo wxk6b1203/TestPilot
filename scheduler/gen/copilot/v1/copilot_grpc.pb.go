@@ -35,10 +35,20 @@ type CopilotToolServiceClient interface {
 	QueryCoverage(ctx context.Context, in *QueryCoverageRequest, opts ...grpc.CallOption) (*QueryCoverageResponse, error)
 	QueryApiDirectory(ctx context.Context, in *QueryApiDirectoryRequest, opts ...grpc.CallOption) (*QueryApiDirectoryResponse, error)
 	CheckVariableRefs(ctx context.Context, in *CheckVariableRefsRequest, opts ...grpc.CallOption) (*CheckVariableRefsResponse, error)
+	ListPlans(ctx context.Context, in *ListPlansRequest, opts ...grpc.CallOption) (*ListPlansResponse, error)
+	GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*GetPlanResponse, error)
+	ListScripts(ctx context.Context, in *ListScriptsRequest, opts ...grpc.CallOption) (*ListScriptsResponse, error)
+	GetScript(ctx context.Context, in *GetScriptRequest, opts ...grpc.CallOption) (*GetScriptResponse, error)
 	// ---- 写工具（默认 HITL 审批） ----
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	CreateApi(ctx context.Context, in *CreateApiRequest, opts ...grpc.CallOption) (*CreateApiResponse, error)
 	UpdateApi(ctx context.Context, in *UpdateApiRequest, opts ...grpc.CallOption) (*UpdateApiResponse, error)
+	DeleteApi(ctx context.Context, in *DeleteApiRequest, opts ...grpc.CallOption) (*DeleteApiResponse, error)
+	UpdatePlan(ctx context.Context, in *UpdatePlanRequest, opts ...grpc.CallOption) (*UpdatePlanResponse, error)
+	DeletePlan(ctx context.Context, in *DeletePlanRequest, opts ...grpc.CallOption) (*DeletePlanResponse, error)
+	CreateScript(ctx context.Context, in *CreateScriptRequest, opts ...grpc.CallOption) (*CreateScriptResponse, error)
+	UpdateScript(ctx context.Context, in *UpdateScriptRequest, opts ...grpc.CallOption) (*UpdateScriptResponse, error)
+	DeleteScript(ctx context.Context, in *DeleteScriptRequest, opts ...grpc.CallOption) (*DeleteScriptResponse, error)
 	CreateTestCase(ctx context.Context, in *CreateTestCaseRequest, opts ...grpc.CallOption) (*CreateTestCaseResponse, error)
 	UpdateTestCase(ctx context.Context, in *UpdateTestCaseRequest, opts ...grpc.CallOption) (*UpdateTestCaseResponse, error)
 	CreateTestPlan(ctx context.Context, in *CreateTestPlanRequest, opts ...grpc.CallOption) (*CreateTestPlanResponse, error)
@@ -172,6 +182,42 @@ func (c *copilotToolServiceClient) CheckVariableRefs(ctx context.Context, in *Ch
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) ListPlans(ctx context.Context, in *ListPlansRequest, opts ...grpc.CallOption) (*ListPlansResponse, error) {
+	out := new(ListPlansResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/ListPlans", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) GetPlan(ctx context.Context, in *GetPlanRequest, opts ...grpc.CallOption) (*GetPlanResponse, error) {
+	out := new(GetPlanResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/GetPlan", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) ListScripts(ctx context.Context, in *ListScriptsRequest, opts ...grpc.CallOption) (*ListScriptsResponse, error) {
+	out := new(ListScriptsResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/ListScripts", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) GetScript(ctx context.Context, in *GetScriptRequest, opts ...grpc.CallOption) (*GetScriptResponse, error) {
+	out := new(GetScriptResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/GetScript", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *copilotToolServiceClient) CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error) {
 	out := new(CreateProjectResponse)
 	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateProject", in, out, opts...)
@@ -193,6 +239,60 @@ func (c *copilotToolServiceClient) CreateApi(ctx context.Context, in *CreateApiR
 func (c *copilotToolServiceClient) UpdateApi(ctx context.Context, in *UpdateApiRequest, opts ...grpc.CallOption) (*UpdateApiResponse, error) {
 	out := new(UpdateApiResponse)
 	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/UpdateApi", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) DeleteApi(ctx context.Context, in *DeleteApiRequest, opts ...grpc.CallOption) (*DeleteApiResponse, error) {
+	out := new(DeleteApiResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/DeleteApi", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) UpdatePlan(ctx context.Context, in *UpdatePlanRequest, opts ...grpc.CallOption) (*UpdatePlanResponse, error) {
+	out := new(UpdatePlanResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/UpdatePlan", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) DeletePlan(ctx context.Context, in *DeletePlanRequest, opts ...grpc.CallOption) (*DeletePlanResponse, error) {
+	out := new(DeletePlanResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/DeletePlan", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) CreateScript(ctx context.Context, in *CreateScriptRequest, opts ...grpc.CallOption) (*CreateScriptResponse, error) {
+	out := new(CreateScriptResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateScript", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) UpdateScript(ctx context.Context, in *UpdateScriptRequest, opts ...grpc.CallOption) (*UpdateScriptResponse, error) {
+	out := new(UpdateScriptResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/UpdateScript", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) DeleteScript(ctx context.Context, in *DeleteScriptRequest, opts ...grpc.CallOption) (*DeleteScriptResponse, error) {
+	out := new(DeleteScriptResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/DeleteScript", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -333,10 +433,20 @@ type CopilotToolServiceServer interface {
 	QueryCoverage(context.Context, *QueryCoverageRequest) (*QueryCoverageResponse, error)
 	QueryApiDirectory(context.Context, *QueryApiDirectoryRequest) (*QueryApiDirectoryResponse, error)
 	CheckVariableRefs(context.Context, *CheckVariableRefsRequest) (*CheckVariableRefsResponse, error)
+	ListPlans(context.Context, *ListPlansRequest) (*ListPlansResponse, error)
+	GetPlan(context.Context, *GetPlanRequest) (*GetPlanResponse, error)
+	ListScripts(context.Context, *ListScriptsRequest) (*ListScriptsResponse, error)
+	GetScript(context.Context, *GetScriptRequest) (*GetScriptResponse, error)
 	// ---- 写工具（默认 HITL 审批） ----
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	CreateApi(context.Context, *CreateApiRequest) (*CreateApiResponse, error)
 	UpdateApi(context.Context, *UpdateApiRequest) (*UpdateApiResponse, error)
+	DeleteApi(context.Context, *DeleteApiRequest) (*DeleteApiResponse, error)
+	UpdatePlan(context.Context, *UpdatePlanRequest) (*UpdatePlanResponse, error)
+	DeletePlan(context.Context, *DeletePlanRequest) (*DeletePlanResponse, error)
+	CreateScript(context.Context, *CreateScriptRequest) (*CreateScriptResponse, error)
+	UpdateScript(context.Context, *UpdateScriptRequest) (*UpdateScriptResponse, error)
+	DeleteScript(context.Context, *DeleteScriptRequest) (*DeleteScriptResponse, error)
 	CreateTestCase(context.Context, *CreateTestCaseRequest) (*CreateTestCaseResponse, error)
 	UpdateTestCase(context.Context, *UpdateTestCaseRequest) (*UpdateTestCaseResponse, error)
 	CreateTestPlan(context.Context, *CreateTestPlanRequest) (*CreateTestPlanResponse, error)
@@ -395,6 +505,18 @@ func (UnimplementedCopilotToolServiceServer) QueryApiDirectory(context.Context, 
 func (UnimplementedCopilotToolServiceServer) CheckVariableRefs(context.Context, *CheckVariableRefsRequest) (*CheckVariableRefsResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CheckVariableRefs not implemented")
 }
+func (UnimplementedCopilotToolServiceServer) ListPlans(context.Context, *ListPlansRequest) (*ListPlansResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListPlans not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) GetPlan(context.Context, *GetPlanRequest) (*GetPlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetPlan not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) ListScripts(context.Context, *ListScriptsRequest) (*ListScriptsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListScripts not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) GetScript(context.Context, *GetScriptRequest) (*GetScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GetScript not implemented")
+}
 func (UnimplementedCopilotToolServiceServer) CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateProject not implemented")
 }
@@ -403,6 +525,24 @@ func (UnimplementedCopilotToolServiceServer) CreateApi(context.Context, *CreateA
 }
 func (UnimplementedCopilotToolServiceServer) UpdateApi(context.Context, *UpdateApiRequest) (*UpdateApiResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method UpdateApi not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) DeleteApi(context.Context, *DeleteApiRequest) (*DeleteApiResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteApi not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) UpdatePlan(context.Context, *UpdatePlanRequest) (*UpdatePlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdatePlan not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) DeletePlan(context.Context, *DeletePlanRequest) (*DeletePlanResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeletePlan not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) CreateScript(context.Context, *CreateScriptRequest) (*CreateScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateScript not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) UpdateScript(context.Context, *UpdateScriptRequest) (*UpdateScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateScript not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) DeleteScript(context.Context, *DeleteScriptRequest) (*DeleteScriptResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DeleteScript not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) CreateTestCase(context.Context, *CreateTestCaseRequest) (*CreateTestCaseResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateTestCase not implemented")
@@ -672,6 +812,78 @@ func _CopilotToolService_CheckVariableRefs_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_ListPlans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPlansRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).ListPlans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/ListPlans",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).ListPlans(ctx, req.(*ListPlansRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_GetPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).GetPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/GetPlan",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).GetPlan(ctx, req.(*GetPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_ListScripts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListScriptsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).ListScripts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/ListScripts",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).ListScripts(ctx, req.(*ListScriptsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_GetScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).GetScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/GetScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).GetScript(ctx, req.(*GetScriptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CopilotToolService_CreateProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateProjectRequest)
 	if err := dec(in); err != nil {
@@ -722,6 +934,114 @@ func _CopilotToolService_UpdateApi_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CopilotToolServiceServer).UpdateApi(ctx, req.(*UpdateApiRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_DeleteApi_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteApiRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).DeleteApi(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/DeleteApi",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).DeleteApi(ctx, req.(*DeleteApiRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_UpdatePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).UpdatePlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/UpdatePlan",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).UpdatePlan(ctx, req.(*UpdatePlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_DeletePlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeletePlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).DeletePlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/DeletePlan",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).DeletePlan(ctx, req.(*DeletePlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_CreateScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).CreateScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/CreateScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).CreateScript(ctx, req.(*CreateScriptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_UpdateScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).UpdateScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/UpdateScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).UpdateScript(ctx, req.(*UpdateScriptRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_DeleteScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScriptRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).DeleteScript(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/DeleteScript",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).DeleteScript(ctx, req.(*DeleteScriptRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1016,6 +1336,22 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CopilotToolService_CheckVariableRefs_Handler,
 		},
 		{
+			MethodName: "ListPlans",
+			Handler:    _CopilotToolService_ListPlans_Handler,
+		},
+		{
+			MethodName: "GetPlan",
+			Handler:    _CopilotToolService_GetPlan_Handler,
+		},
+		{
+			MethodName: "ListScripts",
+			Handler:    _CopilotToolService_ListScripts_Handler,
+		},
+		{
+			MethodName: "GetScript",
+			Handler:    _CopilotToolService_GetScript_Handler,
+		},
+		{
 			MethodName: "CreateProject",
 			Handler:    _CopilotToolService_CreateProject_Handler,
 		},
@@ -1026,6 +1362,30 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateApi",
 			Handler:    _CopilotToolService_UpdateApi_Handler,
+		},
+		{
+			MethodName: "DeleteApi",
+			Handler:    _CopilotToolService_DeleteApi_Handler,
+		},
+		{
+			MethodName: "UpdatePlan",
+			Handler:    _CopilotToolService_UpdatePlan_Handler,
+		},
+		{
+			MethodName: "DeletePlan",
+			Handler:    _CopilotToolService_DeletePlan_Handler,
+		},
+		{
+			MethodName: "CreateScript",
+			Handler:    _CopilotToolService_CreateScript_Handler,
+		},
+		{
+			MethodName: "UpdateScript",
+			Handler:    _CopilotToolService_UpdateScript_Handler,
+		},
+		{
+			MethodName: "DeleteScript",
+			Handler:    _CopilotToolService_DeleteScript_Handler,
 		},
 		{
 			MethodName: "CreateTestCase",

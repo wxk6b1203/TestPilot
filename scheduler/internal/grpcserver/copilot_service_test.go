@@ -9,6 +9,7 @@ import (
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
+	"google.golang.org/protobuf/types/known/durationpb"
 	copilotv1 "github.com/testpilot/testpilot/gen/copilot/v1"
 	"github.com/testpilot/testpilot/internal/grpcserver"
 	"github.com/testpilot/testpilot/internal/model"
@@ -752,4 +753,206 @@ func mustIDStr(s string) int64 {
 	var x int64
 	fmt.Sscan(s, &x)
 	return x
+}
+
+// ---- 测试计划 / 脚本资产 / 删除接口 ----
+
+func TestPlanLifecycle(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+
+	created, err := cli.CreateTestPlan(ctx, &copilotv1.CreateTestPlanRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100",
+		Plan: &commonv1.TestPlan{Name: "p1", EnvId: "7", Concurrency: 2,
+			Timeout: durationpb.New(300 * time.Millisecond),
+			Items:   []*commonv1.PlanItem{{Ref: &commonv1.PlanItem_CaseId{CaseId: "11"}, Enabled: true}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Get：items 按 order 还原
+	got, err := cli.GetPlan(ctx, &copilotv1.GetPlanRequest{Ctx: copilotCtx(1, "u-9"), PlanId: created.GetPlanId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.GetPlan().GetName() != "p1" || got.GetPlan().GetEnvId() != "7" ||
+		got.GetPlan().GetConcurrency() != 2 || got.GetPlan().GetTimeout().AsDuration() != 300*time.Millisecond ||
+		len(got.GetItems()) != 1 || got.GetItems()[0].GetCaseId() != "11" {
+		t.Fatalf("get plan mismatch: %+v items=%+v", got.GetPlan(), got.GetItems())
+	}
+
+	// List：摘要不含 items
+	lst, err := cli.ListPlans(ctx, &copilotv1.ListPlansRequest{Ctx: copilotCtx(1, "u-9"), ProjectId: "100"})
+	if err != nil || len(lst.GetPlans()) != 1 || len(lst.GetPlans()[0].GetItems()) != 0 {
+		t.Fatalf("list plans: %+v err=%v", lst, err)
+	}
+	// 项目过滤
+	if lst2, _ := cli.ListPlans(ctx, &copilotv1.ListPlansRequest{Ctx: copilotCtx(1, "u-9"), ProjectId: "999"}); len(lst2.GetPlans()) != 0 {
+		t.Fatalf("project filter broken: %+v", lst2)
+	}
+
+	// Update：字段更新 + items 全量替换
+	if _, err := cli.UpdatePlan(ctx, &copilotv1.UpdatePlanRequest{
+		Ctx: copilotCtx(1, "u-9"), PlanId: created.GetPlanId(),
+		Plan: &commonv1.TestPlan{Name: "p2", ProjectId: "100", EnvId: "7", Concurrency: 4,
+			RetryOnFailure: true, ScheduleCron: "*/5 * * * *",
+			Items: []*commonv1.PlanItem{
+				{Ref: &commonv1.PlanItem_CaseId{CaseId: "12"}, Enabled: true},
+				{Ref: &commonv1.PlanItem_CaseId{CaseId: "13"}, Enabled: false},
+			}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var m model.TestPlan
+	if err := d.First(&m, "id = ?", created.GetPlanId()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if m.Name != "p2" || m.Concurrency != 4 || !m.RetryOnFailure || m.ScheduleCron != "*/5 * * * *" {
+		t.Fatalf("updated plan mismatch: %+v", m)
+	}
+	var items []model.TestPlanItem
+	d.Where("plan_id = ?", m.ID).Order("\"order\" asc").Find(&items)
+	if len(items) != 2 || items[0].RefID != 12 || !items[0].Enabled ||
+		items[1].RefID != 13 || items[1].Enabled {
+		t.Fatalf("items replace mismatch: %+v", items)
+	}
+
+	// 缺 name 拒绝
+	if _, err := cli.UpdatePlan(ctx, &copilotv1.UpdatePlanRequest{Ctx: copilotCtx(1, "u-9"),
+		PlanId: created.GetPlanId(), Plan: &commonv1.TestPlan{EnvId: "7"}}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing name: want InvalidArgument, got %v", err)
+	}
+	// 跨租户不可改/不可删
+	if _, err := cli.UpdatePlan(ctx, &copilotv1.UpdatePlanRequest{Ctx: copilotCtx(2, "u-2"),
+		PlanId: created.GetPlanId(), Plan: &commonv1.TestPlan{Name: "x", EnvId: "7"}}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant update: want NotFound, got %v", err)
+	}
+	if _, err := cli.DeletePlan(ctx, &copilotv1.DeletePlanRequest{Ctx: copilotCtx(2, "u-2"), PlanId: created.GetPlanId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant delete: want NotFound, got %v", err)
+	}
+
+	// Delete → 404
+	if _, err := cli.DeletePlan(ctx, &copilotv1.DeletePlanRequest{Ctx: copilotCtx(1, "u-9"), PlanId: created.GetPlanId()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.GetPlan(ctx, &copilotv1.GetPlanRequest{Ctx: copilotCtx(1, "u-9"), PlanId: created.GetPlanId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("after delete: want NotFound, got %v", err)
+	}
+	var logs []model.AuditLog
+	if err := d.Where("tenant_id = 1 AND actor = 2 AND resource_type = 'test_plan' AND resource_id = ?",
+		created.GetPlanId()).Order("id asc").Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 3 || logs[0].Action != "create" || logs[1].Action != "update" || logs[2].Action != "delete" {
+		t.Fatalf("audit rows mismatch: %+v", logs)
+	}
+}
+
+func TestScriptLifecycle(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+
+	// name/content 必填
+	if _, err := cli.CreateScript(ctx, &copilotv1.CreateScriptRequest{Ctx: copilotCtx(1, "u-9"),
+		ProjectId: "100", Script: &copilotv1.ScriptAsset{Name: "s1"}}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("missing content: want InvalidArgument, got %v", err)
+	}
+
+	created, err := cli.CreateScript(ctx, &copilotv1.CreateScriptRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100",
+		Script: &copilotv1.ScriptAsset{Name: "login-helper", Description: "登录助手", Content: "def run():\n    pass"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m model.Script
+	if err := d.First(&m, "id = ?", created.GetScriptId()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if m.Language != "python" || m.ProjectID != 100 || m.Description != "登录助手" {
+		t.Fatalf("created script mismatch: %+v", m)
+	}
+
+	got, err := cli.GetScript(ctx, &copilotv1.GetScriptRequest{Ctx: copilotCtx(1, "u-9"), ScriptId: created.GetScriptId()})
+	if err != nil || got.GetScript().GetContent() != "def run():\n    pass" {
+		t.Fatalf("get script: %+v err=%v", got, err)
+	}
+
+	// List + query 过滤
+	lst, err := cli.ListScripts(ctx, &copilotv1.ListScriptsRequest{Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Query: "helper"})
+	if err != nil || len(lst.GetScripts()) != 1 {
+		t.Fatalf("list scripts: %+v err=%v", lst, err)
+	}
+	if lst2, _ := cli.ListScripts(ctx, &copilotv1.ListScriptsRequest{Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Query: "不存在"}); len(lst2.GetScripts()) != 0 {
+		t.Fatalf("query filter broken: %+v", lst2)
+	}
+
+	// Update content
+	if _, err := cli.UpdateScript(ctx, &copilotv1.UpdateScriptRequest{Ctx: copilotCtx(1, "u-9"),
+		ScriptId: created.GetScriptId(),
+		Script:   &copilotv1.ScriptAsset{Name: "login-helper", Content: "def run():\n    return 1"}}); err != nil {
+		t.Fatal(err)
+	}
+	var up model.Script
+	d.First(&up, "id = ?", created.GetScriptId())
+	if up.Content != "def run():\n    return 1" || up.Language != "python" {
+		t.Fatalf("updated script mismatch: %+v", up)
+	}
+
+	// 跨租户不可见；Delete → 404
+	if _, err := cli.GetScript(ctx, &copilotv1.GetScriptRequest{Ctx: copilotCtx(2, "u-2"), ScriptId: created.GetScriptId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant get: want NotFound, got %v", err)
+	}
+	if _, err := cli.DeleteScript(ctx, &copilotv1.DeleteScriptRequest{Ctx: copilotCtx(1, "u-9"), ScriptId: created.GetScriptId()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := cli.GetScript(ctx, &copilotv1.GetScriptRequest{Ctx: copilotCtx(1, "u-9"), ScriptId: created.GetScriptId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("after delete: want NotFound, got %v", err)
+	}
+	var logs []model.AuditLog
+	if err := d.Where("tenant_id = 1 AND actor = 2 AND resource_type = 'script' AND resource_id = ?",
+		created.GetScriptId()).Order("id asc").Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 3 || logs[2].Action != "delete" {
+		t.Fatalf("audit rows mismatch: %+v", logs)
+	}
+}
+
+func TestDeleteApi(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	m := seedHTTPApi(t, d, 1, 100, commonv1.HttpMethod_HTTP_METHOD_GET, "/to-delete")
+
+	if _, err := cli.DeleteApi(ctx, &copilotv1.DeleteApiRequest{Ctx: copilotCtx(1, "u-9"),
+		ApiId: strconv.FormatInt(m.ID, 10), Kind: copilotv1.ApiKind_API_KIND_HTTP}); err != nil {
+		t.Fatal(err)
+	}
+	var n int64
+	d.Unscoped().Model(&model.HttpApi{}).Where("id = ?", m.ID).Count(&n) // 软删：行仍在
+	if err := d.First(&model.HttpApi{}, "id = ?", m.ID).Error; err == nil {
+		t.Fatal("api should be soft-deleted")
+	}
+	var logs []model.AuditLog
+	if err := d.Where("tenant_id = 1 AND actor = 2 AND action = 'delete' AND resource_type = 'http_api' AND resource_id = ?",
+		m.ID).Find(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logs) != 1 || logs[0].ApprovedBy != "u-9" {
+		t.Fatalf("audit rows mismatch: %+v", logs)
+	}
+
+	// 再次删除 → 404；跨租户 → 404；grpc kind 不存在 → 404
+	if _, err := cli.DeleteApi(ctx, &copilotv1.DeleteApiRequest{Ctx: copilotCtx(1, "u-9"),
+		ApiId: strconv.FormatInt(m.ID, 10), Kind: copilotv1.ApiKind_API_KIND_HTTP}); status.Code(err) != codes.NotFound {
+		t.Fatalf("double delete: want NotFound, got %v", err)
+	}
+	if _, err := cli.DeleteApi(ctx, &copilotv1.DeleteApiRequest{Ctx: copilotCtx(2, "u-2"),
+		ApiId: strconv.FormatInt(m.ID, 10), Kind: copilotv1.ApiKind_API_KIND_HTTP}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant delete: want NotFound, got %v", err)
+	}
+	if _, err := cli.DeleteApi(ctx, &copilotv1.DeleteApiRequest{Ctx: copilotCtx(1, "u-9"),
+		ApiId: "1", Kind: copilotv1.ApiKind_API_KIND_GRPC}); status.Code(err) != codes.NotFound {
+		t.Fatalf("grpc kind: want NotFound, got %v", err)
+	}
 }
