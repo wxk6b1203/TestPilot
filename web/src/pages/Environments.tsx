@@ -77,8 +77,12 @@ export default function Environments() {
                   <Space size={4}>
                     <Button size="small" onClick={() => openEnvEdit(r)}>编辑</Button>
                     <Popconfirm title="删除环境？" onConfirm={async () => {
-                      await del(`/api/v1/environments/${r.id}`)
-                      await Promise.all([loadEnvs(), refreshEnvs()])
+                      try {
+                        await del(`/api/v1/environments/${r.id}`)
+                        await Promise.all([loadEnvs(), refreshEnvs()])
+                      } catch (e: any) {
+                        message.error(e.message)
+                      }
                     }}>
                       <Button danger size="small">删除</Button>
                     </Popconfirm>
@@ -111,8 +115,12 @@ export default function Environments() {
                   <Space size={4}>
                     <Button size="small" onClick={() => openVarEdit(r)}>编辑</Button>
                     <Popconfirm title="删除变量？" onConfirm={async () => {
-                      await del(`/api/v1/variables/${r.id}`)
-                      loadVars()
+                      try {
+                        await del(`/api/v1/variables/${r.id}`)
+                        loadVars()
+                      } catch (e: any) {
+                        message.error(e.message)
+                      }
                     }}>
                       <Button danger size="small">删除</Button>
                     </Popconfirm>

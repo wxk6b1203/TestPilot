@@ -99,9 +99,15 @@ export default function Runs() {
           {
             title: '操作',
             width: 190,
-            render: (_, r) => (
-              <Space>
-                <Typography.Link onClick={async () => setDetail(await get(`/api/v1/runs/${r.id}`))}>详情</Typography.Link>
+              render: (_, r) => (
+                <Space>
+                  <Typography.Link onClick={async () => {
+                    try {
+                      setDetail(await get<TestRun>(`/api/v1/runs/${r.id}`))
+                    } catch (e: any) {
+                      message.error(e.message)
+                    }
+                  }}>详情</Typography.Link>
                 <Typography.Link
                   onClick={() => {
                     download(`/api/v1/runs/${r.id}/junit`, `testpilot-run-${r.id}.xml`)

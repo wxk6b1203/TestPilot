@@ -1,6 +1,6 @@
 import { Button, Card, Empty, Input, Modal, Popconfirm, Space, Tag, Typography } from 'antd'
 import { ArrowLeftOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { del, get, post, put } from '../api'
@@ -56,8 +56,11 @@ export default function Scripts() {
     loadScripts().catch((e) => message.error(e.message))
   }, [projectId])
 
-  // 进入/切换编辑路由时加载脚本详情
+  // 进入/切换编辑路由时加载脚本详情。seq 防乱序：快速切换 A→B 时 A 的慢响应
+  // 不得覆盖 B 的表单（组件不因 id 重挂载，覆盖后保存会把 A 数据写进 B）。
+  const detailSeq = useRef(0)
   useEffect(() => {
+    const seq = ++detailSeq.current
     if (!id) {
       setName('')
       setDescription('')
@@ -69,13 +72,14 @@ export default function Scripts() {
     loadScripts().catch(() => {})
     get<Script>(`/api/v1/scripts/${id}`)
       .then((s) => {
+        if (seq !== detailSeq.current) return
         setName(s.name || '')
         setDescription(s.description || '')
         setLanguage(s.language || 'python')
         setContent(s.content || '')
         setSavedSnap(JSON.stringify({ n: s.name || '', d: s.description || '', l: s.language || 'python', c: s.content || '' }))
       })
-      .catch((e) => message.error(e.message))
+      .catch((e) => { if (seq === detailSeq.current) message.error(e.message) })
   }, [id])
 
   const filtered = useMemo(

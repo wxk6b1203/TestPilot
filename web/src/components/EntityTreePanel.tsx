@@ -457,10 +457,21 @@ export default function EntityTreePanel({
     [filtered, mountedIds],
   )
 
+  // 搜索语义：实体按名称/描述命中保留；目录因子孙命中而保留（无命中的目录剪掉）；
+  // 未挂载命中实体平铺到根尾。原先 treeData 只用全量 tree 构建、未挂载区又仅在非搜索时
+  // 追加，导致面板搜索完全无效。
+  const searching = !!search.trim()
+  const hitFolderKeys: string[] = []
   const treeData = (() => {
+    const kw = search.trim().toLowerCase()
+    const hit = (a?: EntityRow | null) =>
+      !kw || (!!a && ((a.name || '').toLowerCase().includes(kw) || (a.description ?? '').toLowerCase().includes(kw)))
     const walk = (nodes: TreeNode[]): any[] =>
       nodes.map((n) => {
         if (n.node_type === 1) {
+          const kids = walk(n.children ?? [])
+          if (kw && !kids.length) return null
+          if (kw) hitFolderKeys.push(`folder-${n.id}`)
           return {
             key: `folder-${n.id}`,
             title: (
@@ -497,7 +508,7 @@ export default function EntityTreePanel({
               </Dropdown>
             ),
             selectable: false,
-            children: walk(n.children ?? []),
+            children: kids,
           }
         }
         const refId = n.ref_id ?? (n.ref as any)?.id ?? ''
@@ -505,7 +516,7 @@ export default function EntityTreePanel({
           id: refId, name: (n.ref as any).name, description: (n.ref as any).description,
           type: (n.ref as any).type,
         } as EntityRow : undefined)
-        if (!item) return null
+        if (!item || !hit(item)) return null
         return {
           key: `entity-${item.id}`,
           title: (
@@ -516,7 +527,8 @@ export default function EntityTreePanel({
         }
       }).filter(Boolean)
     const children = walk(tree)
-    if (unmounted.length && search.trim() === '') {
+    // 未挂载实体：非搜索时平铺根尾；搜索时同样平铺命中项（原先搜索时整段被藏掉）
+    if (unmounted.length) {
       children.push(...unmounted.map((a) => ({
         key: `entity-${a.id}`,
         title: (
@@ -577,9 +589,11 @@ export default function EntityTreePanel({
         <Tree
           showLine={{ showLeafIcon: false }}
           blockNode
-          draggable={{ icon: false, nodeDraggable: (node) => String(node.key) !== '__root__' }}
+          // 搜索视图是过滤后的局部树：命中目录全部展开让结果直接可见；拖拽排序基准
+          // 不再是全量兄弟序，禁用（与接口树「搜索走列表视图不可拖」一致）
+          draggable={searching ? false : { icon: false, nodeDraggable: (node) => String(node.key) !== '__root__' }}
           selectedKeys={activeId ? [`entity-${activeId}`] : []}
-          expandedKeys={expandedKeys}
+          expandedKeys={searching ? Array.from(new Set([...expandedKeys, ...hitFolderKeys])) : expandedKeys}
           onExpand={(keys) => setExpandedKeys(keys)}
           treeData={treeData}
           onDrop={onTreeDrop}

@@ -1,9 +1,10 @@
 import { useEffect, useRef } from 'react'
-import { getToken } from '../api'
+import { getToken, setToken } from '../api'
 
 // SSE 订阅 hook：用 fetch + ReadableStream 解析 text/event-stream。
 // 不使用原生 EventSource，因为需要携带 Authorization header（JWT/API token）。
-// 断线后 3s 自动重连；组件卸载或 channels 变化时 abort。
+// 断线后 3s 自动重连；组件卸载或 channels 变化时 abort；
+// 401/403 清 token 跳登录并停止重连（重连只会无限失败）。
 export function useEventStream(
   channels: string[],
   onEvent: (event: string, data: any) => void,
@@ -29,7 +30,16 @@ export function useEventStream(
             signal: ctrl.signal,
           },
         )
-        if (!res.ok || !res.body) throw new Error(`SSE HTTP ${res.status}`)
+        if (!res.ok || !res.body) {
+          // 401/403：token 失效/无权限，行为对齐 api.ts——清 token 跳登录，并停止重连循环
+          if (res.status === 401 || res.status === 403) {
+            stopped = true
+            setToken(null)
+            if (!location.hash.includes('/login')) location.hash = '#/login'
+            return
+          }
+          throw new Error(`SSE HTTP ${res.status}`)
+        }
         const reader = res.body.getReader()
         const decoder = new TextDecoder()
         let buffer = ''

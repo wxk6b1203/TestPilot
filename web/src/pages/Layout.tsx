@@ -5,7 +5,7 @@ import {
   SettingOutlined, DesktopOutlined, RobotOutlined, LogoutOutlined, DownOutlined,
   SafetyCertificateOutlined, FolderOutlined,
 } from '@ant-design/icons'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import {
   get, getEnvId, getProjectId, post, setEnvId, setProjectId, setToken,
@@ -61,20 +61,30 @@ export default function Layout() {
     get<{ items: TenantView[] }>('/api/v1/tenants').then((r) => setTenants(r.items)).catch(() => {})
   }, [])
 
-  // 项目变化 → 环境列表重载
-  useEffect(() => {
-    if (!projectId) return
-    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=500`)
+  // 环境列表拉取（effect 与 refreshEnvs 共用）：seq 丢弃过期响应——快速切项目时
+  // 旧项目的响应后到会覆盖新项目 envs，导致用户选到别的项目的环境（对照 ApiTreePanel reload）。
+  const envsSeqRef = useRef(0)
+  const fetchEnvs = useCallback(() => {
+    const seq = ++envsSeqRef.current
+    return get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=500`)
       .then((r) => {
+        if (seq !== envsSeqRef.current) return
         setEnvs(r.items)
         // 环境已不存在时连同 localStorage 一起清，避免刷新后复活
-        if (envId && !r.items.find((e) => e.id === envId)) {
+        // （读 localStorage 而非闭包 envId：响应到达时选择可能已变）
+        const cur = getEnvId()
+        if (cur && !r.items.find((e) => e.id === cur)) {
           setEid('')
           setEnvId('')
         }
       })
-      .catch(() => {})
-  }, [projectId, envId])
+  }, [projectId])
+
+  // 项目变化 → 环境列表重载；envId 变化不重拉（清除 envId 由上面的 apply 自行校正）
+  useEffect(() => {
+    if (!projectId) return
+    fetchEnvs().catch(() => {})
+  }, [projectId, fetchEnvs])
 
   const visibleNav = useMemo(
     () => NAV.filter((n) => !n.admin || (me?.role ?? 9) <= 2),
@@ -92,16 +102,7 @@ export default function Layout() {
       setEnvId(id)
     },
     envs,
-    refreshEnvs: () =>
-      get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=500`)
-        .then((r) => {
-          setEnvs(r.items)
-          // 当前环境被删除时同步清掉顶部选择与 localStorage
-          if (envId && !r.items.find((e) => e.id === envId)) {
-            setEid('')
-            setEnvId('')
-          }
-        }),
+    refreshEnvs: () => fetchEnvs(),
     me,
     tenants,
     switchTenant: async (tid) => {

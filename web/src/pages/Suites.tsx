@@ -2,7 +2,7 @@ import { Button, Card, Empty, Input, Modal, Space, Tag, Typography } from 'antd'
 import {
   ArrowDownOutlined, ArrowLeftOutlined, ArrowUpOutlined, LeftOutlined, PlusOutlined, RightOutlined,
 } from '@ant-design/icons'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { get, post, put } from '../api'
@@ -107,8 +107,12 @@ export default function Suites() {
       .catch((e) => message.error(e.message))
   }, [projectId])
 
-  // 进入/切换编辑路由时加载详情（含有序 case_ids）
+  // 进入/切换编辑路由时加载详情（含有序 case_ids）。seq 防乱序：快速切换
+  // A→B 时 A 的慢响应不得覆盖 B 的表单（组件不因 id 重挂载，覆盖后保存会
+  // 把 A 的 name/case_ids 写进 B）。
+  const detailSeq = useRef(0)
   useEffect(() => {
+    const seq = ++detailSeq.current
     if (!id) {
       setName('')
       setDescription('')
@@ -118,12 +122,13 @@ export default function Suites() {
     }
     get<Suite>(`/api/v1/suites/${id}`)
       .then((s) => {
+        if (seq !== detailSeq.current) return
         setName(s.name || '')
         setDescription(s.description || '')
         setSelectedIds(s.case_ids || [])
         setSavedSnap(JSON.stringify({ n: s.name || '', d: s.description || '', ids: s.case_ids || [] }))
       })
-      .catch((e) => message.error(e.message))
+      .catch((e) => { if (seq === detailSeq.current) message.error(e.message) })
   }, [id])
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds])

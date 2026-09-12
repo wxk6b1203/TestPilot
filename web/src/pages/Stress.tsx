@@ -95,20 +95,26 @@ export default function Stress() {
   const [planTotal, setPlanTotal] = useState(0)
   const [runTotal, setRunTotal] = useState(0)
 
+  // load 被 30s 定时器与 SSE 回调反复调用：内部吞错并提示，避免 unhandled rejection
   const load = () => {
     if (!projectId) return
     // page_size 取后端上限 500：客户端分页一次拉全
     get<ListResp<StressPlan>>(`/api/v1/stress-plans?project_id=${projectId}&page_size=500`)
       .then((r) => { setPlans(r.items); setPlanTotal(r.total ?? 0) })
+      .catch((e) => message.error(e.message))
     get<ListResp<StressRun>>(`/api/v1/stress-runs?page_size=500&project_id=` + projectId)
       .then((r) => { setRuns(r.items); setRunTotal(r.total ?? 0) })
+      .catch((e) => message.error(e.message))
   }
   useEffect(() => {
     if (!projectId) return
     load()
-    get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`).then((r) => setApis(r.items))
-    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`).then((r) => setCases(r.items))
-    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`).then((r) => setEnvs(r.items))
+    get<ListResp<HttpApi>>(`/api/v1/apis?project_id=${projectId}&page_size=500`)
+      .then((r) => setApis(r.items)).catch((e) => message.error(e.message))
+    get<ListResp<TestCase>>(`/api/v1/cases?project_id=${projectId}&page_size=200`)
+      .then((r) => setCases(r.items)).catch((e) => message.error(e.message))
+    get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
+      .then((r) => setEnvs(r.items)).catch((e) => message.error(e.message))
     const t = setInterval(load, 30000) // 兜底对账；实时更新走 SSE
     return () => clearInterval(t)
   }, [projectId])
@@ -186,11 +192,22 @@ export default function Stress() {
               render: (_, r) => (
                 <Space>
                   <Button size="small" type="primary" onClick={async () => {
-                    const res = await post(`/api/v1/stress-plans/${r.id}/run`, {})
-                    message.success(`压测已触发: ${res.run_id}`)
-                    load()
+                    try {
+                      const res = await post(`/api/v1/stress-plans/${r.id}/run`, {})
+                      message.success(`压测已触发: ${res.run_id}`)
+                      load()
+                    } catch (e: any) {
+                      message.error(e.message)
+                    }
                   }}>发压</Button>
-                  <Popconfirm title="删除计划？" onConfirm={async () => { await del(`/api/v1/stress-plans/${r.id}`); load() }}>
+                  <Popconfirm title="删除计划？" onConfirm={async () => {
+                    try {
+                      await del(`/api/v1/stress-plans/${r.id}`)
+                      load()
+                    } catch (e: any) {
+                      message.error(e.message)
+                    }
+                  }}>
                     <Button danger size="small">删除</Button>
                   </Popconfirm>
                 </Space>
@@ -226,7 +243,13 @@ export default function Stress() {
             {
               title: '操作', width: 90,
               render: (_, r) => (
-                <Typography.Link onClick={async () => setDetail(await get(`/api/v1/stress-runs/${r.id}`))}>报告</Typography.Link>
+                <Typography.Link onClick={async () => {
+                  try {
+                    setDetail(await get<StressRun>(`/api/v1/stress-runs/${r.id}`))
+                  } catch (e: any) {
+                    message.error(e.message)
+                  }
+                }}>报告</Typography.Link>
               ),
             },
           ]}

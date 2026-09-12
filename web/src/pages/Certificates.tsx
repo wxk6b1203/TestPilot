@@ -49,23 +49,33 @@ export default function Certificates() {
     setOpen(true)
   }
 
+  // 校验失败留在 antd 字段提示（与 AdminConsole 一致）；接口失败必须 message.error，
+  // 否则 onOk/onConfirm 直接引用本函数时 rejection 无人接、用户零反馈。
   const submit = async () => {
     const values = await form.validateFields()
-    if (editing) {
-      await put(`/api/v1/certificates/${editing.id}`, { ...values, project_id: projectId })
-      message.success('已保存')
-    } else {
-      await post('/api/v1/certificates', { ...values, project_id: projectId })
-      message.success('已创建')
+    try {
+      if (editing) {
+        await put(`/api/v1/certificates/${editing.id}`, { ...values, project_id: projectId })
+        message.success('已保存')
+      } else {
+        await post('/api/v1/certificates', { ...values, project_id: projectId })
+        message.success('已创建')
+      }
+      setOpen(false)
+      void load()
+    } catch (e: any) {
+      message.error(e.message)
     }
-    setOpen(false)
-    void load()
   }
 
   const remove = async (id: string) => {
-    await del(`/api/v1/certificates/${id}`)
-    message.success('已删除')
-    void load()
+    try {
+      await del(`/api/v1/certificates/${id}`)
+      message.success('已删除')
+      void load()
+    } catch (e: any) {
+      message.error(e.message)
+    }
   }
 
   return (

@@ -66,12 +66,12 @@ export default function Login() {
               key: 'login',
               label: '登录',
               children: (
-                <Form layout="vertical" onFinish={onLogin} initialValues={{ username: 'admin' }}>
+                <Form layout="vertical" onFinish={onLogin}>
                   <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
-                    <Input autoFocus placeholder="admin" />
+                    <Input autoFocus placeholder="用户名" />
                   </Form.Item>
                   <Form.Item name="password" label="密码" rules={[{ required: true }]}>
-                    <Input.Password placeholder="admin123（初始种子账号）" />
+                    <Input.Password placeholder="密码" />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" block icon={<LoginOutlined />}>
                     登录
