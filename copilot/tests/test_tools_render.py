@@ -302,13 +302,14 @@ def test_update_api_merges_partial_fields_and_preserves_headers():
         api={"uri": "/new",
              "params": [{"key": "page", "value": "2"}],
              "headers": [{"key": "Authorization", "value": "***"}]}))
-    assert out == {"apiId": "100"}
+    assert out["apiId"] == "100"
+    assert out["note"] == "headers 含掩码项已原样保留"  # 全掩码字段未动，须让模型知晓
     assert [name for name, _ in stub.requests] == ["GetApi", "UpdateApi"]
     _, req = stub.requests[1]
     assert req.kind == cpb.API_KIND_HTTP
     assert req.http.uri == "/new"
-    # 未在 api 中给出的字段保持原值；带 *** 的掩码值也会被忽略，
-    # 避免把 get_api 的脱敏结果写回真实定义
+    # 未在 api 中给出的字段保持原值；带 *** 的掩码项按 key 回填接口定义里的
+    # 原值（P2 前是整字段丢弃，会把用户真正要改的项一起静默丢掉）
     assert {h.key: h.value for h in req.http.headers} == {"Authorization": "Bearer secret"}
     assert {p.key: p.value for p in req.http.params} == {"page": "2"}
 
@@ -771,3 +772,22 @@ def test_create_ui_test_case_rejects_invalid_inputs_before_rpc():
             SimpleNamespace(deps=_fake_deps(stub)), name="x", start_url="/",
             steps=[{"action": "click", "target": "#x"}]))
     assert stub.requests == []
+
+
+def test_update_api_mixed_masked_and_real_headers():
+    """headers 混有掩码项与真实项：真实项照常更新，掩码项按 key 回填原值。"""
+    resp = cpb.GetApiResponse(
+        http=pb.HttpApi(method=pb.HTTP_METHOD_GET, uri="/old",
+                        headers=[pb.KeyValue(key="Authorization", value="Bearer secret"),
+                                 pb.KeyValue(key="X-Debug", value="0")]))
+    stub = _DictStub({"GetApi": resp, "UpdateApi": cpb.UpdateApiResponse(api_id="200")})
+    out = asyncio.run(update_api(
+        SimpleNamespace(deps=_fake_deps(stub)), api_id="200",
+        api={"headers": [{"key": "Authorization", "value": "***"},
+                          {"key": "X-Debug", "value": "1"}]}))
+    assert "note" not in out  # 有真实修改，不算整字段跳过
+    _, req = stub.requests[1]
+    assert {h.key: h.value for h in req.http.headers} == {
+        "Authorization": "Bearer secret",  # 掩码项 → 原值
+        "X-Debug": "1",                    # 真实修改 → 新值
+    }

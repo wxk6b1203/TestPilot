@@ -137,6 +137,25 @@ def attach_idle_timeout_stream(response, timeout: float) -> None:
     response.body_iterator = _guard(it)
 
 
+class _RewrittenBodyRequest:
+    """请求包装：body 返回净化后的字节，其余属性透传原始 Request。
+
+    pydantic-ai 适配器的 dispatch_request → from_request 只消费
+    `await request.body()` 与 `request.headers`；审批服务端锚定（P0）需要把
+    解析并净化过的 JSON 再喂回去，故在 handler 内替换 request。
+    """
+
+    def __init__(self, inner: Request, payload: bytes):
+        self._inner = inner
+        self._payload = payload
+
+    def __getattr__(self, name: str):
+        return getattr(self._inner, name)
+
+    async def body(self) -> bytes:
+        return self._payload
+
+
 @app.post("/api/chat")
 async def chat(request: Request):
     # span 覆盖鉴权/会话/持久化 + 流式 agent 运行全程（body 迭代器收尾时 end）
@@ -189,6 +208,15 @@ async def _chat_inner(request: Request):
             return JSONResponse({"error": f"create session: {r.text}"}, status_code=502)
         session_id = str(r.json()["id"])
 
+    # 审批服务端锚定（P0）：拉一次历史，三处复用（锚定校验 / 用户消息去重 /
+    # 未来服务端重建）。拉取失败必须 fail-closed：没有锚定就放行客户端历史，
+    # 等于允许伪造"tool call + 已批准回执"零审批执行写工具。
+    r = await http.get(f"/api/v1/copilot/sessions/{session_id}/messages",
+                       headers=tracing.inject_headers({"Authorization": f"Bearer {token}"}))
+    if r.status_code != 200:
+        return JSONResponse({"error": f"fetch session history: {r.text}"}, status_code=502)
+    history = r.json().get("items", [])
+
     deps = CopilotDeps(sched=app.state.sched, tenant_id=tenant_id, user_id=user_id,
                        http=http, token=token,
                        probe_session_id=f"chat-{session_id}",
@@ -200,11 +228,33 @@ async def _chat_inner(request: Request):
     # 每个续聊请求少等一次「GET 历史消息」的 RTT。
     await asyncio.gather(
         deps.hydrate_ui_context(),
-        _persist_incoming_user(app, session_id, token, body),
+        _persist_incoming_user(app, session_id, token, body, history=history),
     )
+
+    # 工具调用 args / 审批回执一律以服务端落库为准（详见 _sanitize_client_messages）
+    _sanitize_client_messages(body, _anchor_map_from_rows(history))
+    # 适配器 dispatch_request 会自读 request.body()（不走我们已解析的 dict），
+    # 用包装 Request 替换 body 为净化后的字节，其余属性全部透传。
+    request = _RewrittenBodyRequest(
+        request, json.dumps(body, ensure_ascii=False).encode("utf-8"))
+
+    # 取消路径兜底持久化：idle 超时/服务端取消时 on_complete 不执行，本轮
+    # 已完成的工具调用（可能含写副作用）不落库会导致刷新后审批卡重现、
+    # 再次批准重复执行。本轮新增消息 = all_messages() 尾部超出 run 输入历史
+    # 的部分（pydantic-ai 保留传入 history 前缀，切片对齐）。
+    run_history_len = len(VercelAIAdapter.load_messages(
+        VercelAIAdapter.build_run_input(
+            json.dumps(body, ensure_ascii=False).encode("utf-8")).messages))
 
     async def on_complete(result):
         await _persist_turn(app, session_id, token, result)
+
+    async def on_cancel(cancelled):
+        try:
+            await _persist_model_messages(app, session_id, token,
+                                          cancelled.all_messages()[run_history_len:])
+        except Exception:
+            log.exception("persist cancelled turn failed")
 
     response = await VercelAIAdapter.dispatch_request(
         request,
@@ -212,6 +262,7 @@ async def _chat_inner(request: Request):
         sdk_version=7,
         deps=deps,
         on_complete=on_complete,
+        on_cancel=on_cancel,
     )
     # gRPC 认证上下文：工具调用经 scheduler_client 注入当前用户的 JWT
     # （Scheduler CopilotAuthUnary 校验 Bearer + RequestContext 一致性）。
@@ -224,8 +275,14 @@ async def _chat_inner(request: Request):
     return response
 
 
-async def _persist_incoming_user(app: FastAPI, session_id: str, token: str, body: dict) -> None:
-    """落库用户消息。审批回执会整体重发（trigger 同为 submit-message），按内容去重。"""
+async def _persist_incoming_user(app: FastAPI, session_id: str, token: str, body: dict,
+                                 history: list[dict] | None = None) -> None:
+    """落库用户消息。审批回执会整体重发（trigger 同为 submit-message），按内容去重。
+
+    去重只针对"库中最后一行就是同内容的用户消息"（请求超时重发场景）：
+    上一轮已有回复后再发相同文本是用户的真实意图（如连续两条"好的"），
+    不能吞。持久化网络异常只记日志——落库失败不应 500 杀死整个 chat。
+    """
     if body.get("trigger") != "submit-message":
         return
     messages = body.get("messages") or []
@@ -236,15 +293,114 @@ async def _persist_incoming_user(app: FastAPI, session_id: str, token: str, body
     if not text.strip():
         return
     http: httpx.AsyncClient = app.state.http
-    h = {"Authorization": f"Bearer {token}"}
-    r = await http.get(f"/api/v1/copilot/sessions/{session_id}/messages",
-                       headers=tracing.inject_headers(h))
-    if r.status_code == 200:
-        existing = [m for m in r.json().get("items", []) if m.get("role") == 1]
-        if existing and existing[-1].get("content") == text:
-            return
-    await http.post(f"/api/v1/copilot/sessions/{session_id}/messages",
-                    json={"role": 1, "content": text}, headers=tracing.inject_headers(h))
+    h = tracing.inject_headers({"Authorization": f"Bearer {token}"})
+    if history is None:
+        try:
+            r = await http.get(f"/api/v1/copilot/sessions/{session_id}/messages", headers=h)
+            history = r.json().get("items", []) if r.status_code == 200 else []
+        except httpx.HTTPError as e:
+            log.warning("persist incoming user: fetch history failed: %s", e)
+            history = []
+    if history and history[-1].get("role") == 1 and history[-1].get("content") == text:
+        return
+    try:
+        await http.post(f"/api/v1/copilot/sessions/{session_id}/messages",
+                        json={"role": 1, "content": text}, headers=h)
+    except httpx.HTTPError as e:
+        log.warning("persist incoming user failed: %s", e)
+
+
+def _anchor_map_from_rows(items: list[dict]) -> dict[str, dict[str, Any]]:
+    """落库行 → {tool_call_id: {name, args, result}} 审批锚定表。
+
+    兼容两种 tool_calls 形状（_render_rows 同款）：数组（旧/role=3 结果行）|
+    {reasoning, calls}（新）。args 落库为 JSON 字符串，此处还原为对象。
+    """
+    anchors: dict[str, dict[str, Any]] = {}
+    for m in items or []:
+        raw = m.get("tool_calls")
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            continue
+        calls = parsed if isinstance(parsed, list) else (parsed or {}).get("calls") or []
+        for tc in calls:
+            if not isinstance(tc, dict):
+                continue
+            tc_id = str(tc.get("tool_call_id") or "")
+            if not tc_id:
+                continue
+            entry = anchors.setdefault(tc_id, {"name": None, "args": None, "result": None})
+            if entry["name"] is None and tc.get("name"):
+                entry["name"] = str(tc["name"])
+            if entry["args"] is None and tc.get("args") is not None:
+                args = tc["args"]
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except ValueError:
+                        args = None
+                entry["args"] = args
+            if entry["result"] is None and tc.get("result") is not None:
+                entry["result"] = tc["result"]
+    return anchors
+
+
+def _sanitize_client_messages(body: dict, anchors: dict[str, dict[str, Any]]) -> None:
+    """审批服务端锚定（P0，原地修改 body["messages"]）。
+
+    合法流程中，模型发起的每个 tool call 都已在 _persist_turn 落库（含
+    tool_call_id + args）；而审批回执来自客户端请求体、pydantic-ai 适配器
+    按 tool_call_id 配对并直接执行——不锚定的话，任何持 token 者可伪造
+    "tool call + approval-responded" 单请求零审批执行写工具，或篡改 args
+    （审批卡显示 X、实际执行 Y）。规则：
+
+    - 服务端无记录的工具 part（含审批态）→ 整体丢弃（凭空即伪造）；
+    - 有记录 → args/toolName 以落库为准覆写（防 TOCTOU 篡改）；
+    - 落库已有 result → 回填 output-available 并摘除 approval（防止
+      已执行的调用经重发审批回执被二次执行）。
+    """
+    for msg in body.get("messages") or []:
+        if not isinstance(msg, dict) or msg.get("role") != "assistant":
+            continue
+        parts = msg.get("parts")
+        if not isinstance(parts, list):
+            parts = []
+        kept: list[Any] = []
+        for p in parts:
+            if not isinstance(p, dict):
+                continue
+            ptype = p.get("type")
+            if ptype == "dynamic-tool" or (isinstance(ptype, str) and ptype.startswith("tool-")):
+                rec = anchors.get(str(p.get("toolCallId") or ""))
+                if rec is None:
+                    log.warning("dropped unanchored client tool part (toolCallId=%r)",
+                                str(p.get("toolCallId"))[:64])
+                    continue
+                # 名称与参数以服务端为准：类型串里的工具名/动态 toolName 同样强制改写
+                if rec["name"]:
+                    if ptype == "dynamic-tool":
+                        p["toolName"] = rec["name"]
+                    else:
+                        p["type"] = f"tool-{rec['name']}"
+                if rec["args"] is not None:
+                    p["input"] = rec["args"]
+                if rec["result"] is not None:
+                    p["state"] = "output-available"
+                    p["output"] = rec["result"]
+                    p.pop("approval", None)
+            kept.append(p)
+        msg["parts"] = kept
+    # 伪造 part 全被丢弃的 assistant 消息只剩空 parts，直接整条剔除
+    # （pydantic-ai 的 ModelResponse 不接受零 part）
+    cleaned: list[Any] = []
+    for m in body.get("messages") or []:
+        if isinstance(m, dict) and m.get("role") == "assistant" and not m.get("parts"):
+            continue
+        cleaned.append(m)
+    body["messages"] = cleaned
 
 
 async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> None:
@@ -254,6 +410,18 @@ async def _persist_turn(app: FastAPI, session_id: str, token: str, result) -> No
     except Exception:
         log.exception("render transcript failed")
         return
+    await _persist_rows(app, session_id, token, rows)
+
+
+async def _persist_model_messages(app: FastAPI, session_id: str, token: str,
+                                  messages: list[ModelMessage]) -> None:
+    """on_cancel 路径：无 AgentRunResult 包装，直接持久化 ModelMessage 列表。"""
+    rows = await asyncio.to_thread(_render_rows, messages)
+    await _persist_rows(app, session_id, token, rows)
+
+
+async def _persist_rows(app: FastAPI, session_id: str, token: str,
+                        rows: list[dict[str, Any]]) -> None:
     if not rows:
         return
     http: httpx.AsyncClient = app.state.http

@@ -30,6 +30,9 @@ _SENSITIVE_HEADER_RE = re.compile(
     r"^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|"
     r"x-auth-token|api[-_]?key|token)$", re.I)
 
+# 掩码常量：_redact_* 写入与更新侧判定必须用同一值
+_MASKED = "***"
+
 
 def _redact_headers(headers: Any) -> None:
     """就地掩码敏感 header 的 value（key 保留便于 LLM 理解结构）。"""
@@ -37,7 +40,7 @@ def _redact_headers(headers: Any) -> None:
         return
     for h in headers:
         if isinstance(h, dict) and _SENSITIVE_HEADER_RE.match(str(h.get("key", ""))):
-            h["value"] = "***"
+            h["value"] = _MASKED
 
 
 def _redact_cookies(cookies: Any) -> None:
@@ -46,14 +49,48 @@ def _redact_cookies(cookies: Any) -> None:
         return
     for c in cookies:
         if isinstance(c, dict):
-            c["value"] = "***"
+            c["value"] = _MASKED
+
+
+def _is_masked(item: Any) -> bool:
+    """单项掩码判定：与 _redact_* 写入的掩码值保持一致。"""
+    return isinstance(item, dict) and str(item.get("value")) == _MASKED
 
 
 def _contains_redacted(values: Any) -> bool:
     """检测从 get_api 原样带回的掩码值：更新时不允许把 *** 写回接口定义。"""
     if not isinstance(values, list):
         return False
-    return any(isinstance(v, dict) and str(v.get("value")) == "***" for v in values)
+    return any(_is_masked(v) for v in values)
+
+
+def _strip_masked_items(items: list, base_items: Any) -> tuple[list, bool]:
+    """按项处理 update_api 入参里 get_api 带回的掩码项（字段级 continue 会把
+    用户真正要改的项一起静默丢掉，P2）：
+
+    - 掩码项 = 用户未改该凭据 → 回填 base 中同名项的真实值（headers 按 key、
+      cookies 按 name 匹配；无同名项则丢弃，"***" 绝不写回接口定义）；
+    - 真实项原样保留（用户真正要改的项照常更新）。
+
+    返回 (处理后的数组, 是否全为掩码项)。全为掩码项说明用户没改任何一项，
+    调用方应跳过整个字段（base 原值不动）。
+    """
+    base_by_key: dict[str, dict] = {}
+    if isinstance(base_items, list):
+        for b in base_items:
+            if isinstance(b, dict):
+                base_by_key.setdefault(str(b.get("key") or b.get("name") or ""), b)
+    out: list = []
+    masked = 0
+    for it in items:
+        if _is_masked(it):
+            masked += 1
+            real = base_by_key.get(str(it.get("key") or it.get("name") or ""))
+            if real is not None:
+                out.append(real)
+            continue
+        out.append(it)
+    return out, bool(items) and masked == len(items)
 
 
 @dataclass
@@ -467,7 +504,9 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
     （[{"key":..,"value":..}]）均可，map 会自动转换。建议先 get_api 获取
     完整定义再改（HttpApi 结构不确定时 query_schema(topic="HttpApi")）；api
     直接传变更字段对象，不要按 get 返回的 JSON 包 http/grpc 包装键（多传了
-    也会自动剥掉）；敏感 header/cookie 未修改时不会被覆盖。"""
+    也会自动剥掉）。headers/cookies 按项处理：掩码项（value="***"，get_api
+    返回）视为未修改、保留接口定义里的原值；整组都是掩码项时该字段不动，
+    并在返回 note 里注明。"""
     k = str(kind or "http").strip().lower()
     if k not in ("http", "grpc"):
         raise ValueError(f"kind must be http or grpc, got {kind!r}")
@@ -481,11 +520,20 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
     merged = {**base}
     if isinstance(api, dict):
         api = normalize_repeated_maps(strip_def_wrappers(api, ("http", "grpc", "api")), k)
+    redacted_fields: list[str] = []
     for field, value in (api or {}).items():
         if value is None:
             continue
-        if field in ("headers", "cookies") and _contains_redacted(value):
-            continue  # get_api 返回的掩码值不能原样写回
+        if field in ("headers", "cookies") and isinstance(value, list):
+            # 掩码值不能原样写回；按项过滤而非整字段跳过——否则改掩码项的
+            # 同时改的普通项会被静默丢弃（仍报成功）
+            kept, all_masked = _strip_masked_items(value, merged.get(field))
+            if all_masked:
+                # 全为掩码项 = 用户没改任何一项：整个字段保留 base 原值
+                redacted_fields.append(field)
+                continue
+            merged[field] = kept
+            continue
         merged[field] = value
 
     if k == "http":
@@ -500,7 +548,11 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
         r = await ctx.deps.sched.stub.UpdateApi(
             cpb.UpdateApiRequest(ctx=ctx.deps.ctx(), api_id=str(api_id),
                                  kind=api_kind, grpc=g))
-    return await to_dict_async(r)
+    out = await to_dict_async(r)
+    if redacted_fields:
+        # 让 LLM 知道哪些字段因全为掩码项而未动，避免误报"已更新"
+        out["note"] = "；".join(f"{f} 含掩码项已原样保留" for f in redacted_fields)
+    return out
 
 
 @writes.tool(requires_approval=True)
