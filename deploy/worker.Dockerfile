@@ -15,4 +15,8 @@ ENV PYTHONPATH=/app/src \
     TP_ARTIFACT_DIR=/data/artifacts
 VOLUME /data
 # 参数由 compose command 提供（--scheduler / --capabilities / ...）
+# 已知取舍：保持 root 运行——非 root 下 Chromium 沙箱依赖 user namespaces
+# （docker 默认 seccomp 常不可用），Playwright 启动需 --no-sandbox，改动涉及
+# 沙箱安全语义与 compose 联动，需单独验证后再降权。低代码脚本沙箱的
+# fail-closed 开关见 TP_SANDBOX_REQUIRE_ISOLATION。
 ENTRYPOINT ["python", "-m", "testpilot_worker"]

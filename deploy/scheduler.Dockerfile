@@ -24,7 +24,9 @@ RUN CGO_ENABLED=0 go build -o /out/scheduler ./cmd/scheduler
 
 # ---- 运行时 ----
 FROM alpine:3.21
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S tp && adduser -S tp -G tp \
+    && mkdir -p /data/artifacts && chown -R tp:tp /data
 COPY --from=sched /out/scheduler /usr/local/bin/scheduler
 COPY --from=web /build/dist /app/web/dist
 # 容器内监听全部接口（由 compose/端口映射控制暴露面）；本机 dev 默认回环见 scripts/dev.sh
@@ -33,6 +35,9 @@ ENV TP_HTTP_ADDR=:8080 \
     TP_STATIC_DIR=/app/web/dist \
     TP_ARTIFACT_DIR=/data/artifacts \
     TP_LOG_FORMAT=json
+# named volume（compose artifacts:）首次挂载会继承镜像内 /data 属主；
+# 换 bind mount 时需自行保证宿主目录对 uid tp 可写
 VOLUME /data
+USER tp
 EXPOSE 8080 9090
 ENTRYPOINT ["scheduler"]

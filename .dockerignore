@@ -1,0 +1,19 @@
+# 构建上下文瘦身：三个 Dockerfile 的构建上下文都是仓库根目录，
+# 排除后避免把 .git/.data/venv/node_modules（数百 MB，含本地测试产物与
+# 开发数据库）发给 daemon 或带进构建层缓存。只排除确定不被 COPY 的路径。
+.git
+.idea
+.github
+.vscode
+.pnpm-store
+.data
+**/__pycache__
+**/venv
+**/node_modules
+web/dist
+*.db
+*.log
+.env
+deploy/.env
+assets
+docs

@@ -33,10 +33,30 @@ services:
     environment:
       TP_DB_DSN: postgres://testpilot:${PG_PASSWORD}@postgres:5432/testpilot?sslmode=disable
       TP_JWT_SECRET: ${TP_JWT_SECRET:?set in .env}
+      TP_ADMIN_PASSWORD: ${TP_ADMIN_PASSWORD:-}   # 空=回落 admin123（启动时 stderr 告警）
+      TP_JWT_EXPIRE_HOURS: ${TP_JWT_EXPIRE_HOURS:-24}
+      TP_REGISTRATION_ENABLED: ${TP_REGISTRATION_ENABLED:-false}
       TP_SNOWFLAKE_NODE: ${TP_SNOWFLAKE_NODE:-1}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
+      # 租户级 Worker 令牌（可选，格式 "租户ID=令牌,..."）：防共享令牌自报他人租户
+      TP_WORKER_TENANT_TOKENS: ${TP_WORKER_TENANT_TOKENS:-}
+      TP_DB_MAX_OPEN_CONNS: ${TP_DB_MAX_OPEN_CONNS:-20}
+      TP_DB_MAX_IDLE_CONNS: ${TP_DB_MAX_IDLE_CONNS:-5}
+      TP_DB_CONN_MAX_LIFETIME_MIN: ${TP_DB_CONN_MAX_LIFETIME_MIN:-30}
+      TP_BODY_LIMIT_MB: ${TP_BODY_LIMIT_MB:-64}
       TP_RETENTION_RUN_DAYS: ${TP_RETENTION_RUN_DAYS:-0}
       TP_ARTIFACT_DIR: /data/artifacts
+      TP_ARTIFACT_BACKEND: ${TP_ARTIFACT_BACKEND:-local}
+      TP_S3_ENDPOINT: ${TP_S3_ENDPOINT:-}
+      TP_S3_ACCESS_KEY: ${TP_S3_ACCESS_KEY:-}
+      TP_S3_SECRET_KEY: ${TP_S3_SECRET_KEY:-}
+      TP_S3_BUCKET: ${TP_S3_BUCKET:-}
+      TP_S3_REGION: ${TP_S3_REGION:-}
+      TP_S3_PREFIX: ${TP_S3_PREFIX:-}
+      TP_S3_USE_SSL: ${TP_S3_USE_SSL:-true}
+      TP_S3_PATH_STYLE: ${TP_S3_PATH_STYLE:-false}
+      TP_METRICS_ALLOWED_CIDRS: ${TP_METRICS_ALLOWED_CIDRS:-}
+      TP_NOTIFY_ALLOW_PRIVATE: ${TP_NOTIFY_ALLOW_PRIVATE:-0}
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_LOG_FORMAT: json
@@ -45,10 +65,11 @@ services:
     volumes:
       - artifacts:/data/artifacts
     ports:
-      # 默认仅本机可达；生产对外暴露需前置网关（鉴权/限流/HTTPS 终止）。
-      # 种子 admin 口令务必在 .env 设置 TP_ADMIN_PASSWORD（弱口令=裸奔 owner）。
-      - "$TP_HTTP_BIND:8080:8080"   # REST + 前端（默认 127.0.0.1）
-      - "$TP_GRPC_BIND:9090:9090"   # gRPC（默认 127.0.0.1；仅编排外 Worker/Copilot 需要时暴露）
+      # 默认仅本机可达（未设 TP_HTTP_BIND/TP_GRPC_BIND 时回退 127.0.0.1，而非 0.0.0.0）；
+      # 生产对外暴露需前置网关（鉴权/限流/HTTPS 终止）。种子 admin 口令务必在
+      # .env 设置 TP_ADMIN_PASSWORD（弱口令=裸奔 owner）。
+      - "${TP_HTTP_BIND:-127.0.0.1}:8080:8080"   # REST + 前端
+      - "${TP_GRPC_BIND:-127.0.0.1}:9090:9090"   # gRPC（仅编排外 Worker/Copilot 需要时暴露）
     depends_on:
       postgres:
         condition: service_healthy
@@ -67,6 +88,8 @@ services:
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
       TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
+      TP_SANDBOX_REQUIRE_ISOLATION: ${TP_SANDBOX_REQUIRE_ISOLATION:-0}
+      TP_WORKER_TENANT_ID: ${TP_WORKER_TENANT_ID:-0}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
       PLAYWRIGHT_BROWSERS_PATH: /root/.cache/ms-playwright
     volumes:
@@ -90,6 +113,8 @@ services:
       TP_OTEL_ENDPOINT: jaeger:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
       TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
+      TP_SANDBOX_REQUIRE_ISOLATION: ${TP_SANDBOX_REQUIRE_ISOLATION:-0}
+      TP_WORKER_TENANT_ID: ${TP_WORKER_TENANT_ID:-0}
       TP_WORKER_TOKEN: ${TP_WORKER_TOKEN:?set in .env}
     volumes:
       - artifacts:/data/artifacts
@@ -126,8 +151,9 @@ services:
   jaeger:
     image: jaegertracing/jaeger:2.12.0
     ports:
-      - "16686:16686"
-      - "4317:4317"
+      # 宿主端口仅本机调试用（无鉴权）；scheduler/copilot 经服务名 jaeger:4317 上报
+      - "127.0.0.1:16686:16686"
+      - "127.0.0.1:4317:4317"
     restart: unless-stopped
 
   prometheus:
@@ -135,7 +161,7 @@ services:
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9091:9090"
+      - "127.0.0.1:9091:9090"   # 无鉴权，不对外
     depends_on:
       - scheduler
     restart: unless-stopped
