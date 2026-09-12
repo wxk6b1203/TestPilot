@@ -43,8 +43,14 @@ def _render_system_prompt(template: str, schema: str, sdk_doc: str) -> str:
 
 
 def build_instructions(prompt_file: str = "") -> str:
-    """组装主 agent 的 system prompt；prompt_file 为空时使用包内置模板。"""
-    schema = (_GROUNDING / "domain-schema.json").read_text(encoding="utf-8")
+    """组装主 agent 的 system prompt；prompt_file 为空时使用包内置模板。
+
+    {{schema}} 注入的是数据字典“目录”（schema-toc.md，由 scripts/gen_grounding.py
+    从 proto 同步生成）：实体 → 字段名一览 + 按需查询指引；完整定义由 LLM 经
+    query_schema(topic=...) 分片拉取进消息历史（可被上下文压缩回收），避免每轮
+    固定注入 14KB 全量 schema。
+    """
+    schema = (_GROUNDING / "schema-toc.md").read_text(encoding="utf-8")
     sdk_doc = (_GROUNDING / "sdk-api.md").read_text(encoding="utf-8")
     template = _read_prompt(prompt_file, _SYSTEM_PROMPT_FILE, "system")
     return _render_system_prompt(template, schema, sdk_doc)

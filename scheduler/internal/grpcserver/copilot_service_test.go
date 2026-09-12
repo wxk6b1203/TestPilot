@@ -2,6 +2,7 @@ package grpcserver_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -476,15 +477,54 @@ func TestUpdateTestCase(t *testing.T) {
 	}
 }
 
-// QuerySchema 返回内嵌 domain schema。
+// QuerySchema：topic 空 = 全量；topic 过滤 messages（枚举恒全量）；未知实体忽略。
 func TestQuerySchema(t *testing.T) {
 	cli, _ := newCopilotClient(t)
-	resp, err := cli.QuerySchema(context.Background(), &copilotv1.QuerySchemaRequest{Ctx: copilotCtx(1, "u-1")})
+	ctx := context.Background()
+
+	resp, err := cli.QuerySchema(ctx, &copilotv1.QuerySchemaRequest{Ctx: copilotCtx(1, "u-1")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if resp.GetVersion() != "v1" || !strings.Contains(resp.GetSchemaJson(), "HttpApi") {
 		t.Fatalf("schema mismatch: version=%q len=%d", resp.GetVersion(), len(resp.GetSchemaJson()))
+	}
+
+	// topic 过滤：只含目标实体，枚举仍全量
+	filtered, err := cli.QuerySchema(ctx, &copilotv1.QuerySchemaRequest{Ctx: copilotCtx(1, "u-1"), Topic: "TestStep, NoSuchEntity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Messages map[string]json.RawMessage `json:"messages"`
+		Enums    map[string]any             `json:"enums"`
+		Topic    string                     `json:"requestedTopic"`
+	}
+	if err := json.Unmarshal([]byte(filtered.GetSchemaJson()), &doc); err != nil {
+		t.Fatal(err)
+	}
+	if len(doc.Messages) != 1 {
+		t.Fatalf("filtered messages: want only TestStep, got %d", len(doc.Messages))
+	}
+	if _, ok := doc.Messages["TestStep"]; !ok {
+		t.Fatalf("TestStep missing: %s", filtered.GetSchemaJson())
+	}
+	if len(doc.Enums) < 5 {
+		t.Fatalf("enums should be returned in full: got %d", len(doc.Enums))
+	}
+	if doc.Topic != "TestStep, NoSuchEntity" {
+		t.Fatalf("requestedTopic mismatch: %q", doc.Topic)
+	}
+
+	// 全量 messages 数 > 过滤结果
+	var fullDoc struct {
+		Messages map[string]json.RawMessage `json:"messages"`
+	}
+	if err := json.Unmarshal([]byte(resp.GetSchemaJson()), &fullDoc); err != nil {
+		t.Fatal(err)
+	}
+	if len(fullDoc.Messages) <= len(doc.Messages) {
+		t.Fatalf("full schema should have more messages: %d vs %d", len(fullDoc.Messages), len(doc.Messages))
 	}
 }
 

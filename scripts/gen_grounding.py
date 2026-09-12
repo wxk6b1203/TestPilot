@@ -65,15 +65,23 @@ def extract() -> dict:
         if body is None:
             continue
         fields = []
+        cur_oneof: int | None = None   # 当前未闭合 oneof 在 fields 中的下标
         for line in body.splitlines():
+            stripped = line.strip()
             fm = FIELD_RE.match(line)
-            if fm and not line.strip().startswith(("oneof", "message", "enum")):
+            if fm and not stripped.startswith(("oneof", "message", "enum", "}")):
                 typ, fname, doc = fm.group(1), fm.group(2), (fm.group(3) or "").strip()
-                prefix = "repeated " if line.strip().startswith("repeated") else ""
-                fields.append({"name": fname, "type": prefix + typ, **({"doc": doc} if doc else {})})
-            elif line.strip().startswith("oneof"):
-                oneof = line.strip().rstrip(" {")
+                prefix = "repeated " if stripped.startswith("repeated") else ""
+                fields.append({"name": fname, "type": prefix + typ,
+                               **({"doc": doc} if doc else {})})
+                if cur_oneof is not None:
+                    fields[cur_oneof].setdefault("members", []).append(fname)
+            elif stripped.startswith("oneof"):
+                cur_oneof = len(fields)
+                oneof = stripped.rstrip(" {")
                 fields.append({"name": oneof.split()[-1], "type": "oneof", "doc": "见 proto"})
+            elif stripped == "}" and cur_oneof is not None:
+                cur_oneof = None   # oneof 块结束（顶层 message 结束由外层 while 处理）
         out["messages"][name] = fields
     for name in CORE_ENUMS:
         body = blocks.get(name)
@@ -172,6 +180,43 @@ async def run(ctx):
 
 
 
+def _camel(name: str) -> str:
+    """proto snake_case 字段名 → JSON camelCase（protojson 线上形状）。"""
+    parts = name.split("_")
+    return parts[0] + "".join(p.title() for p in parts[1:])
+
+
+def render_toc(schema: dict) -> str:
+    """从 schema 生成目录（注入 system prompt 的 {{schema}}）。
+
+    目录只列实体 → camelCase 字段名一览，引导 LLM 按需 query_schema(topic=...)
+    拉取完整定义，避免每轮固定注入全量 14KB schema。
+    """
+    lines = []
+    for name, fields in schema["messages"].items():
+        # oneof 成员已在 oneof(...) 内展示，平铺列表里去重
+        in_oneof = {m for f in fields if f["type"] == "oneof"
+                    for m in f.get("members", [])}
+        parts = []
+        for f in fields:
+            if f["type"] == "oneof":
+                members = "|".join(_camel(m) for m in f.get("members", []))
+                parts.append(f"oneof {f['name']}({members})" if members else f"oneof {f['name']}")
+            elif f["name"] not in in_oneof:
+                parts.append(_camel(f["name"]))
+        lines.append(f"- {name}: {', '.join(parts)}")
+    lines.append("")
+    lines.append("- 枚举: " + ", ".join(schema["enums"]))
+    lines.extend([
+        "",
+        "以上是数据字典目录。字段结构不确定时，用 query_schema(topic=\"实体名1,实体名2\") "
+        "按需查询完整定义（支持逗号分隔多个实体；topic 省略返回全量；枚举恒全部返回）。",
+    ])
+    header = ("<!-- 由 scripts/gen_grounding.py 生成，勿手改；实体/枚举清单与 proto 同步 -->\n\n"
+              "## 数据字典目录\n\n")
+    return header + "\n".join(lines) + "\n"
+
+
 def main() -> None:
     schema = extract()
     targets = [
@@ -185,8 +230,10 @@ def main() -> None:
     sdk_md = ROOT / "copilot/src/testpilot_copilot/grounding/sdk-api.md"
     sdk_md.parent.mkdir(parents=True, exist_ok=True)
     sdk_md.write_text(SDK_API_MD, encoding="utf-8")
+    toc = ROOT / "copilot/src/testpilot_copilot/grounding/schema-toc.md"
+    toc.write_text(render_toc(schema), encoding="utf-8")
     print(f"grounding: {len(schema['messages'])} messages, {len(schema['enums'])} enums")
-    for t in [*targets, sdk_md]:
+    for t in [*targets, sdk_md, toc]:
         print("  wrote", t.relative_to(ROOT))
 
 

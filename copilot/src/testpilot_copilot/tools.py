@@ -285,7 +285,9 @@ async def get_test_case(ctx: RunContext[CopilotDeps], case_id: str) -> dict:
 
 @readonly.tool
 async def query_schema(ctx: RunContext[CopilotDeps], topic: str = "") -> dict:
-    """查询领域 schema（数据字典：实体/字段/枚举），写用例前先查。"""
+    """查询领域 schema 数据字典（实体字段定义 + 枚举）。
+    topic 传实体名（逗号分隔多个，如 "TestStep,LowCodeCase"）只拉相关片段，省略返回全量；
+    实体名以 system prompt 数据字典目录为准。生成 definition/definition 前不确定结构时先查。"""
     r = await ctx.deps.sched.stub.QuerySchema(
         cpb.QuerySchemaRequest(ctx=ctx.deps.ctx(), topic=topic))
     return await to_dict_async(r)
@@ -463,9 +465,9 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
     {"uri": "/v2/echo", "body": {...}}），未提供的字段保持原值。
     headers/params/cookies/metadata 传 map（{"X-Test": "1"}）或数组
     （[{"key":..,"value":..}]）均可，map 会自动转换。建议先 get_api 获取
-    完整定义再改；api 直接传变更字段对象，不要按 get 返回的 JSON 包
-    http/grpc 包装键（多传了也会自动剥掉）；敏感 header/cookie
-    未修改时不会被覆盖。"""
+    完整定义再改（HttpApi 结构不确定时 query_schema(topic="HttpApi")）；api
+    直接传变更字段对象，不要按 get 返回的 JSON 包 http/grpc 包装键（多传了
+    也会自动剥掉）；敏感 header/cookie 未修改时不会被覆盖。"""
     k = str(kind or "http").strip().lower()
     if k not in ("http", "grpc"):
         raise ValueError(f"kind must be http or grpc, got {kind!r}")
@@ -506,7 +508,8 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
                            definition: dict, case_type: str = "declarative",
                            project_id: str | None = None,
                            description: str = "") -> dict:
-    """创建测试用例。case_type: declarative（definition=DeclarativeCase 的 JSON：{"steps":[...]}）
+    """创建测试用例。case_type: declarative（definition=DeclarativeCase 的 JSON：{"steps":[...]};
+    步骤结构不确定时先 query_schema(topic="TestStep,ApiCallStep") 查证）
     或 lowcode（definition={"source": "...", "entry": "run",
     "http_api_refs": ["接口ID", ...], "grpc_api_refs": [...]}）。
     definition 直接传定义对象本身，不要带 lowcode/declarative/case 包装键

@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	commonv1 "github.com/testpilot/testpilot/gen/common/v1"
@@ -32,6 +33,31 @@ import (
 
 //go:embed schema.json
 var domainSchema string
+
+type schemaIdx struct {
+	msgs map[string]json.RawMessage   // 实体名 → 字段定义片段
+	meta map[string]json.RawMessage   // version/source/enums 等其余顶层字段
+}
+
+// schemaIndex 懒解析 domainSchema（topic 过滤用）；进程内不可变，并发安全。
+var schemaIndex = sync.OnceValue(func() *schemaIdx {
+	idx := &schemaIdx{
+		msgs: map[string]json.RawMessage{},
+		meta: map[string]json.RawMessage{},
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(domainSchema), &raw); err != nil {
+		panic("embedded domain-schema.json 解析失败: " + err.Error())
+	}
+	for k, v := range raw {
+		if k == "messages" {
+			_ = json.Unmarshal(v, &idx.msgs)
+		} else {
+			idx.meta[k] = v
+		}
+	}
+	return idx
+})
 
 // CopilotService 实现 CopilotToolService：Copilot 的工具面（不直连 DB 的是 Copilot 侧；
 // 本服务在 Scheduler 内，受 RequestContext 租户约束；写/触发类落审计）。
@@ -306,7 +332,31 @@ func (s *CopilotService) GetTestCase(_ context.Context, req *copilotv1.GetTestCa
 }
 
 func (s *CopilotService) QuerySchema(_ context.Context, req *copilotv1.QuerySchemaRequest) (*copilotv1.QuerySchemaResponse, error) {
-	return &copilotv1.QuerySchemaResponse{SchemaJson: domainSchema, Version: "v1"}, nil
+	// topic：逗号分隔实体名（如 "TestStep,LowCodeCase"）→ 只返回相关 messages
+	// 片段（枚举恒全量返回）；空 = 全量，兼容旧调用方。未知实体名忽略。
+	topic := strings.TrimSpace(req.GetTopic())
+	if topic == "" {
+		return &copilotv1.QuerySchemaResponse{SchemaJson: domainSchema, Version: "v1"}, nil
+	}
+	idx := schemaIndex()
+	filtered := make(map[string]json.RawMessage, len(topic))
+	for _, name := range strings.Split(topic, ",") {
+		name = strings.TrimSpace(name)
+		if raw, ok := idx.msgs[name]; ok {
+			filtered[name] = raw
+		}
+	}
+	payload, err := json.Marshal(map[string]any{
+		"version": json.RawMessage(idx.meta["version"]),
+		"source": json.RawMessage(idx.meta["source"]),
+		"messages": filtered,
+		"enums": json.RawMessage(idx.meta["enums"]),
+		"requestedTopic": topic,
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return &copilotv1.QuerySchemaResponse{SchemaJson: string(payload), Version: "v1"}, nil
 }
 
 func (s *CopilotService) ListRuns(_ context.Context, req *copilotv1.ListRunsRequest) (*copilotv1.ListRunsResponse, error) {

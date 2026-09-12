@@ -83,7 +83,12 @@
    {
     "name": "content",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "raw",
+     "form",
+     "binary_ref"
+    ]
    },
    {
     "name": "raw",
@@ -137,7 +142,19 @@
    {
     "name": "params",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "api_call",
+     "grpc_call",
+     "assertion",
+     "set_var",
+     "if_step",
+     "loop_step",
+     "retry_step",
+     "code_block",
+     "delay",
+     "ui_action"
+    ]
    },
    {
     "name": "api_call",
@@ -236,7 +253,11 @@
    {
     "name": "bounds",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "count",
+     "range"
+    ]
    },
    {
     "name": "count",
@@ -313,7 +334,11 @@
    {
     "name": "script",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "script_ref",
+     "source"
+    ]
    },
    {
     "name": "script_ref",
@@ -373,7 +398,11 @@
    {
     "name": "definition",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "declarative",
+     "lowcode"
+    ]
    },
    {
     "name": "declarative",
@@ -449,7 +478,11 @@
    {
     "name": "ref",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "case_id",
+     "suite_id"
+    ]
    },
    {
     "name": "case_id",
@@ -691,7 +724,11 @@
    {
     "name": "target",
     "type": "oneof",
-    "doc": "见 proto"
+    "doc": "见 proto",
+    "members": [
+     "api_id",
+     "behavior_case_id"
+    ]
    },
    {
     "name": "api_id",

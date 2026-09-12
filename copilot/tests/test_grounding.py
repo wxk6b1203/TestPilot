@@ -18,11 +18,25 @@ from testpilot_copilot.agent import _PROMPTS, _build_instructions, build_instruc
 
 
 def test_instructions_embed_schema_and_sdk_verbatim():
-    schema = (_PROMPTS.parent / "grounding" / "domain-schema.json").read_text(encoding="utf-8")
-    sdk_doc = (_PROMPTS.parent / "grounding" / "sdk-api.md").read_text(encoding="utf-8")
+    grounding = _PROMPTS.parent / "grounding"
+    toc = (grounding / "schema-toc.md").read_text(encoding="utf-8")
+    sdk_doc = (grounding / "sdk-api.md").read_text(encoding="utf-8")
     text = _build_instructions()
-    assert schema in text
+    assert toc in text      # {{schema}} 注入的是目录（非全量 schema）
     assert sdk_doc in text
+
+
+def test_instructions_use_toc_not_full_schema():
+    """system prompt 只注入 schema 目录（省 token）：全量定义经 query_schema(topic) 按需拉。"""
+    grounding = _PROMPTS.parent / "grounding"
+    toc = (grounding / "schema-toc.md").read_text(encoding="utf-8")
+    full = (grounding / "domain-schema.json").read_text(encoding="utf-8")
+    text = _build_instructions()
+    assert toc in text                       # 目录已注入
+    assert full not in text                  # 全量 schema 不再注入
+    assert "- HttpApi:" in toc and "- TestStep:" in toc   # 实体清单
+    assert "query_schema(topic=" in toc      # 按需查询指引
+    assert "以上是数据字典目录" in text
 
 
 def test_instructions_structure():
@@ -84,7 +98,7 @@ def test_custom_system_prompt_file_replaces_default(tmp_path):
     text = build_instructions(str(custom))
     assert "你是自定义测试助手" in text
     assert "## 工作准则" not in text
-    assert "数据字典" not in text
+    assert "## 数据字典（领域 schema）" not in text   # 默认模板章节标题不应出现（TOC 内容自带“数据字典目录”字样属正常）
     assert "domain-schema" not in text  # 确认注入的是 schema 内容而非默认模板
 
 
