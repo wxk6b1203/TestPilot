@@ -43,7 +43,7 @@ def test_instructions_structure():
     text = _build_instructions()
     assert "## 工作准则" in text
     assert "## Playwright UI 用例生成" in text
-    assert "## 数据字典（领域 schema）" in text
+    assert "## 数据字典目录" in text      # {{schema}} 注入的 TOC 自带章节标题
     assert "## 低代码 SDK" in text
     assert "update_api" in text and "update_test_case" in text
     # 使用准则在 grounding 段落之前；schema 段落在 SDK 段落之前

@@ -57,7 +57,6 @@
   例：`async def run(ctx): return await ctx.page.evaluate("[...document.querySelectorAll('button,a')].map(e => e.textContent.trim())")`；
   run_py 超时会重启沙箱（helper 丢失），长逻辑要分帧。
 
-## 数据字典（领域 schema）
 {{schema}}
 
 ## 低代码 SDK（case_type=lowcode 时 definition.source 的编程接口）
