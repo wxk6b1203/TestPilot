@@ -118,3 +118,5 @@ TP_S3_PREFIX=testpilot/                                  # 可选；键 = {prefi
 - 通知 webhook 默认拒绝私网目标；仅当确有内网 webhook 需求时设置 `TP_NOTIFY_ALLOW_PRIVATE=1`。
 - `/metrics` 与 OIDC 回调为公开端点；对外暴露时由反向代理收敛。
 - 数据保留：`TP_RETENTION_RUN_DAYS`（如 90）开启每小时级联清理（含产物文件）。
+- 执行隔离分级（沙箱后端 / 浏览器出网代理 / Worker 降权）的设计与实施计划见
+  [isolation-hardening-design.md](isolation-hardening-design.md)。
