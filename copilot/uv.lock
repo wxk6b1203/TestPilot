@@ -602,14 +602,14 @@ wheels = [
 
 [[package]]
 name = "pydantic-ai-extensions"
-version = "0.1.0"
-source = { path = "vendor/pydantic_ai_extensions-0.1.0-py3-none-any.whl" }
+version = "0.1.1"
+source = { path = "vendor/pydantic_ai_extensions-0.1.1-py3-none-any.whl" }
 dependencies = [
     { name = "pydantic-ai-slim" },
     { name = "tiktoken" },
 ]
 wheels = [
-    { filename = "pydantic_ai_extensions-0.1.0-py3-none-any.whl", hash = "sha256:1faf22678a2e9528d3a15041e3428d03ad33822581e450e1cfe18b9a0550280d" },
+    { filename = "pydantic_ai_extensions-0.1.1-py3-none-any.whl", hash = "sha256:c63681b86ba1845839d6fa5d9c342026f7ce918a4e097aa3bd0d76c02e644422" },
 ]
 
 [package.metadata]
@@ -929,7 +929,7 @@ requires-dist = [
     { name = "opentelemetry-exporter-otlp-proto-grpc", specifier = ">=1.30" },
     { name = "opentelemetry-sdk", specifier = ">=1.30" },
     { name = "protobuf", specifier = ">=5" },
-    { name = "pydantic-ai-extensions", path = "vendor/pydantic_ai_extensions-0.1.0-py3-none-any.whl" },
+    { name = "pydantic-ai-extensions", path = "vendor/pydantic_ai_extensions-0.1.1-py3-none-any.whl" },
     { name = "pydantic-ai-slim", specifier = "==2.28.0" },
     { name = "pyyaml", specifier = ">=6" },
     { name = "tiktoken", specifier = ">=0.12" },

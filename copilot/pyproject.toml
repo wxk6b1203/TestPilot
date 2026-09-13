@@ -33,4 +33,4 @@ dev = ["pytest>=8"]
 
 [tool.uv.sources]
 # 未发布到公共 PyPI，随库 vendor；uv sync 直接解析本地 wheel
-pydantic-ai-extensions = { path = "vendor/pydantic_ai_extensions-0.1.0-py3-none-any.whl" }
+pydantic-ai-extensions = { path = "vendor/pydantic_ai_extensions-0.1.1-py3-none-any.whl" }

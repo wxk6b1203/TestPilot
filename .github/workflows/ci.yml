@@ -107,7 +107,7 @@ jobs:
       - name: Install
         working-directory: copilot
         run: |
-          pip install ./vendor/pydantic_ai_extensions-0.1.0-py3-none-any.whl
+          pip install ./vendor/pydantic_ai_extensions-*.whl
           pip install -e . pytest
       - name: pytest
         working-directory: copilot
