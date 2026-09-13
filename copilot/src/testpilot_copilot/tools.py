@@ -366,9 +366,11 @@ async def query_coverage(ctx: RunContext[CopilotDeps],
 async def query_api_directory(ctx: RunContext[CopilotDeps],
                               project_id: str | None = None,
                               query: str = "", parent_node_id: str = "") -> dict:
-    """查询接口目录树（目录/HTTP/gRPC 接口条目，含人读路径）。
+    """查询接口目录树（目录/HTTP/gRPC 接口条目，含人读路径与各节点 node_id）。
     用于回答“某目录下有哪些接口 / 接口挂在哪”等问题；query 可按名称/uri 过滤。
-    project_id 省略时使用页面左上角当前选择的项目。"""
+    project_id 省略时使用页面左上角当前选择的项目。
+    目录管理可用 create_folder / mount_node / move_node；
+    目录重命名/删除、树节点移除无工具，只能页面操作。"""
     pid = ctx.deps.resolve_project_id(project_id)
     r = await ctx.deps.sched.stub.QueryApiDirectory(
         cpb.QueryApiDirectoryRequest(ctx=ctx.deps.ctx(), project_id=pid,
