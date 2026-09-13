@@ -39,6 +39,9 @@ service CopilotToolService {
   rpc DeleteApi(DeleteApiRequest) returns (DeleteApiResponse);
   rpc UpdatePlan(UpdatePlanRequest) returns (UpdatePlanResponse);
   rpc DeletePlan(DeletePlanRequest) returns (DeletePlanResponse);
+  rpc CreateFolder(CreateFolderRequest) returns (CreateFolderResponse);
+  rpc MountNode(MountNodeRequest) returns (MountNodeResponse);
+  rpc MoveNode(MoveNodeRequest) returns (MoveNodeResponse);
   rpc CreateScript(CreateScriptRequest) returns (CreateScriptResponse);
   rpc UpdateScript(UpdateScriptRequest) returns (UpdateScriptResponse);
   rpc DeleteScript(DeleteScriptRequest) returns (DeleteScriptResponse);
@@ -382,6 +385,35 @@ message DeleteScriptRequest {
   string script_id = 2;
 }
 message DeleteScriptResponse {}
+
+// ---- 目录树管理（folder = 纯目录节点；挂载/移动 = TreeNode 引用节点）----
+message CreateFolderRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string name = 3;
+  string parent_node_id = 4;   // 空 = 根级
+}
+message CreateFolderResponse {
+  string node_id = 1;
+}
+message MountNodeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string project_id = 2;
+  string kind = 3;             // http_api | grpc_api | test_case | suite
+  string ref_id = 4;           // 实体 id
+  string parent_node_id = 5;   // 空 = 根级
+}
+message MountNodeResponse {
+  string node_id = 1;
+}
+message MoveNodeRequest {
+  testpilot.common.v1.RequestContext ctx = 1;
+  string node_id = 2;          // query_api_directory 返回的 node_id
+  string parent_node_id = 3;   // 目标目录；空 = 根级
+}
+message MoveNodeResponse {
+  string node_id = 1;
+}
 
 
 message ImportOpenApiRequest {

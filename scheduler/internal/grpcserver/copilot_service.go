@@ -505,7 +505,12 @@ func (s *CopilotService) CreateApi(_ context.Context, req *copilotv1.CreateApiRe
 			return nil, status.Error(codes.Internal, err.Error())
 		}
 		s.audit(req.GetCtx(), "create", "http_api", idStr(m.ID), map[string]any{"method": m.Method, "uri": m.URI})
-		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID)}, nil
+		nodeID, err := s.mountIfRequested(req.GetCtx(), req.GetParentNodeId(),
+			tid(req.GetCtx()), m.ProjectID, model.NodeTypeHTTPAPI, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID), NodeId: optID(nodeID)}, nil
 
 	case *copilotv1.CreateApiRequest_Grpc:
 		g := spec.Grpc
@@ -533,7 +538,12 @@ func (s *CopilotService) CreateApi(_ context.Context, req *copilotv1.CreateApiRe
 		}
 		s.audit(req.GetCtx(), "create", "grpc_api", idStr(m.ID),
 			map[string]any{"service": m.FullService, "method": m.Method})
-		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID)}, nil
+		nodeID, err := s.mountIfRequested(req.GetCtx(), req.GetParentNodeId(),
+			tid(req.GetCtx()), m.ProjectID, model.NodeTypeGRPCAPI, m.ID)
+		if err != nil {
+			return nil, err
+		}
+		return &copilotv1.CreateApiResponse{ApiId: idStr(m.ID), NodeId: optID(nodeID)}, nil
 
 	default:
 		return nil, status.Error(codes.InvalidArgument, "http or grpc api payload required")
@@ -647,7 +657,12 @@ func (s *CopilotService) CreateTestCase(_ context.Context, req *copilotv1.Create
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	s.audit(req.GetCtx(), "create", "test_case", idStr(m.ID), map[string]any{"name": m.Name, "type": m.Type})
-	return &copilotv1.CreateTestCaseResponse{CaseId: idStr(m.ID)}, nil
+	nodeID, err := s.mountIfRequested(req.GetCtx(), req.GetParentNodeId(),
+		tid(req.GetCtx()), m.ProjectID, model.NodeTypeTestCase, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &copilotv1.CreateTestCaseResponse{CaseId: idStr(m.ID), NodeId: optID(nodeID)}, nil
 }
 
 func (s *CopilotService) UpdateTestCase(_ context.Context, req *copilotv1.UpdateTestCaseRequest) (*copilotv1.UpdateTestCaseResponse, error) {
@@ -769,7 +784,12 @@ func (s *CopilotService) CreateTestPlan(_ context.Context, req *copilotv1.Create
 		return nil, status.Error(codes.Internal, err.Error())
 	}
 	s.audit(req.GetCtx(), "create", "test_plan", idStr(m.ID), map[string]any{"name": m.Name, "items": len(p.GetItems())})
-	return &copilotv1.CreateTestPlanResponse{PlanId: idStr(m.ID)}, nil
+	nodeID, err := s.mountIfRequested(req.GetCtx(), req.GetParentNodeId(),
+		tid(req.GetCtx()), m.ProjectID, model.NodeTypePlan, m.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &copilotv1.CreateTestPlanResponse{PlanId: idStr(m.ID), NodeId: optID(nodeID)}, nil
 }
 
 // planToProto 转换 TestPlan（不含 items；items 由调用方按需附加）。
@@ -945,6 +965,230 @@ func scriptAssetToProto(m *model.Script) *copilotv1.ScriptAsset {
 		Language:    m.Language,
 		Content:     m.Content,
 	}
+}
+
+// ---- 目录树管理（与 httpserver tree_handlers.go 同一套语义：folder 为纯目录节点；
+// 挂载/移动为 TreeNode 引用节点；同父按 order 升序，新建/移动缺省追加末尾）----
+
+// mountIfRequested 创建实体后按 parent_node_id 挂载（proto 字段早已设计，接通创建即挂载）。
+// 未传 parent 时返回 (0, nil)。
+func (s *CopilotService) mountIfRequested(rc *commonv1.RequestContext, reqParent string,
+	tenant, pid int64, nodeType int16, refID int64) (int64, error) {
+	parentID := mustID(reqParent)
+	if parentID == 0 {
+		return 0, nil
+	}
+	return s.mountRef(rc, tenant, pid, nodeType, refID, parentID)
+}
+
+// optID 0 → ""（可选 ID 字段序列化时省略噪音）。
+func optID(v int64) string {
+	if v == 0 {
+		return ""
+	}
+	return idStr(v)
+}
+
+// nodePathOf 父节点路径（根 = ""）；父必须存在且为 folder。
+func (s *CopilotService) nodePathOf(tenantID, parentID int64) (string, error) {
+	if parentID == 0 {
+		return "", nil
+	}
+	var p model.TreeNode
+	if err := s.db.Where("id = ? AND tenant_id = ?", parentID, tenantID).First(&p).Error; err != nil {
+		return "", status.Error(codes.NotFound, "parent folder not found")
+	}
+	if p.NodeType != model.NodeTypeFolder {
+		return "", status.Error(codes.InvalidArgument, "parent is not a folder")
+	}
+	return p.Path, nil
+}
+
+// mountRef 把实体作为引用节点挂到目录（校验实体属于租户并取节点名）。
+func (s *CopilotService) mountRef(rc *commonv1.RequestContext, tenant, pid int64, nodeType int16,
+	refID, parentID int64) (int64, error) {
+	name := ""
+	switch nodeType {
+	case model.NodeTypeHTTPAPI:
+		var api model.HttpApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, tenant).First(&api).Error; err != nil {
+			return 0, status.Error(codes.NotFound, "api not found")
+		}
+		name = api.Name
+		if name == "" {
+			name = fmt.Sprintf("%d %s", api.Method, api.URI)
+		}
+	case model.NodeTypeGRPCAPI:
+		var g model.GrpcApi
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, tenant).First(&g).Error; err != nil {
+			return 0, status.Error(codes.NotFound, "api not found")
+		}
+		name = g.FullService + "/" + g.Method
+	case model.NodeTypeTestCase:
+		var tc model.TestCase
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, tenant).First(&tc).Error; err != nil {
+			return 0, status.Error(codes.NotFound, "case not found")
+		}
+		name = tc.Name
+	case model.NodeTypeSuite:
+		var su model.TestSuite
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, tenant).First(&su).Error; err != nil {
+			return 0, status.Error(codes.NotFound, "suite not found")
+		}
+		name = su.Name
+	default:
+		return 0, status.Error(codes.InvalidArgument, "unsupported node kind")
+	}
+	path, err := s.nodePathOf(tenant, parentID)
+	if err != nil {
+		return 0, err
+	}
+	var cnt int64
+	if err := s.db.Model(&model.TreeNode{}).
+		Where("tenant_id = ? AND parent_id = ?", tenant, parentID).Count(&cnt).Error; err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	n := &model.TreeNode{
+		ID: model.NextID(), TenantID: tenant, ProjectID: pid,
+		ParentID: parentID, NodeType: int16(nodeType), RefID: refID,
+		Name: name, Path: path + fmt.Sprint(model.NextID()) + "/",
+		Order: int(cnt),
+	}
+	n.Path = path + fmt.Sprint(n.ID) + "/"
+	if err := s.db.Create(n).Error; err != nil {
+		return 0, status.Error(codes.Internal, err.Error())
+	}
+	return n.ID, nil
+}
+
+func (s *CopilotService) CreateFolder(_ context.Context, req *copilotv1.CreateFolderRequest) (*copilotv1.CreateFolderResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	pid := mustID(req.GetProjectId())
+	name := strings.TrimSpace(req.GetName())
+	if pid == 0 || name == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id and name required")
+	}
+	if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	path, err := s.nodePathOf(tenant, mustID(req.GetParentNodeId()))
+	if err != nil {
+		return nil, err
+	}
+	parentID := mustID(req.GetParentNodeId())
+	var cnt int64
+	if err := s.db.Model(&model.TreeNode{}).
+		Where("tenant_id = ? AND parent_id = ?", tenant, parentID).Count(&cnt).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	n := &model.TreeNode{
+		ID: model.NextID(), TenantID: tenant, ProjectID: pid,
+		ParentID: parentID, NodeType: model.NodeTypeFolder,
+		Name: name, Path: path + fmt.Sprint(model.NextID()) + "/",
+		Order: int(cnt),
+	}
+	n.Path = path + fmt.Sprint(n.ID) + "/"
+	if err := s.db.Create(n).Error; err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "create", "tree_node", idStr(n.ID), map[string]any{"name": name, "kind": "folder"})
+	return &copilotv1.CreateFolderResponse{NodeId: idStr(n.ID)}, nil
+}
+
+func (s *CopilotService) MountNode(_ context.Context, req *copilotv1.MountNodeRequest) (*copilotv1.MountNodeResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	pid := mustID(req.GetProjectId())
+	if pid == 0 {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	if err := s.ensureProjectTenant(req.GetCtx(), pid); err != nil {
+		return nil, err
+	}
+	refID := mustID(req.GetRefId())
+	if refID == 0 {
+		return nil, status.Error(codes.InvalidArgument, "ref_id required")
+	}
+	var nodeType int16
+	switch strings.ToLower(strings.TrimSpace(req.GetKind())) {
+	case "http_api":
+		nodeType = model.NodeTypeHTTPAPI
+	case "grpc_api":
+		nodeType = model.NodeTypeGRPCAPI
+	case "test_case":
+		nodeType = model.NodeTypeTestCase
+	case "suite":
+		nodeType = model.NodeTypeSuite
+	default:
+		return nil, status.Error(codes.InvalidArgument,
+			"kind must be http_api|grpc_api|test_case|suite")
+	}
+	nodeID, err := s.mountRef(req.GetCtx(), tid(req.GetCtx()), pid, nodeType,
+		refID, mustID(req.GetParentNodeId()))
+	if err != nil {
+		return nil, err
+	}
+	s.audit(req.GetCtx(), "mount", "tree_node", idStr(nodeID),
+		map[string]any{"kind": req.GetKind(), "ref_id": req.GetRefId()})
+	return &copilotv1.MountNodeResponse{NodeId: idStr(nodeID)}, nil
+}
+
+func (s *CopilotService) MoveNode(_ context.Context, req *copilotv1.MoveNodeRequest) (*copilotv1.MoveNodeResponse, error) {
+	if err := s.checkAICalls(req.GetCtx()); err != nil {
+		return nil, err
+	}
+	tenant := tid(req.GetCtx())
+	var n model.TreeNode
+	if err := s.db.Where("id = ? AND tenant_id = ?", mustID(req.GetNodeId()), tenant).First(&n).Error; err != nil {
+		return nil, status.Error(codes.NotFound, "node not found")
+	}
+	parentID := mustID(req.GetParentNodeId())
+	newPath, err := s.nodePathOf(tenant, parentID)
+	if err != nil {
+		return nil, err
+	}
+	if parentID == n.ParentID {
+		return &copilotv1.MoveNodeResponse{NodeId: idStr(n.ID)}, nil
+	}
+	// 环检测：目标父不能是自身或其子孙（自身 path 是子孙 path 前缀）
+	if newPath != "" && (newPath == n.Path || strings.HasPrefix(newPath, n.Path)) {
+		return nil, status.Error(codes.InvalidArgument, "cannot move node into its own subtree")
+	}
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var subs []model.TreeNode
+		if err := tx.Where("tenant_id = ? AND path LIKE ?", tenant, n.Path+"%").Find(&subs).Error; err != nil {
+			return err
+		}
+		var cnt int64
+		if err := tx.Model(&model.TreeNode{}).
+			Where("tenant_id = ? AND parent_id = ?", tenant, parentID).Count(&cnt).Error; err != nil {
+			return err
+		}
+		for _, sub := range subs {
+			suffix := strings.TrimPrefix(sub.Path, n.Path)
+			parent, order := sub.ParentID, sub.Order
+			if sub.ID == n.ID {
+				parent, order = parentID, int(cnt)
+			}
+			if err := tx.Model(&sub).Updates(map[string]any{
+				"parent_id": parent,
+				"path":      newPath + fmt.Sprint(n.ID) + "/" + suffix,
+				"order":     order,
+			}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	s.audit(req.GetCtx(), "move", "tree_node", idStr(n.ID), map[string]any{"parent_id": req.GetParentNodeId()})
+	return &copilotv1.MoveNodeResponse{NodeId: idStr(n.ID)}, nil
 }
 
 func (s *CopilotService) ListScripts(_ context.Context, req *copilotv1.ListScriptsRequest) (*copilotv1.ListScriptsResponse, error) {

@@ -562,6 +562,60 @@ class DeleteScriptResponse(_message.Message):
     __slots__ = ()
     def __init__(self) -> None: ...
 
+class CreateFolderRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "name", "parent_node_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    NAME_FIELD_NUMBER: _ClassVar[int]
+    PARENT_NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    name: str
+    parent_node_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., name: _Optional[str] = ..., parent_node_id: _Optional[str] = ...) -> None: ...
+
+class CreateFolderResponse(_message.Message):
+    __slots__ = ("node_id",)
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    node_id: str
+    def __init__(self, node_id: _Optional[str] = ...) -> None: ...
+
+class MountNodeRequest(_message.Message):
+    __slots__ = ("ctx", "project_id", "kind", "ref_id", "parent_node_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    PROJECT_ID_FIELD_NUMBER: _ClassVar[int]
+    KIND_FIELD_NUMBER: _ClassVar[int]
+    REF_ID_FIELD_NUMBER: _ClassVar[int]
+    PARENT_NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    project_id: str
+    kind: str
+    ref_id: str
+    parent_node_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., project_id: _Optional[str] = ..., kind: _Optional[str] = ..., ref_id: _Optional[str] = ..., parent_node_id: _Optional[str] = ...) -> None: ...
+
+class MountNodeResponse(_message.Message):
+    __slots__ = ("node_id",)
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    node_id: str
+    def __init__(self, node_id: _Optional[str] = ...) -> None: ...
+
+class MoveNodeRequest(_message.Message):
+    __slots__ = ("ctx", "node_id", "parent_node_id")
+    CTX_FIELD_NUMBER: _ClassVar[int]
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    PARENT_NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    ctx: _types_pb2.RequestContext
+    node_id: str
+    parent_node_id: str
+    def __init__(self, ctx: _Optional[_Union[_types_pb2.RequestContext, _Mapping]] = ..., node_id: _Optional[str] = ..., parent_node_id: _Optional[str] = ...) -> None: ...
+
+class MoveNodeResponse(_message.Message):
+    __slots__ = ("node_id",)
+    NODE_ID_FIELD_NUMBER: _ClassVar[int]
+    node_id: str
+    def __init__(self, node_id: _Optional[str] = ...) -> None: ...
+
 class ImportOpenApiRequest(_message.Message):
     __slots__ = ("ctx", "project_id", "openapi_url", "openapi_document", "parent_node_id", "generate_cases")
     CTX_FIELD_NUMBER: _ClassVar[int]

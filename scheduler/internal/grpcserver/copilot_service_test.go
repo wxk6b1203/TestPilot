@@ -996,3 +996,107 @@ func TestDeleteApi(t *testing.T) {
 		t.Fatalf("grpc kind: want NotFound, got %v", err)
 	}
 }
+
+// ---- 目录树工具（create_folder / mount_node / move_node + 创建即挂载）----
+
+func TestTreeNodeTools(t *testing.T) {
+	cli, d := newCopilotClient(t)
+	ctx := context.Background()
+	api := seedHTTPApi(t, d, 1, 100, commonv1.HttpMethod_HTTP_METHOD_GET, "/tree-me")
+
+	// 根级目录 → 子目录
+	root, err := cli.CreateFolder(ctx, &copilotv1.CreateFolderRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Name: "test"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, err := cli.CreateFolder(ctx, &copilotv1.CreateFolderRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Name: "sub", ParentNodeId: root.GetNodeId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var subRow model.TreeNode
+	if err := d.First(&subRow, "id = ?", sub.GetNodeId()).Error; err != nil {
+		t.Fatal(err)
+	}
+	if subRow.NodeType != model.NodeTypeFolder || subRow.ParentID == 0 {
+		t.Fatalf("sub folder mismatch: %+v", subRow)
+	}
+
+	// 挂载接口到根目录 → query_api_directory 应含该节点与人读路径
+	mounted, err := cli.MountNode(ctx, &copilotv1.MountNodeRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Kind: "http_api",
+		RefId: strconv.FormatInt(api.ID, 10), ParentNodeId: root.GetNodeId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir, err := cli.QueryApiDirectory(ctx, &copilotv1.QueryApiDirectoryRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var found *copilotv1.ApiDirectoryEntry
+	for _, e := range dir.GetEntries() {
+		if e.GetNodeId() == mounted.GetNodeId() {
+			found = e
+		}
+	}
+	if found == nil || found.GetParentName() != "test" || found.GetPath() == "" {
+		t.Fatalf("mounted entry mismatch: %+v", found)
+	}
+
+	// 移动到 sub 目录 → 路径更新
+	if _, err := cli.MoveNode(ctx, &copilotv1.MoveNodeRequest{
+		Ctx: copilotCtx(1, "u-9"), NodeId: mounted.GetNodeId(), ParentNodeId: sub.GetNodeId()}); err != nil {
+		t.Fatal(err)
+	}
+	dir2, _ := cli.QueryApiDirectory(ctx, &copilotv1.QueryApiDirectoryRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100"})
+	for _, e := range dir2.GetEntries() {
+		if e.GetNodeId() == mounted.GetNodeId() && e.GetParentName() != "sub" {
+			t.Fatalf("after move: %+v", e)
+		}
+	}
+
+	// 环拒绝：把根目录移到自己子目录下
+	if _, err := cli.MoveNode(ctx, &copilotv1.MoveNodeRequest{
+		Ctx: copilotCtx(1, "u-9"), NodeId: root.GetNodeId(), ParentNodeId: sub.GetNodeId()}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("cycle: want InvalidArgument, got %v", err)
+	}
+
+	// 非法 kind
+	if _, err := cli.MountNode(ctx, &copilotv1.MountNodeRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100", Kind: "plan", RefId: "1"}); status.Code(err) != codes.InvalidArgument {
+		t.Fatalf("bad kind: want InvalidArgument, got %v", err)
+	}
+	// 跨租户移动 → 404
+	if _, err := cli.MoveNode(ctx, &copilotv1.MoveNodeRequest{
+		Ctx: copilotCtx(2, "u-2"), NodeId: mounted.GetNodeId(), ParentNodeId: root.GetNodeId()}); status.Code(err) != codes.NotFound {
+		t.Fatalf("cross-tenant move: want NotFound, got %v", err)
+	}
+
+	// 创建即挂载：CreateApi 带 parent_node_id → 响应 node_id 且树上可见
+	created, err := cli.CreateApi(ctx, &copilotv1.CreateApiRequest{
+		Ctx: copilotCtx(1, "u-9"), ProjectId: "100",
+		Api: &copilotv1.CreateApiRequest_Http{Http: &commonv1.HttpApi{
+			Method: commonv1.HttpMethod_HTTP_METHOD_POST, Uri: "/mounted-on-create"}},
+		ParentNodeId: sub.GetNodeId()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.GetNodeId() == "" {
+		t.Fatalf("create-with-parent should return node_id: %+v", created)
+	}
+	var cnt int64
+	d.Model(&model.TreeNode{}).Where("ref_id = ? AND node_type = ?", created.GetApiId(), model.NodeTypeHTTPAPI).Count(&cnt)
+	if cnt != 1 {
+		t.Fatalf("created api should be mounted once: %d", cnt)
+	}
+
+	// 审计：create/mount/move 均落 tree_node
+	var logs []model.AuditLog
+	d.Where("tenant_id = 1 AND actor = 2 AND resource_type = 'tree_node'").Find(&logs)
+	if len(logs) < 4 { // create root + sub, mount, move
+		t.Fatalf("audit rows: %d", len(logs))
+	}
+}

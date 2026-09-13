@@ -46,6 +46,9 @@ type CopilotToolServiceClient interface {
 	DeleteApi(ctx context.Context, in *DeleteApiRequest, opts ...grpc.CallOption) (*DeleteApiResponse, error)
 	UpdatePlan(ctx context.Context, in *UpdatePlanRequest, opts ...grpc.CallOption) (*UpdatePlanResponse, error)
 	DeletePlan(ctx context.Context, in *DeletePlanRequest, opts ...grpc.CallOption) (*DeletePlanResponse, error)
+	CreateFolder(ctx context.Context, in *CreateFolderRequest, opts ...grpc.CallOption) (*CreateFolderResponse, error)
+	MountNode(ctx context.Context, in *MountNodeRequest, opts ...grpc.CallOption) (*MountNodeResponse, error)
+	MoveNode(ctx context.Context, in *MoveNodeRequest, opts ...grpc.CallOption) (*MoveNodeResponse, error)
 	CreateScript(ctx context.Context, in *CreateScriptRequest, opts ...grpc.CallOption) (*CreateScriptResponse, error)
 	UpdateScript(ctx context.Context, in *UpdateScriptRequest, opts ...grpc.CallOption) (*UpdateScriptResponse, error)
 	DeleteScript(ctx context.Context, in *DeleteScriptRequest, opts ...grpc.CallOption) (*DeleteScriptResponse, error)
@@ -272,6 +275,33 @@ func (c *copilotToolServiceClient) DeletePlan(ctx context.Context, in *DeletePla
 	return out, nil
 }
 
+func (c *copilotToolServiceClient) CreateFolder(ctx context.Context, in *CreateFolderRequest, opts ...grpc.CallOption) (*CreateFolderResponse, error) {
+	out := new(CreateFolderResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateFolder", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) MountNode(ctx context.Context, in *MountNodeRequest, opts ...grpc.CallOption) (*MountNodeResponse, error) {
+	out := new(MountNodeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/MountNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *copilotToolServiceClient) MoveNode(ctx context.Context, in *MoveNodeRequest, opts ...grpc.CallOption) (*MoveNodeResponse, error) {
+	out := new(MoveNodeResponse)
+	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/MoveNode", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *copilotToolServiceClient) CreateScript(ctx context.Context, in *CreateScriptRequest, opts ...grpc.CallOption) (*CreateScriptResponse, error) {
 	out := new(CreateScriptResponse)
 	err := c.cc.Invoke(ctx, "/testpilot.copilot.v1.CopilotToolService/CreateScript", in, out, opts...)
@@ -444,6 +474,9 @@ type CopilotToolServiceServer interface {
 	DeleteApi(context.Context, *DeleteApiRequest) (*DeleteApiResponse, error)
 	UpdatePlan(context.Context, *UpdatePlanRequest) (*UpdatePlanResponse, error)
 	DeletePlan(context.Context, *DeletePlanRequest) (*DeletePlanResponse, error)
+	CreateFolder(context.Context, *CreateFolderRequest) (*CreateFolderResponse, error)
+	MountNode(context.Context, *MountNodeRequest) (*MountNodeResponse, error)
+	MoveNode(context.Context, *MoveNodeRequest) (*MoveNodeResponse, error)
 	CreateScript(context.Context, *CreateScriptRequest) (*CreateScriptResponse, error)
 	UpdateScript(context.Context, *UpdateScriptRequest) (*UpdateScriptResponse, error)
 	DeleteScript(context.Context, *DeleteScriptRequest) (*DeleteScriptResponse, error)
@@ -534,6 +567,15 @@ func (UnimplementedCopilotToolServiceServer) UpdatePlan(context.Context, *Update
 }
 func (UnimplementedCopilotToolServiceServer) DeletePlan(context.Context, *DeletePlanRequest) (*DeletePlanResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeletePlan not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) CreateFolder(context.Context, *CreateFolderRequest) (*CreateFolderResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method CreateFolder not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) MountNode(context.Context, *MountNodeRequest) (*MountNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MountNode not implemented")
+}
+func (UnimplementedCopilotToolServiceServer) MoveNode(context.Context, *MoveNodeRequest) (*MoveNodeResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MoveNode not implemented")
 }
 func (UnimplementedCopilotToolServiceServer) CreateScript(context.Context, *CreateScriptRequest) (*CreateScriptResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method CreateScript not implemented")
@@ -992,6 +1034,60 @@ func _CopilotToolService_DeletePlan_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CopilotToolService_CreateFolder_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateFolderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).CreateFolder(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/CreateFolder",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).CreateFolder(ctx, req.(*CreateFolderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_MountNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MountNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).MountNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/MountNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).MountNode(ctx, req.(*MountNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CopilotToolService_MoveNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CopilotToolServiceServer).MoveNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/testpilot.copilot.v1.CopilotToolService/MoveNode",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CopilotToolServiceServer).MoveNode(ctx, req.(*MoveNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CopilotToolService_CreateScript_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(CreateScriptRequest)
 	if err := dec(in); err != nil {
@@ -1374,6 +1470,18 @@ var CopilotToolService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeletePlan",
 			Handler:    _CopilotToolService_DeletePlan_Handler,
+		},
+		{
+			MethodName: "CreateFolder",
+			Handler:    _CopilotToolService_CreateFolder_Handler,
+		},
+		{
+			MethodName: "MountNode",
+			Handler:    _CopilotToolService_MountNode_Handler,
+		},
+		{
+			MethodName: "MoveNode",
+			Handler:    _CopilotToolService_MoveNode_Handler,
 		},
 		{
 			MethodName: "CreateScript",

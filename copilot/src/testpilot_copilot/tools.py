@@ -454,9 +454,11 @@ async def create_api(ctx: RunContext[CopilotDeps], method: str, uri: str,
                      project_id: str | None = None,
                      headers: dict[str, str] | None = None,
                      params: dict[str, str] | None = None,
-                     body: str = "") -> dict:
+                     body: str = "",
+                     parent_node_id: str | None = None) -> dict:
     """创建 HTTP 接口。method 为大写方法名；body 为原始文本（JSON 字符串）。
-    project_id 省略（传 null）时使用页面左上角当前选择的项目。"""
+    project_id 省略（传 null）时使用页面左上角当前选择的项目。
+    parent_node_id 可选：创建后直接挂到该目录（query_api_directory 可查目录 node_id）。"""
     pid = ctx.deps.resolve_project_id(project_id)
     api = pb.HttpApi(method=_METHODS.get(method.upper(), pb.HTTP_METHOD_GET), uri=uri)
     for k, v in (headers or {}).items():
@@ -467,7 +469,8 @@ async def create_api(ctx: RunContext[CopilotDeps], method: str, uri: str,
         api.body.content_type = pb.BODY_CONTENT_TYPE_JSON
         api.body.raw = body
     r = await ctx.deps.sched.stub.CreateApi(
-        cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, http=api))
+        cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, http=api,
+                             parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 
@@ -477,10 +480,12 @@ async def create_grpc_api(ctx: RunContext[CopilotDeps],
                           project_id: str | None = None,
                           request_message: dict | None = None,
                           metadata: dict[str, str] | None = None,
-                          deadline_ms: int = 0) -> dict:
+                          deadline_ms: int = 0,
+                          parent_node_id: str | None = None) -> dict:
     """创建 gRPC 接口（执行走 server reflection，无需编译桩）。
     full_service 形如 package.Service；request_message 为 JSON 形态请求体。
-    project_id 省略时使用页面左上角当前选择的项目。"""
+    project_id 省略时使用页面左上角当前选择的项目。
+    parent_node_id 可选：创建后直接挂到该目录。"""
     pid = ctx.deps.resolve_project_id(project_id)
     g = pb.GrpcApi(full_service=full_service, method=method)
     if request_message:
@@ -491,7 +496,8 @@ async def create_grpc_api(ctx: RunContext[CopilotDeps],
     if deadline_ms > 0:
         g.deadline.FromMilliseconds(deadline_ms)
     r = await ctx.deps.sched.stub.CreateApi(
-        cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, grpc=g))
+        cpb.CreateApiRequest(ctx=ctx.deps.ctx(), project_id=pid, grpc=g,
+                             parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 
@@ -559,13 +565,15 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
 async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
                            definition: dict, case_type: str = "declarative",
                            project_id: str | None = None,
-                           description: str = "") -> dict:
+                           description: str = "",
+                           parent_node_id: str | None = None) -> dict:
     """创建测试用例。case_type: declarative（definition=DeclarativeCase 的 JSON：{"steps":[...]};
     步骤结构不确定时先 query_schema(topic="TestStep,ApiCallStep") 查证）
     或 lowcode（definition={"source": "...", "entry": "run",
     "http_api_refs": ["接口ID", ...], "grpc_api_refs": [...]}）。
     definition 直接传定义对象本身，不要带 lowcode/declarative/case 包装键
-    （多传了也会自动剥掉）。project_id 省略时使用页面左上角当前选择的项目。"""
+    （多传了也会自动剥掉）。project_id 省略时使用页面左上角当前选择的项目。
+    parent_node_id 可选：创建后直接挂到该目录。"""
     pid = ctx.deps.resolve_project_id(project_id)
     definition = strip_def_wrappers(definition, ("lowcode", "declarative", "case"))
     case = pb.TestCase(name=name, description=description, created_by="copilot")
@@ -589,7 +597,8 @@ async def create_test_case(ctx: RunContext[CopilotDeps], name: str,
         json_format_parse(definition, dc)
         case.declarative.CopyFrom(dc)
     r = await ctx.deps.sched.stub.CreateTestCase(
-        cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case))
+        cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case,
+                                  parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 
@@ -936,7 +945,8 @@ async def create_ui_test_case(ctx: RunContext[CopilotDeps], name: str,
                               project_id: str | None = None,
                               description: str = "",
                               case_type: str = "declarative",
-                              parameters: dict | None = None) -> dict:
+                              parameters: dict | None = None,
+                              parent_node_id: str | None = None) -> dict:
     """创建 Playwright UI 测试用例（写操作，需审批）。
 
     start_url：打开页面的 URL；相对路径（如 /login）基于运行环境 base_url。
@@ -974,7 +984,8 @@ async def create_ui_test_case(ctx: RunContext[CopilotDeps], name: str,
     else:
         raise ValueError("case_type 只能是 declarative 或 lowcode")
     r = await ctx.deps.sched.stub.CreateTestCase(
-        cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case))
+        cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case,
+                                  parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 
@@ -983,9 +994,11 @@ async def create_test_plan(ctx: RunContext[CopilotDeps], name: str,
                            case_ids: list[str],
                            project_id: str | None = None,
                            env_id: str | None = None,
-                           timeout_ms: int = 300000) -> dict:
+                           timeout_ms: int = 300000,
+                           parent_node_id: str | None = None) -> dict:
     """创建测试计划（按序引用用例）。
-    project_id/env_id 省略时使用页面左上角当前选择的项目/环境。"""
+    project_id/env_id 省略时使用页面左上角当前选择的项目/环境。
+    parent_node_id 可选：创建后直接挂到该目录。"""
     pid = ctx.deps.resolve_project_id(project_id)
     eid = ctx.deps.resolve_env_id(env_id, required=True)
     plan = pb.TestPlan(name=name, env_id=eid)
@@ -995,7 +1008,8 @@ async def create_test_plan(ctx: RunContext[CopilotDeps], name: str,
         item.case_id = cid
         item.enabled = True
     r = await ctx.deps.sched.stub.CreateTestPlan(
-        cpb.CreateTestPlanRequest(ctx=ctx.deps.ctx(), project_id=pid, plan=plan))
+        cpb.CreateTestPlanRequest(ctx=ctx.deps.ctx(), project_id=pid, plan=plan,
+                                  parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 
@@ -1154,6 +1168,44 @@ async def delete_api(ctx: RunContext[CopilotDeps], api_id: str,
     r = await ctx.deps.sched.stub.DeleteApi(
         cpb.DeleteApiRequest(ctx=ctx.deps.ctx(), api_id=api_id,
                              kind=cpb.API_KIND_GRPC if k == "grpc" else cpb.API_KIND_HTTP))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def create_folder(ctx: RunContext[CopilotDeps], name: str,
+                        parent_node_id: str | None = None,
+                        project_id: str | None = None) -> dict:
+    """创建接口/用例目录。parent_node_id 省略（传 null）时创建根级目录，
+    否则为该目录的子目录。项目树目前为空时先建根级目录。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    r = await ctx.deps.sched.stub.CreateFolder(
+        cpb.CreateFolderRequest(ctx=ctx.deps.ctx(), project_id=pid, name=name,
+                                parent_node_id=parent_node_id or ""))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def mount_node(ctx: RunContext[CopilotDeps], kind: str, ref_id: str,
+                     parent_node_id: str | None = None,
+                     project_id: str | None = None) -> dict:
+    """把已有实体挂到目录树（同一实体可在树上多处挂载）。kind: http_api|grpc_api|
+    test_case|suite；ref_id 为实体 ID；parent_node_id 省略（传 null）挂到根级。
+    实体已在树上想换位置时改用 move_node。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    r = await ctx.deps.sched.stub.MountNode(
+        cpb.MountNodeRequest(ctx=ctx.deps.ctx(), project_id=pid, kind=kind,
+                             ref_id=str(ref_id), parent_node_id=parent_node_id or ""))
+    return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def move_node(ctx: RunContext[CopilotDeps], node_id: str,
+                    parent_node_id: str | None = None) -> dict:
+    """移动树中已有节点（连同子树）到另一目录（parent_node_id 省略传 null = 移到根级）。
+    node_id 用 query_api_directory 查（返回的 entries 里带 node_id 与 path）。"""
+    r = await ctx.deps.sched.stub.MoveNode(
+        cpb.MoveNodeRequest(ctx=ctx.deps.ctx(), node_id=str(node_id),
+                            parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
 
 

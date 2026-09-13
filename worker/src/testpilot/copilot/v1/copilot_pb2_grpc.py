@@ -144,6 +144,21 @@ class CopilotToolServiceStub:
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.SerializeToString,
                 response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.FromString,
                 _registered_method=True)
+        self.CreateFolder = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/CreateFolder',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderResponse.FromString,
+                _registered_method=True)
+        self.MountNode = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/MountNode',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeResponse.FromString,
+                _registered_method=True)
+        self.MoveNode = channel.unary_unary(
+                '/testpilot.copilot.v1.CopilotToolService/MoveNode',
+                request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeRequest.SerializeToString,
+                response_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeResponse.FromString,
+                _registered_method=True)
         self.CreateScript = channel.unary_unary(
                 '/testpilot.copilot.v1.CopilotToolService/CreateScript',
                 request_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateScriptRequest.SerializeToString,
@@ -363,6 +378,24 @@ class CopilotToolServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def CreateFolder(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MountNode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def MoveNode(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def CreateScript(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -574,6 +607,21 @@ def add_CopilotToolServiceServicer_to_server(servicer, server):
                     servicer.DeletePlan,
                     request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.FromString,
                     response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.SerializeToString,
+            ),
+            'CreateFolder': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateFolder,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderResponse.SerializeToString,
+            ),
+            'MountNode': grpc.unary_unary_rpc_method_handler(
+                    servicer.MountNode,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeResponse.SerializeToString,
+            ),
+            'MoveNode': grpc.unary_unary_rpc_method_handler(
+                    servicer.MoveNode,
+                    request_deserializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeRequest.FromString,
+                    response_serializer=testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeResponse.SerializeToString,
             ),
             'CreateScript': grpc.unary_unary_rpc_method_handler(
                     servicer.CreateScript,
@@ -1250,6 +1298,87 @@ class CopilotToolService:
             '/testpilot.copilot.v1.CopilotToolService/DeletePlan',
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanRequest.SerializeToString,
             testpilot_dot_copilot_dot_v1_dot_copilot__pb2.DeletePlanResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateFolder(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/CreateFolder',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.CreateFolderResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MountNode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/MountNode',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MountNodeResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def MoveNode(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/testpilot.copilot.v1.CopilotToolService/MoveNode',
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeRequest.SerializeToString,
+            testpilot_dot_copilot_dot_v1_dot_copilot__pb2.MoveNodeResponse.FromString,
             options,
             channel_credentials,
             insecure,
