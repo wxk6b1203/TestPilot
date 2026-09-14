@@ -78,12 +78,17 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
       ...(opts.headers || {}),
     },
   })
+  const data = await res.json().catch(() => ({}))
   if (res.status === 401) {
+    // 登录接口的凭证错误（AUTH_INVALID_CREDENTIALS）≠ 会话过期：
+    // 不清 token 不跳转，按业务错误提示；中间件的会话过期 401 是 UNAUTHORIZED 码
+    if ((data as any).error?.code === 'AUTH_INVALID_CREDENTIALS') {
+      throw new Error('用户名或密码错误')
+    }
     setToken(null)
     if (!location.hash.includes('/login')) location.hash = '#/login'
     throw new Error('登录已过期')
   }
-  const data = await res.json().catch(() => ({}))
   if (!res.ok) {
     const err = (data as any).error
     // 错误码体系：{error:{code,message}}；兼容旧字符串形态
