@@ -56,8 +56,9 @@ docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --
 | worker | deploy/worker.Dockerfile × `${WORKER_REPLICAS}` | — | functional/lowcode/playwright |
 | worker-stress | 同上 × `${STRESS_WORKER_REPLICAS}` | — | 压测独占编排 |
 | copilot | deploy/copilot.Dockerfile | 127.0.0.1:8100（仅调试，可删） | LLM 密钥只走 .env；正常流量走 scheduler 反代 |
-| jaeger | jaegertracing/jaeger | :16686 UI、:4317 OTLP | 链路（`TP_OTEL_EXPORTER=otlp`） |
-| prometheus | prom/prometheus | :9091 | 抓取 scheduler:8080/metrics |
+| jaeger | jaegertracing/jaeger | :16686 UI | 链路存储（OTLP 由 collector 转发进容器网络内 :4317） |
+| otel-collector | otel/opentelemetry-collector | 127.0.0.1:4317（宿主进程推送用） | OTLP 统一入口：traces→Jaeger，Worker/Copilot 推送式指标→:8889 |
+| prometheus | prom/prometheus | :9091 | 抓取 scheduler:8080/metrics 与 otel-collector:8889 |
 
 Worker 扩缩：`docker compose ... up -d --scale worker=4`（或改 `.env` 的 `WORKER_REPLICAS`）。
 Worker 与 Scheduler 经命名卷 `artifacts` 共享产物目录；生产可换对象存储（改 `TP_ARTIFACT_DIR` 语义层）。
@@ -98,14 +99,24 @@ TP_S3_PREFIX=testpilot/                                  # 可选；键 = {prefi
 
 ## 可观测性
 
-- **指标**：`GET /metrics`（Prometheus 格式，公开端点——生产仅对内网/Prom 可达）。
-  关键指标：`testpilot_http_requests_total`、`testpilot_runs_total{status,trigger}`、
-  `testpilot_run_duration_seconds`、`testpilot_workers_online`、`testpilot_worker_load_sum`、
-  `testpilot_dispatch_total`、`testpilot_quota_rejections_total{metric}`、
-  `testpilot_notifications_total{type,result}`、`testpilot_stress_runs_total`。
+- **指标**：两路汇总到 Prometheus（`scrape_interval=15s`）。
+  - Scheduler 拉取：`GET /metrics`（Prometheus 格式，公开端点——生产仅对内网/Prom 可达）。
+    关键指标：`testpilot_http_requests_total`、`testpilot_runs_total{status,trigger}`、
+    `testpilot_run_duration_seconds`、`testpilot_workers_online`、`testpilot_worker_load_sum`、
+    `testpilot_dispatch_total`、`testpilot_quota_rejections_total{metric}`、
+    `testpilot_notifications_total{type,result}`、`testpilot_stress_runs_total`。
+  - Worker/Copilot 推送：无抓取面（Worker 连 HTTP 服务都没有），经 OTel SDK 以 OTLP
+    周期推送（15s），otel-collector 转 Prometheus 文本格式（:8889，带 `service_name` 标签）。
+    Worker：`testpilot_worker_tasks_total{task_type,status}`、
+    `testpilot_worker_task_duration_seconds{task_type}`、`testpilot_worker_active_tasks`、
+    `testpilot_worker_probe_sessions`、`testpilot_worker_outbox_dropped_total{kind}`。
+    Copilot：`testpilot_copilot_chat_turns_total{result}`（rejected/ok/cancelled/error）、
+    `testpilot_copilot_chat_duration_seconds{result}`、`testpilot_copilot_active_streams`、
+    `testpilot_copilot_tool_calls_total{tool,result}`、`testpilot_copilot_tool_duration_seconds{tool}`
+    （工具打点覆盖审批型工具：仅在批准后实际执行时计数）。
 - **链路**：OTel。`TP_OTEL_EXPORTER`：`""`关（默认）/ `stdout` 调试 / `otlp`（+`TP_OTEL_ENDPOINT`，
   默认 127.0.0.1:4317）。Scheduler REST/gRPC 自动 span；派发到 Worker 经
-  `TaskAssignment.traceparent` 续链；Copilot 经 gRPC metadata 注入。compose 内 Jaeger 一站式查看。
+  `TaskAssignment.traceparent` 续链；Copilot 经 gRPC metadata 注入。compose 内经 otel-collector 转发 Jaeger 一站式查看。
 - **日志**：`TP_LOG_FORMAT=json` 生产格式；Worker/Copilot 日志行带 `[trace_id]`，
   Scheduler 关键路径日志带 `trace_id` 字段，三进程可按 trace_id 串联。
 

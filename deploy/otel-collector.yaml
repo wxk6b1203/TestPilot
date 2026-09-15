@@ -1,0 +1,43 @@
+# OTel Collector：三进程 OTLP 统一入口（deploy/docker-compose.prod.yml otel-collector）。
+#
+#   traces  → otlp/jaeger → Jaeger（UI :16686）
+#   metrics → prometheus  → :8889 Prometheus 文本格式（被 prometheus 抓取）
+#
+# Worker/Copilot 无可抓取的 HTTP 面，指标采用 OTLP 周期推送（15s），经此转
+# Prometheus 格式；Scheduler 仍走自身 /metrics 拉取（prometheus.yml 两个 job）。
+# 指标名即 OTel 名的 Prom 格式：点转下划线，计数器补 _total、单位 s 补 _seconds
+# （如 testpilot.worker.tasks → testpilot_worker_tasks_total）。
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # 资源属性（service.name=testpilot-worker/copilot）摊平为每条指标的
+    # service_name 标签，便于按模块聚合/筛选
+    resource_to_telemetry_conversion:
+      enabled: true
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp/jaeger]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]

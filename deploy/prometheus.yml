@@ -1,4 +1,7 @@
-# Prometheus 抓取配置：TestPilot Scheduler /metrics
+# Prometheus 抓取配置：TestPilot 指标两个来源。
+#   testpilot-scheduler：Scheduler 自身 /metrics（拉取，Prometheus 原生 client）
+#   testpilot-otel     ：OTel Collector :8889（Worker/Copilot 的 OTLP 推送式指标，
+#                        经 collector 转 Prometheus 文本格式，deploy/otel-collector.yaml）
 global:
   scrape_interval: 15s
 
@@ -6,3 +9,6 @@ scrape_configs:
   - job_name: testpilot-scheduler
     static_configs:
       - targets: ["scheduler:8080"]
+  - job_name: testpilot-otel
+    static_configs:
+      - targets: ["otel-collector:8889"]

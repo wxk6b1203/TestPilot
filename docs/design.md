@@ -820,8 +820,14 @@ StressTestPlan
 ## 14. 可观测性
 
 - **日志**：结构化日志（JSON），统一 trace_id 贯穿 Scheduler->Worker->Copilot
-- **指标**：Prometheus（任务队列、Worker 利用率、运行通过率、压测指标）
-- **链路**：OpenTelemetry，跨进程 trace 传递
+- **指标**：两路汇总 Prometheus——Scheduler 拉取 `/metrics`（Prometheus client：HTTP、
+  派发、运行收尾、配额、通知等，见 `internal/metrics`）；Worker/Copilot 无抓取面
+  （Worker 无 HTTP 服务），经 OTel Metrics SDK 以 OTLP 周期推送（15s），部署层
+  otel-collector 转 Prometheus 文本格式（traces 同口转发 Jaeger，见 deploy/otel-collector.yaml）。
+  Worker：任务收尾计数/时长（按类型与状态）、活跃任务、探测会话、outbox 丢弃；
+  Copilot：对话轮次/时长（rejected/ok/cancelled/error）、活跃 SSE 流、工具调用计数/时长
+  （审批型工具仅在批准后实际执行时计数）
+- **链路**：OpenTelemetry，跨进程 trace 传递（与指标共用 `TP_OTEL_EXPORTER`/`TP_OTEL_ENDPOINT` 开关）
 - **审计**：Copilot 写操作、敏感变量读取、人工变更、租户切换记录审计表
 - trace 与日志均带 tenant_id 便于按租户筛查
 

@@ -4,7 +4,7 @@
 #   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d --build
 #
 # 入口：http://localhost:8080（REST+前端托管）；Jaeger UI http://localhost:16686；
-# Prometheus http://localhost:9091。Worker 扩缩：--scale worker=4（或 .env WORKER_REPLICAS）。
+# Prometheus http://localhost:9091。OTLP 统一进 otel-collector（traces→Jaeger，Worker/Copilot 推送式指标→Prometheus）。Worker 扩缩：--scale worker=4（或 .env WORKER_REPLICAS）。
 
 name: testpilot
 
@@ -58,7 +58,7 @@ services:
       TP_METRICS_ALLOWED_CIDRS: ${TP_METRICS_ALLOWED_CIDRS:-}
       TP_NOTIFY_ALLOW_PRIVATE: ${TP_NOTIFY_ALLOW_PRIVATE:-0}
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
-      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_OTEL_ENDPOINT: otel-collector:4317
       TP_LOG_FORMAT: json
       # 前端 /copilot-api/* 由 scheduler 反代到 copilot（SSE 生产入口收敛到 :8080）
       TP_COPILOT_URL: http://copilot:8100
@@ -85,7 +85,7 @@ services:
     environment:
       TP_ARTIFACT_DIR: /data/artifacts
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
-      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_OTEL_ENDPOINT: otel-collector:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
       TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
       TP_SANDBOX_REQUIRE_ISOLATION: ${TP_SANDBOX_REQUIRE_ISOLATION:-0}
@@ -110,7 +110,7 @@ services:
     environment:
       TP_ARTIFACT_DIR: /data/artifacts
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
-      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_OTEL_ENDPOINT: otel-collector:4317
       TP_EGRESS_ALLOW: ${TP_EGRESS_ALLOW:-}
       TP_EGRESS_BLOCK_PRIVATE: ${TP_EGRESS_BLOCK_PRIVATE:-1}
       TP_SANDBOX_REQUIRE_ISOLATION: ${TP_SANDBOX_REQUIRE_ISOLATION:-0}
@@ -139,7 +139,7 @@ services:
       TP_SCHEDULER_REST: http://scheduler:8080
       TP_COPILOT_ADDR: 0.0.0.0:8100
       TP_OTEL_EXPORTER: ${TP_OTEL_EXPORTER:-otlp}
-      TP_OTEL_ENDPOINT: jaeger:4317
+      TP_OTEL_ENDPOINT: otel-collector:4317
     # 端口暴露仅调试用：生产前端经 scheduler /copilot-api 反代，无需对外 8100
     ports:
       - "127.0.0.1:8100:8100"
@@ -147,13 +147,26 @@ services:
       - scheduler
     restart: unless-stopped
 
-  # 链路：OTLP gRPC 直收（4317），UI :16686。大规模部署可在中间加 otel-collector。
+  # 链路存储：OTLP 由 otel-collector 转发进来（jaeger:4317 仅容器网络内），UI :16686。
   jaeger:
     image: jaegertracing/jaeger:2.12.0
     ports:
-      # 宿主端口仅本机调试用（无鉴权）；scheduler/copilot 经服务名 jaeger:4317 上报
+      # 宿主端口仅本机调试用（无鉴权）
       - "127.0.0.1:16686:16686"
+    restart: unless-stopped
+
+  # OTLP 统一入口：traces → Jaeger；metrics → Prometheus 文本格式 :8889（被 prometheus
+  # 抓取）。Worker/Copilot 无可抓取 HTTP 面，指标只能 OTLP 推送，经此收敛落库。
+  otel-collector:
+    image: otel/opentelemetry-collector:0.120.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      # 宿主映射给 compose 外的本机进程（本地 dev 直跑 worker/copilot 时推送用）
       - "127.0.0.1:4317:4317"
+    depends_on:
+      - jaeger
     restart: unless-stopped
 
   prometheus:
@@ -164,6 +177,7 @@ services:
       - "127.0.0.1:9091:9090"   # 无鉴权，不对外
     depends_on:
       - scheduler
+      - otel-collector
     restart: unless-stopped
 
 volumes:
