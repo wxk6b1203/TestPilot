@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -31,7 +32,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.ui.vercel_ai import VercelAIAdapter
 
-from . import tracing
+from . import metrics, tracing
 from .agent import build_agent
 from .config import apply_environ as config_apply
 from .config import load
@@ -71,6 +72,7 @@ async def lifespan(app: FastAPI):
     log.info("copilot ready: provider=%s model=%s", settings.provider, settings.model)
     yield
     await asyncio.gather(app.state.sched.close(), app.state.http.aclose())
+    metrics.shutdown()  # 冲刷未导出的 OTLP 指标（未初始化时 no-op）
 
 
 app = FastAPI(title="TestPilot Copilot", lifespan=lifespan)
@@ -159,13 +161,17 @@ class _RewrittenBodyRequest:
 @app.post("/api/chat")
 async def chat(request: Request):
     # span 覆盖鉴权/会话/持久化 + 流式 agent 运行全程（body 迭代器收尾时 end）
+    started = time.monotonic()
     span, token = tracing.begin_span(dict(request.headers))
     try:
         response = await _chat_inner(request)
     finally:
         tracing.detach(token)
-    if not tracing.attach_stream_end(response, span):
+    streaming = tracing.attach_stream_end(response, span)
+    if not streaming:
         span.end()  # 非流式（错误/提前返回）
+    # 指标：流式 → 活跃流 gauge +1、迭代收尾记整轮时长/结果；非流式 → result=rejected
+    metrics.observe_turn(response, started)
     return response
 
 
@@ -499,6 +505,7 @@ def entry(argv: list[str] | None = None) -> None:
     )
     tracing.init()  # otel_exporter（env 已回写）控制；默认关闭
     tracing.attach_log_filter()
+    metrics.init()  # 同一套 otel_exporter 开关；默认关闭（no-op 打点）
     uvicorn.run("testpilot_copilot.main:app", host=host or "0.0.0.0",
                 port=int(port or 8100), log_level="info")
 

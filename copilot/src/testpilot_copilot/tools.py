@@ -6,10 +6,12 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
 import re
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -20,6 +22,7 @@ from pydantic_ai.toolsets import FunctionToolset
 from testpilot.common.v1 import types_pb2 as pb
 from testpilot.copilot.v1 import copilot_pb2 as cpb
 
+from . import metrics
 from .scheduler_client import SchedulerClient, parse_struct, to_dict_async
 
 log = logging.getLogger("testpilot.copilot")
@@ -189,10 +192,48 @@ class CopilotDeps:
 
 
 # ---------------------------------------------------------------------------
+# 工具集打点
+# ---------------------------------------------------------------------------
+
+
+def _metered(fn):
+    """工具打点包装：调用计数（result=ok/error）+ 执行时长直方图，标签为工具名。
+
+    必须定义在本模块（而非 metrics.py）：with __future__ annotations 下注解均为
+    字符串，pydantic-ai 解析工具签名用函数的 __globals__ 求值——跨模块包装会
+    丢掉本模块的名字空间导致 NameError。functools.wraps 拷贝 __annotations__/
+    __name__，工具名与 schema 生成均不受影响。
+    """
+    @functools.wraps(fn)
+    async def wrapper(*args, **kwargs):
+        started = time.monotonic()
+        try:
+            result = await fn(*args, **kwargs)
+        except Exception:
+            metrics.TOOL_CALLS.add(1, {"tool": fn.__name__, "result": "error"})
+            metrics.TOOL_DURATION.record(time.monotonic() - started, {"tool": fn.__name__})
+            raise
+        metrics.TOOL_CALLS.add(1, {"tool": fn.__name__, "result": "ok"})
+        metrics.TOOL_DURATION.record(time.monotonic() - started, {"tool": fn.__name__})
+        return result
+    return wrapper
+
+
+class _MeteredToolset(FunctionToolset):
+    """注册时给工具函数统一包 _metered 的工具集（三个工具集共用，无行为差异）。"""
+
+    def tool(self, func=None, **kwargs):
+        if func is not None:  # @toolset.tool（无括号）
+            return FunctionToolset.tool(self, _metered(func), **kwargs)
+        inner = FunctionToolset.tool(self, **kwargs)  # @toolset.tool(...)（带参）
+        return lambda fn: inner(_metered(fn))
+
+
+# ---------------------------------------------------------------------------
 # 只读工具（免审批）
 # ---------------------------------------------------------------------------
 
-readonly: FunctionToolset[CopilotDeps] = FunctionToolset()
+readonly: FunctionToolset[CopilotDeps] = _MeteredToolset()
 
 
 @readonly.tool
@@ -434,7 +475,7 @@ async def get_script(ctx: RunContext[CopilotDeps], script_id: str) -> dict:
 # 写/触发工具（requires_approval → 前端 HITL 审批后执行，Scheduler 落审计）
 # ---------------------------------------------------------------------------
 
-writes: FunctionToolset[CopilotDeps] = FunctionToolset()
+writes: FunctionToolset[CopilotDeps] = _MeteredToolset()
 
 @writes.tool(requires_approval=True)
 async def create_project(ctx: RunContext[CopilotDeps], name: str,
@@ -1222,7 +1263,7 @@ _ = Any
 # 会话空闲 TTL 由 Scheduler 回收；快照在工具结果层二次截断（上下文预算）。
 # ---------------------------------------------------------------------------
 
-probe: FunctionToolset[CopilotDeps] = FunctionToolset()
+probe: FunctionToolset[CopilotDeps] = _MeteredToolset()
 
 
 def _clip_probe_snapshot(d: dict) -> dict:
