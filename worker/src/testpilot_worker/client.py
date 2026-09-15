@@ -7,6 +7,7 @@ import logging
 import os
 import platform
 import socket
+import time
 
 import grpc
 from google.protobuf import timestamp_pb2
@@ -18,7 +19,7 @@ from testpilot.worker.v1 import worker_pb2_grpc as wgrpc
 from .engine import run_task
 from .stress import run_stress
 from .probes import ProbeHub, CODE_FAILED
-from . import tracing
+from . import metrics, tracing
 
 log = logging.getLogger("testpilot.worker")
 
@@ -48,6 +49,8 @@ class WorkerClient:
         self.tasks: dict[str, asyncio.Task] = {}
         # UI 探测会话（v1，docs/ui-probe-design.md §4.3）：护栏硬顶见 probes.py
         self.probe_hub = ProbeHub(max_sessions=probe_max_sessions)
+        # 探测会话数 gauge 的采集回调（观测模式：采集线程当下读值，无漂移）
+        metrics.set_probe_sessions_getter(self.probe_hub.active_sessions)
         # 会话代次：断连后旧会话的结果/进度不得再发出（防错发 + outbox 无界积压）
         self._dead = False
         # 优雅停机（SIGTERM）：置位后主循环退出、在途任务取消、流关闭
@@ -75,6 +78,7 @@ class WorkerClient:
             pass
         if self._kind_of(ev) != "heartbeat":
             log.warning("outbox full (%d); dropping event", _OUTBOX_MAX)
+            metrics.OUTBOX_DROPPED.add(1, {"kind": "dropped"})
             return
         # 心跳腾位：出队直到弹出最旧的一条非心跳事件作牺牲品；途中弹出的
         # 过期心跳直接丢弃（已被本条新心跳取代，无重排价值）
@@ -90,6 +94,7 @@ class WorkerClient:
         if evicted is not None:
             log.warning("outbox full; evicted oldest %s event for heartbeat",
                         self._kind_of(evicted))
+            metrics.OUTBOX_DROPPED.add(1, {"kind": "evicted"})
         try:
             self.outbox.put_nowait(ev)  # 已腾出空位（同步段内无并发投递者）
         except asyncio.QueueFull:  # pragma: no cover - 防御：理论不可达
@@ -229,6 +234,8 @@ class WorkerClient:
     async def _run_one_inner(self, task: wpb.TaskAssignment):
         async with self.sem:
             self.running += 1
+            metrics.ACTIVE_TASKS.add(1)
+            started = time.monotonic()
             log.info("task %s start (run=%s, type=%s)", task.task_id, task.run_id, task.task_type)
             try:
                 payload = task.WhichOneof("payload")
@@ -261,6 +268,13 @@ class WorkerClient:
                     status=pb.RUN_STATUS_FAILED, error=f"worker error: {e}")
             finally:
                 self.running -= 1
+                metrics.ACTIVE_TASKS.add(-1)
+        # 指标收尾：执行时长不含排队等待；被取消/崩溃也计（status=aborted/failed）。
+        # 打点为同步调用（无 await），不会被打断；投递失败（_dead）也照常计数——
+        # 任务确实执行过，只是结果没送出去。
+        labels = {"task_type": metrics.task_type_name(task.task_type)}
+        metrics.TASK_DURATION.record(time.monotonic() - started, labels)
+        metrics.TASKS.add(1, {**labels, "status": metrics.status_name(result.status)})
         # 结果投递：会话存活才发；shield 保证投递不被取消打断（取消瞬间不丢回执）
         if self._dead:
             return

@@ -116,6 +116,10 @@ class ProbeHub:
         self._factory: SessionFactory = session_factory or self._default_factory
         self._sandbox_factory = sandbox_factory or (lambda ops: ProbeSandbox(extra_ops=ops))
 
+    def active_sessions(self) -> int:
+        """当前活跃探测会话数（metrics 观测 gauge 读取）。"""
+        return len(self._sessions)
+
     @staticmethod
     def _default_factory(session_id: str, base_url: str, record: bool) -> ui.UiSession:
         case_rel = f"probe/{session_id}"

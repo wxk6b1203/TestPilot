@@ -46,6 +46,9 @@ def entry(argv: list[str] | None = None):
 
     tracing.init()  # otel_exporter（env 已回写）控制；默认关闭
     tracing.attach_log_filter()  # basicConfig 之后挂到 root handlers
+    from . import metrics
+
+    metrics.init()  # 同一套 otel_exporter 开关；默认关闭（no-op 打点）
     caps = []
     for name in s.capabilities.split(","):
         name = name.strip()
@@ -87,6 +90,7 @@ def entry(argv: list[str] | None = None):
             loop.run_until_complete(asyncio.sleep(0.1))  # 给在途收尾一点时间
         except Exception:
             pass
+        metrics.shutdown()  # 冲刷未导出的 OTLP 指标（未初始化时 no-op）
         loop.close()
 
 
