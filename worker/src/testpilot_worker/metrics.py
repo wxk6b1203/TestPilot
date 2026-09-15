@@ -14,6 +14,7 @@ from opentelemetry import metrics as otel_metrics
 from opentelemetry.metrics import Observation
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 
 # 模块导入时经 ProxyMeter 获取；init() 设置真实 Provider 后自动委托（与 tracing 同模式）。
@@ -24,8 +25,10 @@ meter = otel_metrics.get_meter("testpilot.worker")
 TASKS = meter.create_counter(
     "testpilot.worker.tasks", unit="{task}",
     description="任务收尾计数（按类型与结果状态）。")
+# 指标名常量：proxy instrument 无 .name 属性，View 按名匹配须用同一字面量
+_TASK_DURATION_NAME = "testpilot.worker.task.duration"
 TASK_DURATION = meter.create_histogram(
-    "testpilot.worker.task.duration", unit="s",
+    _TASK_DURATION_NAME, unit="s",
     description="任务执行时长（占用并发槽期间；排队等待不计）。")
 ACTIVE_TASKS = meter.create_up_down_counter(
     "testpilot.worker.active_tasks", unit="{task}",
@@ -74,6 +77,17 @@ def status_name(s: int) -> str:
     return _STATUS_NAMES.get(int(s), "other")
 
 
+# 直方图桶边界必须定制：SDK 默认桶 (0,5,10,…,10000) 是毫秒刻度，与本处记录的
+# 秒不匹配（典型任务 1-600s 会全挤进 le=5 桶）。对齐 Scheduler 侧 RunDuration
+# 的取值（internal/metrics/metrics.go）。
+_TASK_DURATION_BUCKETS = [1, 5, 10, 30, 60, 120, 300, 600, 1800]
+
+_VIEWS = [
+    View(instrument_name=_TASK_DURATION_NAME,
+         aggregation=ExplicitBucketHistogramAggregation(boundaries=_TASK_DURATION_BUCKETS)),
+]
+
+
 def init(service_name: str = "testpilot-worker", reader=None) -> None:
     """按 TP_OTEL_EXPORTER 初始化 MeterProvider；默认关闭（no-op 打点）。
 
@@ -96,6 +110,7 @@ def init(service_name: str = "testpilot-worker", reader=None) -> None:
         return
     provider = MeterProvider(
         resource=Resource.create({"service.name": service_name}),
+        views=_VIEWS,
         metric_readers=readers,
     )
     otel_metrics.set_meter_provider(provider)

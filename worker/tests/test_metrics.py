@@ -99,3 +99,20 @@ def test_probe_sessions_gauge_observed():
     snap = _snapshot()
     gauge = snap["testpilot.worker.probe_sessions"]
     assert sum(gauge.values()) == 3
+
+
+def test_task_duration_custom_buckets():
+    """回归：task.duration 桶边界为秒刻度定制——SDK 默认桶 (0,5,10,…,10000)
+    是毫秒设计，秒记录会全挤进 le=5 桶，分布不可用。"""
+    c = WorkerClient("127.0.0.1:1", [], 1, [1])
+    task = wpb.TaskAssignment(task_id="b1", run_id="r1",
+                              task_type=pb.TASK_TYPE_FUNCTIONAL_DECLARATIVE)
+    asyncio.run(c._run_one(task))
+    data = _reader.get_metrics_data()
+    bounds: list = []
+    for rm in data.resource_metrics:
+        for sm in rm.scope_metrics:
+            for m in sm.metrics:
+                if m.name == "testpilot.worker.task.duration":
+                    bounds = [list(p.explicit_bounds) for p in m.data.data_points]
+    assert bounds and bounds[0] == [1, 5, 10, 30, 60, 120, 300, 600, 1800]
