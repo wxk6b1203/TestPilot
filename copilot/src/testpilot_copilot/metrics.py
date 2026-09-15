@@ -16,6 +16,7 @@ import time
 from opentelemetry import metrics as otel_metrics
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import ConsoleMetricExporter, PeriodicExportingMetricReader
+from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 from opentelemetry.sdk.resources import Resource
 
 log = logging.getLogger("testpilot.copilot")
@@ -28,8 +29,9 @@ meter = otel_metrics.get_meter("testpilot.copilot")
 CHAT_TURNS = meter.create_counter(
     "testpilot.copilot.chat_turns", unit="{turn}",
     description="对话轮次计数（按结果：rejected/ok/cancelled/error）。")
+_CHAT_DURATION_NAME = "testpilot.copilot.chat_duration"  # proxy instrument 无 .name，View 按名匹配
 CHAT_DURATION = meter.create_histogram(
-    "testpilot.copilot.chat_duration", unit="s",
+    _CHAT_DURATION_NAME, unit="s",
     description="对话轮次时长（请求进入到流结束；rejected 为短响应耗时）。")
 ACTIVE_STREAMS = meter.create_up_down_counter(
     "testpilot.copilot.active_streams", unit="{stream}",
@@ -39,9 +41,22 @@ ACTIVE_STREAMS = meter.create_up_down_counter(
 TOOL_CALLS = meter.create_counter(
     "testpilot.copilot.tool_calls", unit="{call}",
     description="工具调用计数（tool=工具名，result=ok/error）。")
+_TOOL_DURATION_NAME = "testpilot.copilot.tool_duration"  # 同上
 TOOL_DURATION = meter.create_histogram(
-    "testpilot.copilot.tool_duration", unit="s",
+    _TOOL_DURATION_NAME, unit="s",
     description="工具执行时长。")
+
+# 直方图桶边界必须定制：SDK 默认桶 (0,5,10,…,10000) 是毫秒刻度，与本处记录的
+# 秒不匹配（工具调用普遍 0.01-5s 会全挤进 le=5 桶，分布不可用）。
+_TOOL_DURATION_BUCKETS = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+_CHAT_DURATION_BUCKETS = [1, 5, 10, 30, 60, 120, 300, 600, 1800]  # 对齐 Scheduler RunDuration
+
+_VIEWS = [
+    View(instrument_name=_TOOL_DURATION_NAME,
+         aggregation=ExplicitBucketHistogramAggregation(boundaries=_TOOL_DURATION_BUCKETS)),
+    View(instrument_name=_CHAT_DURATION_NAME,
+         aggregation=ExplicitBucketHistogramAggregation(boundaries=_CHAT_DURATION_BUCKETS)),
+]
 
 
 def init(service_name: str = "testpilot-copilot", reader=None) -> None:
@@ -66,6 +81,7 @@ def init(service_name: str = "testpilot-copilot", reader=None) -> None:
         return
     provider = MeterProvider(
         resource=Resource.create({"service.name": service_name}),
+        views=_VIEWS,
         metric_readers=readers,
     )
     otel_metrics.set_meter_provider(provider)
@@ -97,6 +113,13 @@ def observe_turn(response, started_at: float):
         return
     ACTIVE_STREAMS.add(1)
     response.body_iterator = _observe_iter(it, started_at)
+
+
+def observe_turn_failed(started_at: float, result: str) -> None:
+    """handler 未捕获异常/取消（流未建立即 500）：指标必须可见，否则此类
+    故障在 chat_turns 上完全隐形。result=error|cancelled 由调用方区分。"""
+    CHAT_TURNS.add(1, {"result": result})
+    CHAT_DURATION.record(time.monotonic() - started_at, {"result": result})
 
 
 async def _observe_iter(inner, started_at: float):

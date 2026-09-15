@@ -165,6 +165,17 @@ async def chat(request: Request):
     span, token = tracing.begin_span(dict(request.headers))
     try:
         response = await _chat_inner(request)
+    except asyncio.CancelledError as e:
+        # handler 被取消（客户端断开等）：流未建立。span 与指标必须就地收尾，
+        # 否则 span 泄漏、该轮在 chat_turns 上不可见
+        tracing.end_with_error(span, e)
+        metrics.observe_turn_failed(started, "cancelled")
+        raise
+    except Exception as e:
+        # 未捕获异常（FastAPI 兜 500）：同上，异常详情进 span
+        tracing.end_with_error(span, e)
+        metrics.observe_turn_failed(started, "error")
+        raise
     finally:
         tracing.detach(token)
     streaming = tracing.attach_stream_end(response, span)

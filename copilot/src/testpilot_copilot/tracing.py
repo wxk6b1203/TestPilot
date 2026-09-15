@@ -52,6 +52,14 @@ def detach(token) -> None:
     otel_context.detach(token)
 
 
+def end_with_error(span, exc: BaseException) -> None:
+    """未捕获异常路径的 span 收尾：记录异常 + 置错误状态 + end。
+    SDK 关闭时 span 为 NonRecordingSpan，三个调用均为 no-op。"""
+    span.record_exception(exc)
+    span.set_status(trace.Status(trace.StatusCode.ERROR, type(exc).__name__))
+    span.end()
+
+
 def attach_stream_end(response, span) -> bool:
     """把 span 生命周期转交流式响应：迭代期恢复上下文，迭代结束 end。
     非流式响应返回 False（调用方自行 end）。"""

@@ -126,3 +126,67 @@ def test_observe_turn_stream_cancelled():
     asyncio.run(consume())
     snap = _snapshot()
     assert snap["testpilot.copilot.chat_turns"].get((("result", "cancelled"),), 0) >= 1
+
+
+def test_duration_buckets_second_scale():
+    """回归：两个时长直方图桶边界为秒刻度定制——SDK 默认桶 (0,5,10,…,10000)
+    是毫秒设计，工具调用普遍 0.01-5s 会全挤进 le=5 桶，分布不可用。"""
+    metrics.TOOL_DURATION.record(0.05)
+    metrics.CHAT_DURATION.record(2.0, {"result": "ok"})
+    data = _reader.get_metrics_data()
+    bounds: dict[str, list] = {}
+    for rm in data.resource_metrics:
+        for sm in rm.scope_metrics:
+            for m in sm.metrics:
+                for p in m.data.data_points:
+                    if m.name in ("testpilot.copilot.tool_duration",
+                                  "testpilot.copilot.chat_duration"):
+                        bounds[m.name] = list(p.explicit_bounds)
+    assert bounds["testpilot.copilot.tool_duration"] == [
+        0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10]
+    assert bounds["testpilot.copilot.chat_duration"] == [
+        1, 5, 10, 30, 60, 120, 300, 600, 1800]
+
+
+def test_chat_unhandled_exception_records_metric(monkeypatch):
+    """回归：_chat_inner 未捕获异常（FastAPI 兜 500）→ chat_turns{result=error}
+    必须记录且不进入流式路径——否则此类故障在指标上完全隐形。"""
+    from testpilot_copilot import main
+
+    class FakeReq:
+        headers = {}
+
+    async def boom(request):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(main, "_chat_inner", boom)
+    with pytest.raises(RuntimeError):
+        asyncio.run(main.chat(FakeReq()))
+    snap = _snapshot()
+    assert snap["testpilot.copilot.chat_turns"].get((("result", "error"),), 0) >= 1
+    assert snap["testpilot.copilot.active_streams"][()] == 0
+
+
+def test_end_with_error_ends_span():
+    """回归：end_with_error 记录异常、置错误状态并 end（修复 span 泄漏）。"""
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult, SimpleSpanProcessor
+
+    from testpilot_copilot import tracing
+
+    class _Capture(SpanExporter):
+        def __init__(self):
+            self.finished: list = []
+
+        def export(self, spans):
+            self.finished.extend(spans)
+            return SpanExportResult.SUCCESS
+
+    cap = _Capture()
+    tp = TracerProvider()
+    tp.add_span_processor(SimpleSpanProcessor(cap))
+    span = tp.get_tracer("t").start_span("x")
+    tracing.end_with_error(span, ValueError("boom"))
+    assert len(cap.finished) == 1
+    assert cap.finished[0].status.status_code.name == "ERROR"
+    assert any(e.name == "exception" for e in cap.finished[0].events)
