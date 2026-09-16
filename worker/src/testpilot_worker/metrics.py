@@ -24,21 +24,21 @@ meter = otel_metrics.get_meter("testpilot.worker")
 # status=passed/failed/aborted/timeout/...（RUN_STATUS 枚举名）。
 TASKS = meter.create_counter(
     "testpilot.worker.tasks", unit="{task}",
-    description="任务收尾计数（按类型与结果状态）。")
+    description="Task finalization count (by kind and result status).")
 # 指标名常量：proxy instrument 无 .name 属性，View 按名匹配须用同一字面量
 _TASK_DURATION_NAME = "testpilot.worker.task.duration"
 TASK_DURATION = meter.create_histogram(
     _TASK_DURATION_NAME, unit="s",
-    description="任务执行时长（占用并发槽期间；排队等待不计）。")
+    description="Task execution duration (while holding a concurrency slot; queue wait not counted).")
 ACTIVE_TASKS = meter.create_up_down_counter(
     "testpilot.worker.active_tasks", unit="{task}",
-    description="当前在跑任务数（并发信号量槽内）。")
+    description="Currently running tasks (holding concurrency semaphore slots).")
 OUTBOX_DROPPED = meter.create_counter(
     "testpilot.worker.outbox_dropped", unit="{event}",
-    description="outbox 满丢弃事件（kind=dropped 直接丢弃 / evicted 为心跳腾位的牺牲品）。")
+    description="Events dropped due to full outbox (kind=dropped discarded / evicted sacrificed for heartbeats).")
 PROBE_SESSIONS = meter.create_observable_gauge(
     "testpilot.worker.probe_sessions", unit="{session}",
-    description="活跃 UI 探测会话数。",
+    description="Active UI probe sessions.",
     callbacks=[lambda _options: _observe_probe_sessions()])
 
 # 探测会话数读取器：WorkerClient 构造后注入（gauge 回调在采集线程触发）。

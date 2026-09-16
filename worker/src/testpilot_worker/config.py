@@ -82,7 +82,7 @@ def _config_path(args: argparse.Namespace) -> str:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="testpilot-worker", description="TestPilot Worker")
-    p.add_argument("--config", default="", help="YAML 配置路径（> TP_WORKER_CONFIG > ./worker.yaml）")
+    p.add_argument("--config", default="", help="YAML config path (> TP_WORKER_CONFIG > ./worker.yaml)")
     for dest, (key, _env, _default, typ) in _FIELDS.items():
         flag = "--" + dest.replace("_", "-")
         # 默认 None 以区分「未传」与「显式传了默认值」（优先级判定依赖）
@@ -105,7 +105,7 @@ def resolve(args: argparse.Namespace, env: dict[str, str] | None = None) -> Sett
         raw = Path(path).read_text(encoding="utf-8")
         ydoc = yaml.safe_load(raw) or {}
         if not isinstance(ydoc, dict):
-            raise SystemExit(f"config {path}: 顶层必须是 mapping")
+            raise SystemExit(f"config {path}: top-level must be a mapping")
 
     values: dict[str, object] = {}
     for dest, (key, env_key, default, typ) in _FIELDS.items():
@@ -123,7 +123,7 @@ def resolve(args: argparse.Namespace, env: dict[str, str] | None = None) -> Sett
             try:
                 v = int(v)  # env/YAML 字符串数字归一
             except (TypeError, ValueError):
-                raise SystemExit(f"config {key}: {v!r} 不是整数") from None
+                raise SystemExit(f"config {key}: {v!r} is not an integer") from None
         values[dest] = v
     return Settings(**values)
 

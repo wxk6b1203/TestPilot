@@ -214,7 +214,7 @@ def test_snapshot_truncated_at_byte_budget():
         st = rep.probe_reply.state
         assert st.snapshot_truncated
         assert len(st.aria_snapshot.encode("utf-8")) <= small + 128  # 预算 + 尾注余量
-        assert "已截断" in st.aria_snapshot
+        assert "truncated" in st.aria_snapshot
 
     asyncio.run(run())
 

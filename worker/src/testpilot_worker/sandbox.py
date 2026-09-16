@@ -217,7 +217,7 @@ def _net_deny_wrapper(cmd: list[str], scratch: str) -> tuple[list[str], bool]:
                 "--bind", scratch, scratch,
                 "--unshare-net", "--die-with-parent", "--", *cmd], True
     log.warning("no OS sandbox tool found (sandbox-exec/bwrap); "
-                "sandbox runs WITHOUT network denial — 建议容器后端")
+                "sandbox runs WITHOUT network denial - consider the container backend")
     return cmd, False
 
 

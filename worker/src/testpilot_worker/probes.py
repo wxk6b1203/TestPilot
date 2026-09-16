@@ -65,7 +65,7 @@ SessionFactory = Callable[[str, str, bool], ui.UiSession]  # (session_id, base_u
 def _origin_of(url: str) -> str:
     parts = urlsplit(url)
     if not parts.scheme or not parts.netloc:
-        raise ValueError(f"probe url 必须是绝对地址（Scheduler 已解析 base_url）: {url!r}")
+        raise ValueError(f"probe url must be an absolute address (Scheduler resolves base_url): {url!r}")
     return f"{parts.scheme}://{parts.netloc}"
 
 
@@ -81,7 +81,7 @@ def _truncate(text: str, max_bytes: int) -> tuple[str, bool]:
     if nl > 0:
         cut = cut[:nl]
     head = cut.decode("utf-8", errors="ignore")
-    return head + f"\n… [已截断：快照超过 {max_bytes} 字节；可用 ref 参数取子树（v1.x）]", True
+    return head + f"\n… [truncated: snapshot exceeds {max_bytes} bytes; pass the ref parameter for a subtree (v1.x)]", True
 
 
 @dataclass
@@ -219,7 +219,7 @@ class ProbeHub:
         if sess.ui is None or sess.ui.page is None:
             return self._failure(cmd, CODE_SESSION_NOT_FOUND, "probe session has no page")
         if cmd.snapshot.ref:
-            return self._failure(cmd, CODE_FAILED, "ref 子树聚焦为 v1.x 增强，当前仅支持全页快照")
+            return self._failure(cmd, CODE_FAILED, "ref subtree focusing is a v1.x enhancement; only full-page snapshots are supported")
         return await self._state_reply(cmd, sess, cmd.snapshot.snapshot_max_bytes)
 
     async def _eval(self, cmd: wpb.ProbeCommand, sess: _Session) -> wpb.ProbeReply:

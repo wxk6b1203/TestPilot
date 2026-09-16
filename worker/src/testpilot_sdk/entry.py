@@ -193,7 +193,7 @@ async def _repl_main() -> int:
             exec(code, ns)  # noqa: S102  # 沙箱内受控执行（rlimit+净隔离+env scrub）
             fn = ns.get("run")
             if fn is None or not inspect.iscoroutinefunction(fn):
-                raise RuntimeError("probe exec 必须定义 async def run(ctx)")
+                raise RuntimeError("probe exec must define async def run(ctx)")
             with contextlib.redirect_stdout(logs_buf):
                 result = await fn(ctx)
             repr_text = repr(result)

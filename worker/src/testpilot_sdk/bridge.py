@@ -22,7 +22,7 @@ _bridge_var: contextvars.ContextVar["Bridge | None"] = contextvars.ContextVar("t
 def current_bridge() -> "Bridge":
     b = _bridge_var.get()
     if b is None:
-        raise RuntimeError("testpilot-sdk 未在沙箱上下文中运行（bridge 未初始化）")
+        raise RuntimeError("testpilot-sdk is not running in a sandbox context (bridge not initialized)")
     return b
 
 

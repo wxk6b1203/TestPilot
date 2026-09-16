@@ -76,7 +76,7 @@ class UiSession:
             from playwright.async_api import async_playwright
         except ImportError as e:
             raise UiUnavailable(
-                "playwright 未安装：uv pip install 'testpilot-worker[playwright]' "
+                "playwright not installed: uv pip install 'testpilot-worker[playwright]' "
                 "&& playwright install chromium") from e
         self.case_dir.mkdir(parents=True, exist_ok=True)
         # 局部变量构建：全部成功后才挂到 self。若中途失败就把半初始化资源

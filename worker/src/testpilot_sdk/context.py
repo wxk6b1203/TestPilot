@@ -84,8 +84,8 @@ class Context:
             raise ValueError(
                 f"http api {sid} not in this case's http_api_refs "
                 f"(available: {sorted(self.http_api_ids) or 'none'}). "
-                "请在用例 definition.httpApiRefs 中声明该接口；"
-                "动态拼接的 ID 也必须显式声明")
+                "declare the API in the case definition under httpApiRefs; "
+                "dynamically built IDs must be declared explicitly too")
         return HttpAPI(api_id=sid)
 
     def grpc_api(self, api_id: str | int) -> GrpcAPI:
@@ -95,8 +95,8 @@ class Context:
             raise ValueError(
                 f"grpc api {sid} not in this case's grpc_api_refs "
                 f"(available: {sorted(self.grpc_api_ids) or 'none'}). "
-                "请在用例 definition.grpcApiRefs 中声明该接口；"
-                "动态拼接的 ID 也必须显式声明")
+                "declare the API in the case definition under grpcApiRefs; "
+                "dynamically built IDs must be declared explicitly too")
         return GrpcAPI(api_id=sid)
 
     def api(self, api_id: str | int) -> HttpAPI | GrpcAPI:

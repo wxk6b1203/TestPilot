@@ -45,7 +45,7 @@ def _build_spec(task: wpb.TaskAssignment) -> dict:
     plan = st.plan
     api = st.inline_api
     if not api.uri:
-        raise ValueError("stress task: inline_api 为空（仅支持单接口目标）")
+        raise ValueError("stress task: inline_api is empty (single-API target only)")
     lp = plan.load_profile
     ramp = [
         {"at": s.at.ToTimedelta().total_seconds(), "target": s.target}
@@ -225,7 +225,7 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     }
     if not st.behavior_source.strip():
         result.status = pb.RUN_STATUS_FAILED
-        result.error = "stress behavior_source 为空"
+        result.error = "stress behavior_source is empty"
         return result
 
     # 共享门控状态 + 采样记录
@@ -359,7 +359,7 @@ async def _run_behavior(task: wpb.TaskAssignment, emit: EmitMetric) -> wpb.TaskR
     spawned_fail = [o for o in outcomes if isinstance(o, BaseException)]
     if timed_out or spawned_fail:
         result.status = pb.RUN_STATUS_FAILED
-        err = spawned_fail[0] if spawned_fail else "sandbox 超时未按门控退出"
+        err = spawned_fail[0] if spawned_fail else "sandbox did not exit within the gating timeout"
         result.error = f"behavior stress failed: {err}"
     else:
         result.status = pb.RUN_STATUS_PASSED

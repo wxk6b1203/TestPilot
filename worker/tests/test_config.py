@@ -45,7 +45,7 @@ def test_yaml_unknown_keys_ignored(tmp_path):
 
 def test_yaml_non_mapping_top_level_rejected(tmp_path):
     path = _write_yaml(tmp_path, "- just\n- a\n- list\n")
-    with pytest.raises(SystemExit, match="顶层必须是 mapping"):
+    with pytest.raises(SystemExit, match="top-level must be a mapping"):
         resolve(_args("--config", path), env={})
 
 
@@ -119,7 +119,7 @@ def test_int_env_string_normalized():
 
 
 def test_int_invalid_raises_system_exit():
-    with pytest.raises(SystemExit, match="不是整数"):
+    with pytest.raises(SystemExit, match="is not an integer"):
         resolve(_args(), env={"TP_WORKER_MAX_CONCURRENCY": "abc"})
 
 
