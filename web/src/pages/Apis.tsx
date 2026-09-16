@@ -12,6 +12,7 @@ import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
 
 // 接口工作区：左侧目录树面板（ApiTreePanel）+ 右侧调试区（无选中时为新建/空状态）。
+// 数据模型（「结构」）是独立一级页签（pages/Models.tsx），不再挤在本页侧栏。
 // 页面只负责路由/工作区协调；树的数据、拖拽、右键、目录 CRUD、导入导出全在 ApiTreePanel。
 export default function Apis() {
   const { projectId, projects } = useLayout()

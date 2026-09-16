@@ -1,6 +1,6 @@
 import { Layout as ALayout, Select, Space, Dropdown, Tag, Avatar, Typography } from 'antd'
 import {
-  ApiOutlined, ExperimentOutlined, ThunderboltOutlined, FileTextOutlined,
+  ApiOutlined, ApartmentOutlined, ExperimentOutlined, ThunderboltOutlined, FileTextOutlined,
   ClusterOutlined, PlayCircleOutlined, EnvironmentOutlined, ProjectOutlined,
   SettingOutlined, DesktopOutlined, RobotOutlined, LogoutOutlined, DownOutlined,
   SafetyCertificateOutlined, FolderOutlined,
@@ -18,6 +18,7 @@ import { message } from '../messageBridge'
 // 图标栏导航（IDE 式一级功能栏：图标在上、文字在下）
 const NAV = [
   { path: '/apis', label: '接口', icon: <ApiOutlined /> },
+  { path: '/models', label: '结构', icon: <ApartmentOutlined /> }, // 数据模型（JSON Schema 结构定义）
   { path: '/cases', label: '用例', icon: <ExperimentOutlined /> },
   { path: '/suites', label: '套件', icon: <ClusterOutlined /> },
   { path: '/scripts', label: '脚本', icon: <FileTextOutlined /> },

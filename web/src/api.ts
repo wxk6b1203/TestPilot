@@ -166,13 +166,38 @@ export interface HttpApi {
     timeout_ms?: number
   }
   body?: { contentType: number; raw?: string; binary_ref?: string; form?: any }
+  // 设计态元数据（设计/调试分离）：类型/必填/默认值/说明预设；请求/响应体 JSON Schema
+  params_design?: FieldDesign[]
+  headers_design?: FieldDesign[]
+  cookies_design?: FieldDesign[]
+  request_schema?: any
+  response_schema?: any
+}
+// 设计态预设行（params/headers/cookies 共用；结构与 lib/jsonSchema 保持一致）
+export interface FieldDesign {
+  name: string
+  type?: string
+  required?: boolean
+  default?: string
+  description?: string
+  example?: string
+}
+// 数据模型（「结构」）：JSON Schema 形态的结构定义
+export interface DataModel {
+  id: string
+  project_id: string
+  name: string
+  description?: string
+  schema?: any
+  created_at?: string
+  updated_at?: string
 }
 export interface TreeNode {
   id: string
-  node_type: number // 1=folder 2=http_api
+  node_type: number // 1=folder 2=http_api 3=grpc_api 4=test_case 5=suite 6=plan 7=data_model
   name: string
   ref_id?: string
-  ref?: { id: string; method: number; uri: string; name: string }
+  ref?: { id: string; method?: number; uri?: string; name: string; description?: string }
   children?: TreeNode[]
 }
 export interface GrpcApi {

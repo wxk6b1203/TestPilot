@@ -7,6 +7,7 @@ import Login from './pages/Login'
 import Projects from './pages/Projects'
 import Environments from './pages/Environments'
 import Apis from './pages/Apis'
+import Models from './pages/Models'
 import GrpcApis from './pages/GrpcApis'
 import Cases from './pages/Cases'
 import Suites from './pages/Suites'
@@ -66,6 +67,8 @@ const router = createHashRouter([
       { index: true, element: <Navigate to="/apis" replace /> },
       { path: 'apis', element: <Apis /> },
       { path: 'apis/:id', element: <Apis /> },
+      { path: 'models', element: <Models /> },
+      { path: 'models/:id', element: <Models /> },
       { path: 'grpc', element: <GrpcApis /> },
       { path: 'cases', element: <Cases /> },
       { path: 'cases/new', element: <Cases /> },
