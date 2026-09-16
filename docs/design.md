@@ -255,20 +255,56 @@ Certificate
 ```
 
 ### 3.6 目录树
-项目下接口/用例/计划以目录树组织，每层可含目录与节点。
+项目下接口/用例/数据模型以目录树组织，每层可含目录与节点。
 ```
 TreeNode
   id, tenant_id, project_id
   parent_id                  # null=根
-  node_type: folder | http_api | grpc_api | test_case | test_suite | test_plan
+  node_type: folder | http_api | grpc_api | test_case | test_suite | test_plan | data_model(7)
   ref_id                     # 指向对应实体（folder 为 null）
   name, icon, order          # 同级排序
   path                       # 物化路径（如 proj.a.b），便于子树查询
 ```
 - 采用**邻接表 + 物化路径**，兼顾移动子树与子树查询。
 - **实体挂树方式**：统一经 `TreeNode.ref_id -> 实体` 单向关联（树节点持有实体引用）；实体不反向存 `tree_node_id`，避免双向指针不一致。
+- `kind` 查询过滤叶子（api/case/suite/models），目录节点全量保留。
 
-### 3.7 前置/后置脚本
+### 3.7 数据模型（结构 DataModel）
+JSON Schema 形态的结构定义（draft-07 子集：type/properties/items/required/
+description/default/enum；`any` 为未知/混合类型兜底词）。前端一级页签「结构」：
+- **生成**：粘贴 JSON 自动推断（前后端各有一份同语义实现：
+  `web/src/lib/jsonSchema.ts` / `testpilot_copilot/jsonschema_gen.py`）、
+  粘贴 JSON Schema 直接导入、Copilot 工具创建（`create_data_model` 的
+  `json` 参数同样走推断）。
+- **编辑**：字段树（SchemaTree）：字段名/类型/必填/默认值/说明；array 经
+  ITEMS 行定义元素结构；「JSON Schema」弹窗可直接读写原文。
+- **复用**：接口「设计」页签的 Body/响应结构可引用数据模型，调试时按结构
+  生成示例并回填默认值。
+```
+DataModel
+  id, tenant_id, project_id
+  name, description
+  schema_text               # JSON Schema 文档（列名避开 MySQL 保留字 SCHEMA）
+```
+REST：`GET|POST /api/v1/models`、`GET|PUT|DELETE /api/v1/models/:id`
+（创建支持 `parent_node_id` 直接挂目录；树 `kind=models`）。
+Copilot 工具（走 REST，无 gRPC 面）：`list/get/create/update/delete_data_model`。
+
+### 3.8 接口设计态（设计/调试分离）
+HttpApi 的运行值（params/headers/cookies/body）之外另存**设计态预设**：
+```
+HttpApi
+  params_design / headers_design / cookies_design
+      # [{name,type,required,default,description,example}]，type 为 JSON Schema 类型词
+  request_schema / response_schema
+      # 请求体/响应体 JSON Schema（空=未设计，调试自由编辑）
+```
+- **设计**页签：编辑上述预设（类型/必填/默认值/说明、请求响应结构）。
+- **调试**页签：参数/头/Cookie 行带勾选框（勾选=随请求发送）；「按设计回填」
+  按预设补齐参数并回填默认值，请求体按 request_schema 生成示例。勾选态
+  （enabled）是纯前端语义，保存/发送前剥离——protojson 拒绝未知字段。
+
+### 3.9 前置/后置脚本
 用于断言与变量设置：
 - **断言**：见 4.5
 - **变量设置**：`set_var("token", response.body.token)`
@@ -753,7 +789,8 @@ StressTestPlan
 
 ### 11.2 核心模块
 - 租户切换 / 项目 / 环境 / 变量管理
-- 接口管理（HTTP/gRPC）+ 目录树
+- 接口管理（HTTP/gRPC）+ 目录树；接口详情分「设计 / 调试」页签（设计=类型/必填/默认值/说明与请求响应结构预设，调试=勾选发送 + 按设计回填）
+- 结构（数据模型）：独立页签，JSON / JSON Schema 生成结构，字段树编辑，接口设计可引用
 - 测试用例编辑器（声明式步骤编排器 + 低代码代码编辑器 Monaco）
 - 测试计划与运行
 - 运行报告（三级下钻、趋势、产物预览）

@@ -139,11 +139,29 @@ CREATE TABLE http_apis (
     post_scripts   JSONB,                                 -- Script[]
     settings       JSONB,                                 -- ApiSettings
     certificate_id BIGINT REFERENCES certificates (id),
+    params_design   JSONB,                                -- 设计态预设 [{name,type,required,default,description,example}]
+    headers_design  JSONB,                                -- 同上（请求头）
+    cookies_design  JSONB,                                -- 同上（Cookie）
+    request_schema  JSONB,                                -- 请求体 JSON Schema（draft-07 子集）
+    response_schema JSONB,                                -- 响应体 JSON Schema
     created_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
     updated_at     TIMESTAMPTZ   NOT NULL DEFAULT now(),
     deleted_at     TIMESTAMPTZ
 );
 CREATE INDEX idx_http_apis_tp ON http_apis (tenant_id, project_id) WHERE deleted_at IS NULL;
+
+CREATE TABLE data_models (                                -- 数据模型（「结构」，JSON Schema 结构定义）
+    id           BIGINT PRIMARY KEY,
+    tenant_id    BIGINT        NOT NULL REFERENCES tenants (id),
+    project_id   BIGINT        NOT NULL REFERENCES projects (id),
+    name         VARCHAR(255)  NOT NULL,
+    description  TEXT,
+    schema_text  JSONB,                                   -- 列名避开 MySQL 保留字 SCHEMA
+    created_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    updated_at   TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    deleted_at   TIMESTAMPTZ
+);
+CREATE INDEX idx_data_models_tp ON data_models (tenant_id, project_id) WHERE deleted_at IS NULL;
 
 CREATE TABLE grpc_apis (
     id              BIGINT PRIMARY KEY,

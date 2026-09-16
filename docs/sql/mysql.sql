@@ -150,6 +150,11 @@ CREATE TABLE http_apis (
     post_scripts   JSON          NULL COMMENT 'Script[]',
     settings       JSON          NULL COMMENT 'ApiSettings',
     certificate_id BIGINT        NULL,
+    params_design   JSON          NULL COMMENT '设计态预设 [{name,type,required,default,description,example}]',
+    headers_design  JSON          NULL COMMENT '同上（请求头）',
+    cookies_design  JSON          NULL COMMENT '同上（Cookie）',
+    request_schema  JSON          NULL COMMENT '请求体 JSON Schema（draft-07 子集）',
+    response_schema JSON          NULL COMMENT '响应体 JSON Schema',
     created_at     DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
     updated_at     DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
     deleted_at     DATETIME(3)   NULL,
@@ -157,6 +162,21 @@ CREATE TABLE http_apis (
     CONSTRAINT fk_ha_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
     CONSTRAINT fk_ha_project FOREIGN KEY (project_id) REFERENCES projects (id),
     CONSTRAINT fk_ha_cert FOREIGN KEY (certificate_id) REFERENCES certificates (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE data_models (                                -- 数据模型（「结构」，JSON Schema 结构定义）
+    id           BIGINT PRIMARY KEY,
+    tenant_id    BIGINT        NOT NULL,
+    project_id   BIGINT        NOT NULL,
+    name         VARCHAR(255)  NOT NULL,
+    description  TEXT          NULL,
+    schema_text  JSON          NULL COMMENT '列名避开 MySQL 保留字 SCHEMA',
+    created_at   DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+    updated_at   DATETIME(3)   NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+    deleted_at   DATETIME(3)   NULL,
+    KEY idx_data_models_tp (tenant_id, project_id),
+    CONSTRAINT fk_dm_tenant FOREIGN KEY (tenant_id) REFERENCES tenants (id),
+    CONSTRAINT fk_dm_project FOREIGN KEY (project_id) REFERENCES projects (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE grpc_apis (
