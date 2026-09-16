@@ -19,6 +19,7 @@ import { del, get, post, put } from '../api'
 import type { ListResp, TreeNode } from '../api'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // 通用实体目录树面板（用例 / 套件）：
 // - 目录结构与接口树共用 tree_nodes，按 kind=case|suite 过滤叶子
@@ -159,7 +160,7 @@ export default function EntityTreePanel({
 
   const submitFolder = async () => {
     if (!folderName.trim()) {
-      message.warning('请输入目录名')
+      message.warning(t('Enter a folder name'))
       return
     }
     try {
@@ -172,7 +173,7 @@ export default function EntityTreePanel({
       } else if (folderModal?.node) {
         await put(`/api/v1/tree/folders/${folderModal.node.id}`, { name: folderName.trim() })
       }
-      message.success('已保存')
+      message.success(t('Saved'))
       setFolderModal(undefined)
       setFolderName('')
       void reload()
@@ -184,7 +185,7 @@ export default function EntityTreePanel({
   const removeFolder = async (n: TreeNode) => {
     try {
       await del(`/api/v1/tree/folders/${n.id}`)
-      message.success('目录及子目录已删除（实体仅摘挂）')
+      message.success(t('Folder and subfolders deleted (entities inside are only unmounted)'))
       void reload()
     } catch (e: any) {
       message.error(e.message)
@@ -193,18 +194,18 @@ export default function EntityTreePanel({
 
   const confirmRemoveFolder = (n: TreeNode) => {
     modal.confirm({
-      title: `删除目录「${n.name}」？`,
-      content: '目录及所有子目录会被删除；目录中的用例/套件仅摘挂，实体本身不会被删除。',
-      okText: '删除',
+      title: t('Delete folder "{name}"?', { name: n.name }),
+      content: t('The folder and all subfolders will be deleted; cases/suites inside are only unmounted and will not be deleted.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: () => removeFolder(n),
     })
   }
 
   const unmountNode = (node: TreeNode) => {
     del(`/api/v1/tree/nodes/${node.id}`)
-      .then(() => { message.success('已从目录移除'); void reload() })
+      .then(() => { message.success(t('Removed from folder')); void reload() })
       .catch((e: any) => message.error(e.message))
   }
 
@@ -216,14 +217,14 @@ export default function EntityTreePanel({
   const submitMove = async () => {
     if (!moveItem) return
     if (!moveTarget) {
-      message.warning('请选择目标目录')
+      message.warning(t('Select a target folder'))
       return
     }
     const nodeId = nodeMeta.byRef[moveItem.id]
     try {
       if (moveTarget === '__unmount__') {
         if (!nodeId) {
-          message.info('该实体已在未分类中')
+          message.info(t('This item is already uncategorized'))
           setMoveTarget('')
           setMoveItem(null)
           return
@@ -232,7 +233,7 @@ export default function EntityTreePanel({
       } else {
         const targetParentId = moveTarget === '__root__' ? '' : moveTarget
         if (nodeId && (nodeMeta.parent[nodeId] ?? '') === targetParentId) {
-          message.info('该实体已在该目录中，无需移动')
+          message.info(t('This item is already in this folder'))
           setMoveTarget('')
           setMoveItem(null)
           return
@@ -247,7 +248,7 @@ export default function EntityTreePanel({
           })
         }
       }
-      message.success('已移动')
+      message.success(t('Moved'))
       setMoveTarget('')
       setMoveItem(null)
       void reload()
@@ -260,7 +261,7 @@ export default function EntityTreePanel({
     const path = kind === 'case' ? `/api/v1/cases/${item.id}` : `/api/v1/suites/${item.id}`
     try {
       await del(path)
-      message.success('已删除')
+      message.success(t('Deleted'))
       onDeleted?.(item.id)
       void reload()
     } catch (e: any) {
@@ -269,25 +270,25 @@ export default function EntityTreePanel({
   }
 
   const confirmRemoveEntity = (item: EntityRow) => {
-    const noun = kind === 'case' ? '用例' : '套件'
+    const noun = kind === 'case' ? t('case') : t('suite')
     modal.confirm({
-      title: `删除${noun}「${item.name}」？`,
-      content: '删除后不可恢复，相关目录挂载会一并移除。',
-      okText: '删除',
+      title: t('Delete {noun} "{name}"?', { noun, name: item.name }),
+      content: t('This cannot be undone; its tree mounts will be removed as well.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: () => removeEntity(item),
     })
   }
 
   const folderMenu = (n: TreeNode): MenuProps => ({
     items: [
-      ...(onNewInFolder ? [{ key: 'new-entity', label: kind === 'case' ? '新建用例' : '新建套件', icon: <PlusOutlined /> }] : []),
-      { key: 'new-folder', label: '新建子目录', icon: <FolderAddOutlined /> },
+      ...(onNewInFolder ? [{ key: 'new-entity', label: kind === 'case' ? t('New case') : t('New suite'), icon: <PlusOutlined /> }] : []),
+      { key: 'new-folder', label: t('New subfolder'), icon: <FolderAddOutlined /> },
       { type: 'divider' },
-      { key: 'rename', label: '重命名', icon: <EditOutlined /> },
+      { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
       { type: 'divider' },
-      { key: 'del', label: '删除目录', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete folder'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'new-entity') {
@@ -301,11 +302,11 @@ export default function EntityTreePanel({
 
   const entityMenu = (item: EntityRow, node?: TreeNode): MenuProps => ({
     items: [
-      { key: 'open', label: '打开' },
-      { key: 'move', label: '移动到目录…' },
-      ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
+      { key: 'open', label: t('Open') },
+      { key: 'move', label: t('Move to folder…') },
+      ...(node ? [{ key: 'unmount', label: t('Remove from folder') }] : []),
       { type: 'divider' },
-      { key: 'del', label: kind === 'case' ? '删除用例' : '删除套件', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: kind === 'case' ? t('Delete case') : t('Delete suite'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'open') onPick(item.id)
@@ -316,8 +317,8 @@ export default function EntityTreePanel({
   })
 
   const rootMenuItems: MenuProps['items'] = [
-    ...(onNewInFolder ? [{ key: 'new-entity', label: kind === 'case' ? '新建用例' : '新建套件', icon: <PlusOutlined /> }] : []),
-    { key: 'new-folder', label: '新建目录', icon: <FolderAddOutlined /> },
+    ...(onNewInFolder ? [{ key: 'new-entity', label: kind === 'case' ? t('New case') : t('New suite'), icon: <PlusOutlined /> }] : []),
+    { key: 'new-folder', label: t('New folder'), icon: <FolderAddOutlined /> },
   ]
   const rootMenuClick = ({ key }: { key: string }) => {
     if (key === 'new-entity') onNewInFolder?.()
@@ -329,8 +330,8 @@ export default function EntityTreePanel({
     const currentParentId = moveNodeId ? nodeMeta.parent[moveNodeId] ?? '' : null
     const isCurrent = (value: string) => currentParentId !== null && (value === '__root__' ? '' : value) === currentParentId
     const out: { value: string; label: string; disabled?: boolean }[] = [
-      { value: '__root__', label: '（根目录）', disabled: isCurrent('__root__') },
-      { value: '__unmount__', label: '（未分类）', disabled: !!moveItem && !moveNodeId },
+      { value: '__root__', label: t('(Root)'), disabled: isCurrent('__root__') },
+      { value: '__unmount__', label: t('(Uncategorized)'), disabled: !!moveItem && !moveNodeId },
     ]
     const walk = (nodes: TreeNode[], depth: number) => {
       for (const n of nodes) {
@@ -356,7 +357,7 @@ export default function EntityTreePanel({
 
   const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
     const d = parseKey(dragKey)
-    const t = parseKey(dropKey)
+    const tgt = parseKey(dropKey)
     // TODO(拖拽隐患): 插入点解析依赖 nodeMeta.byRef / nodeMeta.parent 的时效性。
     // 若上一次拖拽后 reload 尚未完成就连续拖拽，第二次可能查不到 byRef 而
     // 被误判为「未挂载」走 mount 分支，产生重复树节点。后续应加防护：
@@ -374,17 +375,17 @@ export default function EntityTreePanel({
 
     let parentId = ''
     let index: number | null = null
-    if (t.kind === 'root') {
+    if (tgt.kind === 'root') {
       parentId = ''
-    } else if (t.kind === 'folder') {
+    } else if (tgt.kind === 'folder') {
       if (dropPos === 0) {
-        parentId = t.id
+        parentId = tgt.id
       } else {
-        parentId = nodeMeta.parent[t.id] ?? ''
-        index = insertIndex(parentId, t.id, dropPos > 0)
+        parentId = nodeMeta.parent[tgt.id] ?? ''
+        index = insertIndex(parentId, tgt.id, dropPos > 0)
       }
     } else {
-      const nodeId = nodeMeta.byRef[t.id]
+      const nodeId = nodeMeta.byRef[tgt.id]
       if (nodeId) {
         parentId = nodeMeta.parent[nodeId] ?? ''
         index = insertIndex(parentId, nodeId, dropPos >= 0)
@@ -435,7 +436,7 @@ export default function EntityTreePanel({
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
             fontSize: 13, color: PALETTE.text,
           }}>
-            {item.name || '未命名'}
+            {item.name || t('Untitled')}
           </div>
           {item.description && (
             <div style={{ fontSize: 11, color: PALETTE.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -488,9 +489,9 @@ export default function EntityTreePanel({
                     trigger={['click']}
                     menu={{
                       items: [
-                        { key: 'sub', label: '新建子目录', icon: <FolderAddOutlined /> },
-                        { key: 'rename', label: '重命名', icon: <EditOutlined /> },
-                        { key: 'del', label: '删除目录', danger: true },
+                        { key: 'sub', label: t('New subfolder'), icon: <FolderAddOutlined /> },
+                        { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
+                        { key: 'del', label: t('Delete folder'), danger: true },
                       ],
                       onClick: ({ key }) => {
                         if (key === 'sub') openFolderCreate(n.id)
@@ -570,19 +571,19 @@ export default function EntityTreePanel({
             <Button size="small" icon={<MenuFoldOutlined />}
               onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
             />
-            <Tooltip title="新建目录">
+            <Tooltip title={t('New folder')}>
               <Button size="small" icon={<FolderAddOutlined />} onClick={() => openFolderCreate()} />
             </Tooltip>
             {onNewInFolder && (
               <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => onNewInFolder?.()}>
-                新建
+                {t('New')}
               </Button>
             )}
           </Space>
         </div>
         <Input
           size="small" allowClear value={search} onChange={(e) => setSearch(e.target.value)}
-          placeholder="搜索名称/描述"
+          placeholder={t('Search name/description')}
         />
       </div>
       <div style={{ flex: 1, overflow: 'auto', padding: '4px 6px' }}>
@@ -602,9 +603,9 @@ export default function EntityTreePanel({
       </div>
 
       <Modal
-        title={folderModal?.mode === 'rename' ? '重命名目录' : '新建目录'}
+        title={folderModal?.mode === 'rename' ? t('Rename folder') : t('New folder')}
         open={!!folderModal}
-        okText="保存"
+        okText={t('Save')}
         onCancel={() => setFolderModal(undefined)}
         onOk={submitFolder}
         destroyOnHidden
@@ -613,14 +614,14 @@ export default function EntityTreePanel({
           value={folderName}
           onChange={(e) => setFolderName(e.target.value)}
           onPressEnter={submitFolder}
-          placeholder="目录名"
+          placeholder={t('Folder name')}
         />
       </Modal>
 
       <Modal
-        title={`移动${kind === 'case' ? '用例' : '套件'}`}
+        title={t('Move {noun}', { noun: kind === 'case' ? t('case') : t('suite') })}
         open={!!moveItem}
-        okText="移动"
+        okText={t('Move')}
         onCancel={() => setMoveItem(null)}
         onOk={submitMove}
         destroyOnHidden
@@ -628,7 +629,7 @@ export default function EntityTreePanel({
         <Select
           style={{ width: '100%' }}
           value={moveTarget || undefined}
-          placeholder="选择目标目录"
+          placeholder={t('Select target folder')}
           onChange={setMoveTarget}
           options={folderOptions}
         />

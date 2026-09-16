@@ -13,6 +13,7 @@ import { PALETTE, SPACING } from '../theme'
 import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // api.ts 的 PlanItem 尚无 param_overrides 字段（后端 planPayload 支持），此处本地扩展。
 interface PlanItemX extends PlanItem {
@@ -90,7 +91,7 @@ export default function PlanEditor() {
 
   useSaveShortcut(() => { void save() })
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const update = (i: number, patch: Partial<EditableItem>) =>
     setItems((prev) => prev.map((it, j) => (j === i ? { ...it, ...patch } : it)))
@@ -108,10 +109,10 @@ export default function PlanEditor() {
   const add = () => setItems((prev) => [...prev, { ref_type: 1, ref_id: '', enabled: true }])
 
   const save = async () => {
-    if (!name.trim()) { message.error('请填写计划名称'); return }
-    if (!envId) { message.error('请选择环境'); return }
-    if (items.length === 0) { message.error('请至少添加一个执行条目'); return }
-    if (items.some((it) => !it.ref_id)) { message.error('存在未选择用例/套件的条目'); return }
+    if (!name.trim()) { message.error(t('Enter a plan name')); return }
+    if (!envId) { message.error(t('Select an environment')); return }
+    if (items.length === 0) { message.error(t('Add at least one execution item')); return }
+    if (items.some((it) => !it.ref_id)) { message.error(t('Some items have no case/suite selected')); return }
     setSaving(true)
     try {
       await put(`/api/v1/plans/${id}`, {
@@ -129,7 +130,7 @@ export default function PlanEditor() {
           param_overrides: it.param_overrides,
         })),
       })
-      message.success('已保存')
+      message.success(t('Saved'))
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -141,7 +142,7 @@ export default function PlanEditor() {
     setRunning(true)
     try {
       const r = await post<{ run_id: string }>(`/api/v1/plans/${id}/run`, {})
-      message.success(`已触发运行 ${r.run_id}`)
+      message.success(t('Run triggered: {id}', { id: r.run_id }))
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -168,7 +169,7 @@ export default function PlanEditor() {
     try {
       parsed = JSON.parse(text)
     } catch (e: any) {
-      message.error(`不是合法 JSON：${e.message}`)
+      message.error(t('Invalid JSON: {msg}', { msg: e.message }))
       return
     }
     update(ovIndex, { param_overrides: parsed })
@@ -181,12 +182,12 @@ export default function PlanEditor() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space>
             <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => nav('/plans')}>
-              返回
+              {t('Back')}
             </Button>
-            <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>编辑测试计划</span>
+            <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>{t('Edit test plan')}</span>
             {id && (
               <Typography.Text
-                copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+                copyable={{ text: id, tooltips: [t('Copy ID'), t('Copied')] }}
                 style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
               >
                 ID {id}
@@ -195,10 +196,10 @@ export default function PlanEditor() {
           </Space>
           <Space>
             <Button size="small" icon={<PlayCircleOutlined />} loading={running} onClick={run}>
-              运行
+              {t('Run')}
             </Button>
             <Button size="small" type="primary" icon={<SaveOutlined />} loading={saving} onClick={save}>
-              保存
+              {t('Save')}
             </Button>
           </Space>
         </div>
@@ -213,24 +214,24 @@ export default function PlanEditor() {
               paddingBottom: SPACING[4], borderBottom: `1px solid ${PALETTE.border}`,
             }}
           >
-            <Field label="名称">
+            <Field label={t('Name')}>
               <Input
                 style={{ width: 280 }}
                 value={name}
-                placeholder="计划名称"
+                placeholder={t('Plan name')}
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
-            <Field label="环境">
+            <Field label={t('Environment')}>
               <Select
                 style={{ width: 220 }}
-                placeholder="选择环境"
+                placeholder={t('Select environment')}
                 value={envId || undefined}
                 options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))}
                 onChange={(v) => setEnvId(v ? String(v) : '')}
               />
             </Field>
-            <Field label="并发">
+            <Field label={t('Concurrency')}>
               <InputNumber
                 style={{ width: 90 }}
                 min={1}
@@ -239,7 +240,7 @@ export default function PlanEditor() {
                 onChange={(v) => setConcurrency(v ?? 1)}
               />
             </Field>
-            <Field label="超时（ms）">
+            <Field label={t('Timeout (ms)')}>
               <InputNumber
                 style={{ width: 130 }}
                 min={1000}
@@ -258,9 +259,9 @@ export default function PlanEditor() {
                 marginBottom: SPACING[2],
               }}
             >
-              <Typography.Text strong>执行条目（{items.length}）</Typography.Text>
+              <Typography.Text strong>{t('Execution items ({count})', { count: items.length })}</Typography.Text>
               <Button size="small" icon={<PlusOutlined />} onClick={add}>
-                添加条目
+                {t('Add item')}
               </Button>
             </div>
             {items.length === 0 && (
@@ -270,7 +271,7 @@ export default function PlanEditor() {
                   border: `1px dashed ${PALETTE.border}`, borderRadius: 6,
                 }}
               >
-                暂无条目，点击「添加条目」开始编排
+                {t('No items yet; click "Add item" to start orchestrating')}
               </div>
             )}
             {items.map((it, i) => (
@@ -288,8 +289,8 @@ export default function PlanEditor() {
                   size="small"
                   value={it.ref_type}
                   options={[
-                    { label: '用例', value: 1 },
-                    { label: '套件', value: 2 },
+                    { label: t('Case'), value: 1 },
+                    { label: t('Suite'), value: 2 },
                   ]}
                   onChange={(v) => update(i, { ref_type: Number(v), ref_id: '' })}
                 />
@@ -297,7 +298,7 @@ export default function PlanEditor() {
                   <Select
                     showSearch
                     style={{ flex: 1, minWidth: 220 }}
-                    placeholder="选择用例"
+                    placeholder={t('Select a case')}
                     value={it.ref_id || undefined}
                     optionFilterProp="label"
                     options={cases.map((c) => ({ value: c.id, label: c.name }))}
@@ -308,7 +309,7 @@ export default function PlanEditor() {
                         <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                           <span>{c.name}</span>
                           <Tag style={{ margin: 0, fontSize: 11 }}>
-                            {c.type === 1 ? '声明式' : '低代码'}
+                            {c.type === 1 ? t('Declarative') : t('Low-code')}
                           </Tag>
                         </span>
                       )
@@ -319,7 +320,7 @@ export default function PlanEditor() {
                   <Select
                     showSearch
                     style={{ flex: 1, minWidth: 220 }}
-                    placeholder="选择套件"
+                    placeholder={t('Select a suite')}
                     value={it.ref_id || undefined}
                     optionFilterProp="label"
                     options={suites.map((s) => ({ value: s.id, label: s.name }))}
@@ -327,7 +328,7 @@ export default function PlanEditor() {
                   />
                 )}
                 <Space size={6}>
-                  <span style={{ fontSize: 12, color: PALETTE.textSecondary }}>启用</span>
+                  <span style={{ fontSize: 12, color: PALETTE.textSecondary }}>{t('Enabled')}</span>
                   <Switch size="small" checked={it.enabled} onChange={(v) => update(i, { enabled: v })} />
                 </Space>
                 <Button
@@ -336,7 +337,7 @@ export default function PlanEditor() {
                   icon={<SettingOutlined />}
                   onClick={() => openOverride(i)}
                 >
-                  参数覆盖
+                  {t('Param overrides')}
                 </Button>
                 <Button
                   size="small"
@@ -367,10 +368,10 @@ export default function PlanEditor() {
 
       {/* 参数覆盖编辑 */}
       <Modal
-        title={ovIndex !== null ? `参数覆盖 · 第 ${ovIndex + 1} 项` : '参数覆盖'}
+        title={ovIndex !== null ? t('Param overrides · item {n}', { n: ovIndex + 1 }) : t('Param overrides')}
         open={ovIndex !== null}
         width={640}
-        okText="确定"
+        okText={t('OK')}
         onCancel={() => setOvIndex(null)}
         onOk={applyOverride}
         destroyOnHidden
@@ -383,7 +384,7 @@ export default function PlanEditor() {
           onChange={(e) => setOvText(e.target.value)}
         />
         <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginTop: 8, marginBottom: 0 }}>
-          留空并确定将清除该项的参数覆盖；否则请输入合法 JSON 对象。
+          {t('Leave empty and confirm to clear this item\'s overrides; otherwise enter a valid JSON object.')}
         </Typography.Paragraph>
       </Modal>
     </IdeLayout>

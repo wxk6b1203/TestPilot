@@ -4,6 +4,7 @@ import { del, get, post, put } from '../api'
 import type { ListResp, Project } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 export default function Projects() {
   const { refreshProjects } = useLayout()
@@ -49,9 +50,9 @@ export default function Projects() {
 
   return (
     <Card
-      title="项目"
+      title={t('Projects')}
       extra={
-        <Button type="primary" onClick={openCreate}>新建项目</Button>
+        <Button type="primary" onClick={openCreate}>{t('New project')}</Button>
       }
     >
       <Table
@@ -63,7 +64,7 @@ export default function Projects() {
           total,
           size: 'small',
           showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
+          showTotal: (total) => t('{total} items in total', { total }),
           onChange: (p, ps) => { void load(p, ps) },
         }}
         columns={[
@@ -71,29 +72,29 @@ export default function Projects() {
             title: 'ID', dataIndex: 'id', width: 190,
             render: (v: string) => <Typography.Text copyable={{ text: v }}>{v.slice(-8)}</Typography.Text>,
           },
-          { title: '名称', dataIndex: 'name' },
-          { title: '描述', dataIndex: 'description' },
-          { title: '创建时间', dataIndex: 'created_at', render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
+          { title: t('Name'), dataIndex: 'name' },
+          { title: t('Description'), dataIndex: 'description' },
+          { title: t('Created at'), dataIndex: 'created_at', render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
           {
-            title: '操作',
+            title: t('Actions'),
             width: 150,
             render: (_, r) => (
               <Space size={4}>
-                <Button size="small" onClick={() => openEdit(r)}>编辑</Button>
+                <Button size="small" onClick={() => openEdit(r)}>{t('Edit')}</Button>
                 <Popconfirm
-                  title="删除项目？"
+                  title={t('Delete this project?')}
                   onConfirm={async () => {
                     try {
                       await del(`/api/v1/projects/${r.id}`)
                       await reloadAfterChange(true)
                       await refreshProjects()
-                      message.success('已删除')
+                      message.success(t('Deleted'))
                     } catch (e: any) {
                       message.error(e.message)
                     }
                   }}
                 >
-                  <Button danger size="small">删除</Button>
+                  <Button danger size="small">{t('Delete')}</Button>
                 </Popconfirm>
               </Space>
             ),
@@ -101,7 +102,7 @@ export default function Projects() {
         ]}
       />
       <Modal
-        title={editing ? '编辑项目' : '新建项目'}
+        title={editing ? t('Edit project') : t('New project')}
         open={open}
         onCancel={() => { setOpen(false); setEditing(null) }}
         onOk={() => form.submit()}
@@ -124,16 +125,16 @@ export default function Projects() {
               form.resetFields()
               await load(p, pageSize)
               await refreshProjects()
-              message.success(editing ? '已保存' : '已创建')
+              message.success(editing ? t('Saved') : t('Created'))
             } catch (e: any) {
               message.error(e.message)
             }
           }}
         >
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('Name')} rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="description" label="描述">
+          <Form.Item name="description" label={t('Description')}>
             <Input.TextArea rows={2} />
           </Form.Item>
         </Form>

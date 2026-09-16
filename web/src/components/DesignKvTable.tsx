@@ -1,6 +1,7 @@
 import { Button, Checkbox, Input, Select } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 import { FIELD_TYPES } from '../lib/jsonSchema'
 import type { FieldDesign } from '../api'
 
@@ -20,7 +21,7 @@ const typeOptions = FIELD_TYPES.map((t) => ({
 // 过滤无名行——ApiDebug payload 的 prune），否则「添加」会被过滤逻辑吞掉。
 const EMPTY_FIELD: FieldDesign = { name: '', type: 'string' }
 
-export default function DesignKvTable({ value, onChange, nameHeader = '参数名' }: {
+export default function DesignKvTable({ value, onChange, nameHeader = t('Param name') }: {
   value: FieldDesign[]
   onChange: (v: FieldDesign[]) => void
   nameHeader?: string
@@ -33,11 +34,11 @@ export default function DesignKvTable({ value, onChange, nameHeader = '参数名
     <div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
         <span style={{ ...head, width: 200 }}>{nameHeader}</span>
-        <span style={{ ...head, width: 110 }}>类型</span>
-        <span style={{ ...head, width: 50 }}>必填</span>
-        <span style={{ ...head, flex: 1 }}>默认值</span>
-        <span style={{ ...head, flex: 1 }}>示例值</span>
-        <span style={{ ...head, flex: 1 }}>说明</span>
+        <span style={{ ...head, width: 110 }}>{t('Type')}</span>
+        <span style={{ ...head, width: 50 }}>{t('Required')}</span>
+        <span style={{ ...head, flex: 1 }}>{t('Default')}</span>
+        <span style={{ ...head, flex: 1 }}>{t('Example')}</span>
+        <span style={{ ...head, flex: 1 }}>{t('Description')}</span>
         <span style={{ width: 32 }} />
       </div>
       {rows.map((r, i) => (
@@ -56,15 +57,15 @@ export default function DesignKvTable({ value, onChange, nameHeader = '参数名
             onChange={(e) => set(i, { required: e.target.checked })}
           />
           <Input
-            size="small" style={{ flex: 1 }} value={r.default ?? ''} placeholder="默认值"
+            size="small" style={{ flex: 1 }} value={r.default ?? ''} placeholder={t('Default')}
             onChange={(e) => set(i, { default: e.target.value })}
           />
           <Input
-            size="small" style={{ flex: 1 }} value={r.example ?? ''} placeholder="示例值"
+            size="small" style={{ flex: 1 }} value={r.example ?? ''} placeholder={t('Example')}
             onChange={(e) => set(i, { example: e.target.value })}
           />
           <Input
-            size="small" style={{ flex: 1 }} value={r.description ?? ''} placeholder="说明"
+            size="small" style={{ flex: 1 }} value={r.description ?? ''} placeholder={t('Description')}
             onChange={(e) => set(i, { description: e.target.value })}
           />
           <Button
@@ -79,7 +80,7 @@ export default function DesignKvTable({ value, onChange, nameHeader = '参数名
         style={{ width: '100%', color: PALETTE.textTertiary }}
         onClick={() => onChange([...value, { name: '', type: 'string' }])}
       >
-        添加
+        {t('Add')}
       </Button>
     </div>
   )

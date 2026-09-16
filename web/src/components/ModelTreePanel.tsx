@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { del, get, post, put } from '../api'
 import type { DataModel, ListResp, Project, TreeNode } from '../api'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 import { message } from '../messageBridge'
 
 // 数据模型（结构）目录树面板：位于接口树下方。数据/交互与 ApiTreePanel 同构
@@ -132,15 +133,15 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
 
   const remove = (m: DataModel) => {
     modal.confirm({
-      title: `删除数据模型「${m.name}」？`,
-      content: '删除后不可恢复，接口设计中对它的引用不会自动清理。',
-      okText: '删除',
+      title: t('Delete data model "{name}"?', { name: m.name }),
+      content: t('This cannot be undone; references to it in API designs will not be cleaned up automatically.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: async () => {
         try {
           await del(`/api/v1/models/${m.id}`)
-          message.success('已删除')
+          message.success(t('Deleted'))
           onDeleted?.(m.id)
           void reload()
         } catch (e: any) {
@@ -163,7 +164,7 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
 
   const submitFolder = async () => {
     if (!folderName.trim()) {
-      message.warning('请输入目录名')
+      message.warning(t('Enter a folder name'))
       return
     }
     try {
@@ -174,7 +175,7 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
       } else if (folderModal?.node) {
         await put(`/api/v1/tree/folders/${folderModal.node.id}`, { name: folderName.trim() })
       }
-      message.success('已保存')
+      message.success(t('Saved'))
       setFolderModal(undefined)
       setFolderName('')
       void reload()
@@ -185,15 +186,15 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
 
   const removeFolder = (n: TreeNode) => {
     modal.confirm({
-      title: `删除目录「${n.name}」？`,
-      content: '目录及所有子目录会被删除；目录中的数据模型仅摘挂，模型本身不会被删除。',
-      okText: '删除',
+      title: t('Delete folder "{name}"?', { name: n.name }),
+      content: t('The folder and all subfolders will be deleted; models inside are only unmounted and will not be deleted.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: async () => {
         try {
           await del(`/api/v1/tree/folders/${n.id}`)
-          message.success('已删除')
+          message.success(t('Deleted'))
           void reload()
         } catch (e: any) {
           message.error(e.message)
@@ -204,18 +205,18 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
 
   const unmountModel = (node: TreeNode) => {
     del(`/api/v1/tree/nodes/${node.id}`)
-      .then(() => { message.success('已从目录移除'); void reload() })
+      .then(() => { message.success(t('Removed from folder')); void reload() })
       .catch((e: any) => message.error(e.message))
   }
 
   const folderMenu = (n: TreeNode): MenuProps => ({
     items: [
-      { key: 'new-model', label: '新建结构', icon: <PlusOutlined /> },
-      { key: 'new-folder', label: '新建子目录', icon: <FolderAddOutlined /> },
+      { key: 'new-model', label: t('New model'), icon: <PlusOutlined /> },
+      { key: 'new-folder', label: t('New subfolder'), icon: <FolderAddOutlined /> },
       { type: 'divider' },
-      { key: 'rename', label: '重命名', icon: <EditOutlined /> },
+      { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
       { type: 'divider' },
-      { key: 'del', label: '删除目录', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete folder'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'new-model') {
@@ -229,9 +230,9 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
 
   const modelMenu = (m: DataModel, node?: TreeNode): MenuProps => ({
     items: [
-      ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
+      ...(node ? [{ key: 'unmount', label: t('Remove from folder') }] : []),
       { type: 'divider' },
-      { key: 'del', label: '删除结构', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete model'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'unmount' && node) unmountModel(node)
@@ -245,8 +246,8 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
   }
 
   const rootMenuItems: MenuProps['items'] = [
-    { key: 'new-model', label: '新建结构', icon: <PlusOutlined /> },
-    { key: 'new-folder', label: '新建目录', icon: <FolderAddOutlined /> },
+    { key: 'new-model', label: t('New model'), icon: <PlusOutlined /> },
+    { key: 'new-folder', label: t('New folder'), icon: <FolderAddOutlined /> },
   ]
   const rootMenuClick = ({ key }: { key: string }) => {
     if (key === 'new-model') openNewAtRoot()
@@ -326,14 +327,14 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingRight: 4 }}>
         <ApartmentOutlined style={{ color: '#eb2f96', fontSize: 13 }} />
         <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13, color: PALETTE.text }}>
-          {m.name || '未命名结构'}
+          {m.name || t('Untitled model')}
         </span>
         <Dropdown
           trigger={['click']}
           menu={{
             items: [
-              ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
-              { key: 'del', label: '删除结构', danger: true },
+              ...(node ? [{ key: 'unmount', label: t('Remove from folder') }] : []),
+              { key: 'del', label: t('Delete model'), danger: true },
             ],
             onClick: ({ key }) => {
               if (key === 'unmount' && node) unmountModel(node)
@@ -393,7 +394,7 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
         ),
       })))
     }
-    const rootName = projects.find((p) => p.id === projectId)?.name || '根目录'
+    const rootName = projects.find((p) => p.id === projectId)?.name || t('Root')
     return [{
       key: '__root__',
       title: (
@@ -417,15 +418,15 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
       <div style={{ padding: '8px 12px', borderBottom: `1px solid ${PALETTE.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Space size={6}>
-            <span style={{ fontSize: 13, fontWeight: 600, color: PALETTE.text }}>结构</span>
-            <span style={{ fontSize: 11, color: PALETTE.textTertiary }}>数据模型</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: PALETTE.text }}>{t('Models')}</span>
+            <span style={{ fontSize: 11, color: PALETTE.textTertiary }}>{t('Data models')}</span>
           </Space>
           <Space size={4}>
             <Button size="small" icon={<MenuFoldOutlined />}
               onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
             />
             <Button size="small" icon={<FolderAddOutlined />} onClick={() => openFolderCreate()} />
-            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openNewAtRoot}>新建</Button>
+            <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openNewAtRoot}>{t('New')}</Button>
           </Space>
         </div>
       </div>
@@ -472,17 +473,17 @@ export default function ModelTreePanel({ projectId, projects, activeId, refresh,
       )}
 
       <Modal
-        title={folderModal?.mode === 'rename' ? '重命名目录' : '新建目录'}
+        title={folderModal?.mode === 'rename' ? t('Rename folder') : t('New folder')}
         open={!!folderModal}
         onCancel={() => { setFolderModal(undefined); setFolderName('') }}
         onOk={submitFolder}
-        okText="保存"
+        okText={t('Save')}
         destroyOnHidden
       >
         <Input
           value={folderName}
           onChange={(e) => setFolderName(e.target.value)}
-          placeholder="目录名"
+          placeholder={t('Folder name')}
           onPressEnter={submitFolder}
         />
       </Modal>

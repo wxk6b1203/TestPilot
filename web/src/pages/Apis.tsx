@@ -10,6 +10,7 @@ import ApiTreePanel from '../components/ApiTreePanel'
 import ApiDebug from './ApiDebug'
 import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 
 // 接口工作区：左侧目录树面板（ApiTreePanel）+ 右侧调试区（无选中时为新建/空状态）。
 // 数据模型（「结构」）是独立一级页签（pages/Models.tsx），不再挤在本页侧栏。
@@ -28,12 +29,12 @@ export default function Apis() {
 
   const previewWrappers = async () => {
     if (!projectId) {
-      message.warning('请先选择项目')
+      message.warning(t('Select a project first'))
       return
     }
     try {
       const r = await get<{ source: string }>(`/api/v1/projects/${projectId}/api-wrappers`)
-      setWrappers(r.source || '# （项目内暂无接口）')
+      setWrappers(r.source || '# (no APIs in this project yet)')
     } catch (e: any) {
       message.error(e.message)
     }
@@ -48,7 +49,7 @@ export default function Apis() {
   useEffect(() => {
     if (prevProjectRef.current === projectId) return
     prevProjectRef.current = projectId
-    setWorkspaceNotice('项目已切换，请从左侧重新选择接口')
+    setWorkspaceNotice(t('Project switched; pick an API from the left panel again'))
     nav('/apis', { replace: true, state: null })
   }, [projectId, nav])
 
@@ -63,7 +64,7 @@ export default function Apis() {
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: PALETTE.bgLayout, color: PALETTE.textTertiary,
       }}>
-        请先选择项目
+        {t('Select a project first')}
       </div>
     )
 
@@ -87,9 +88,9 @@ export default function Apis() {
       justifyContent: 'center', gap: 12, background: '#FFFFFF',
     }}>
       <div style={{ color: PALETTE.textTertiary }}>
-        {workspaceNotice ?? '从左侧选择接口，或直接输入 URL 调试'}
+        {workspaceNotice ?? t('Pick an API on the left, or enter a URL to debug directly')}
       </div>
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewApi()}>新建接口</Button>
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewApi()}>{t('New API')}</Button>
     </div>
   )
 
@@ -110,7 +111,7 @@ export default function Apis() {
           onPreviewWrappers={previewWrappers}
           onDeleted={(deletedId) => {
             if (deletedId === id) {
-              setWorkspaceNotice('当前接口已删除，请重新选择接口')
+              setWorkspaceNotice(t('This API was deleted; pick another one'))
               nav('/apis', { replace: true, state: null })
             }
           }}
@@ -123,7 +124,7 @@ export default function Apis() {
       open={!!wrappers}
       source={wrappers}
       baseUrl={`/api/v1/projects/${projectId}/api-wrappers`}
-      title="tp_api_wrappers.py（项目全部接口）"
+      title={t('tp_api_wrappers.py (all APIs in the project)')}
       onClose={() => setWrappers('')}
     />
     </>

@@ -40,6 +40,7 @@ import { useStableRows } from '../hooks/useStableRows'
 import { useLayout } from '../hooks/useLayout'
 import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
@@ -91,17 +92,18 @@ export interface StepNode {
   ui_action?: { action?: number; target?: string; value?: string }
 }
 
+// label 经 getter 每次读取求值：语言切换即时生效；同时作为新步骤的默认名
 const STEP_META: Record<number, { label: string; icon: ReactNode; color: string }> = {
-  1: { label: 'HTTP 调用', icon: <ApiOutlined />, color: '#4CAF50' },
-  2: { label: 'gRPC 调用', icon: <CloudServerOutlined />, color: '#7C5CFC' },
-  3: { label: '断言', icon: <CheckSquareOutlined />, color: '#52C41A' },
-  4: { label: '设置变量', icon: <TagsOutlined />, color: '#4D6EEB' },
-  5: { label: '条件', icon: <BranchesOutlined />, color: '#F56A2A' },
-  6: { label: '循环', icon: <SyncOutlined />, color: '#13A8A8' },
-  7: { label: '重试', icon: <RedoOutlined />, color: '#F54A45' },
-  8: { label: '代码块', icon: <CodeOutlined />, color: '#646A73' },
-  9: { label: '等待', icon: <ClockCircleOutlined />, color: '#FAAD14' },
-  10: { label: 'UI 操作', icon: <AimOutlined />, color: '#EB2F96' },
+  get 1() { return { label: t('HTTP call'), icon: <ApiOutlined />, color: '#4CAF50' } },
+  get 2() { return { label: t('gRPC call'), icon: <CloudServerOutlined />, color: '#7C5CFC' } },
+  get 3() { return { label: t('Assertion'), icon: <CheckSquareOutlined />, color: '#52C41A' } },
+  get 4() { return { label: t('Set variable'), icon: <TagsOutlined />, color: '#4D6EEB' } },
+  get 5() { return { label: t('If'), icon: <BranchesOutlined />, color: '#F56A2A' } },
+  get 6() { return { label: t('Loop'), icon: <SyncOutlined />, color: '#13A8A8' } },
+  get 7() { return { label: t('Retry'), icon: <RedoOutlined />, color: '#F54A45' } },
+  get 8() { return { label: t('Code block'), icon: <CodeOutlined />, color: '#646A73' } },
+  get 9() { return { label: t('Wait'), icon: <ClockCircleOutlined />, color: '#FAAD14' } },
+  get 10() { return { label: t('UI action'), icon: <AimOutlined />, color: '#EB2F96' } },
 }
 const STEP_ORDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -134,7 +136,7 @@ const LOWCODE_PLACEHOLDER = `from testpilot_sdk import Context
 
 
 async def run(ctx):
-    # 沙箱内无网络出口；HTTP 经能力桥由 Worker 执行
+    # No network in the sandbox; HTTP goes through the capability bridge via the Worker
     resp = await ctx.http("GET", "/json")
     assert resp.status == 200
 `
@@ -166,7 +168,7 @@ function newId(): string {
 }
 
 function makeStep(type: number): StepNode {
-  const base: StepNode = { id: newId(), type, name: STEP_META[type]?.label ?? '步骤' }
+  const base: StepNode = { id: newId(), type, name: STEP_META[type]?.label ?? t('Step') }
   switch (type) {
     case 1:
       return { ...base, api_call: { inline: { method: 1, uri: '', params: [], headers: [], body: { contentType: 0 } } } }
@@ -298,27 +300,27 @@ function summaryOf(n: StepNode): string {
       const a = n.api_call
       if (a?.inline) {
         const m = HTTP_METHODS[a.inline.method]?.text ?? 'GET'
-        return `${m} ${a.inline.uri || '(未填 URI)'}`
+        return `${m} ${a.inline.uri || t('(URI not set)')}`
       }
-      return a?.api_id ? `引用接口 #${a.api_id}` : '未配置'
+      return a?.api_id ? t('Ref API #{id}', { id: a.api_id }) : t('Not configured')
     }
     case 2: {
       const g = n.grpc_call
-      return g?.grpc_api_id ? `引用 gRPC #${g.grpc_api_id}` : '未选择接口'
+      return g?.grpc_api_id ? t('Ref gRPC #{id}', { id: g.grpc_api_id }) : t('No API selected')
     }
     case 3:
-      return `${n.assertion?.assertions?.length ?? 0} 条断言`
+      return t('{n} assertion(s)', { n: n.assertion?.assertions?.length ?? 0 })
     case 4:
-      return n.set_var?.key ? `${n.set_var.key} = ${n.set_var.value_expr || '…'}` : '未设置'
+      return n.set_var?.key ? `${n.set_var.key} = ${n.set_var.value_expr || '…'}` : t('Not set')
     case 5:
-      return n.if_step?.condition_expr || '条件表达式'
+      return n.if_step?.condition_expr || t('Condition expression')
     case 6: {
       const l = n.loop_step
       const bounds = l?.count !== undefined ? `× ${l.count}` : l?.range ? `${l.range.start}..${l.range.end}` : '?'
-      return `${l?.iterator ?? 'i'} ${bounds}${l?.parallel ? ' · 并行' : ''}`
+      return `${l?.iterator ?? 'i'} ${bounds}${l?.parallel ? ` · ${t('parallel')}` : ''}`
     }
     case 7:
-      return `最多 ${n.retry_step?.max_attempts ?? '?'} 次 · ${n.retry_step?.backoff ?? ''}`
+      return t('max {n} attempts · {backoff}', { n: n.retry_step?.max_attempts ?? '?', backoff: n.retry_step?.backoff ?? '' })
     case 8:
       return n.code_block?.lang ?? ''
     case 9:
@@ -351,12 +353,12 @@ function AddStepMenu({ onPick, children }: { onPick: (type: number) => void; chi
     <Dropdown
       trigger={['click']}
       menu={{
-        items: STEP_ORDER.map((t) => ({
-          key: String(t),
+        items: STEP_ORDER.map((ty) => ({
+          key: String(ty),
           label: (
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ color: STEP_META[t].color }}>{STEP_META[t].icon}</span>
-              {STEP_META[t].label}
+              <span style={{ color: STEP_META[ty].color }}>{STEP_META[ty].icon}</span>
+              {STEP_META[ty].label}
             </span>
           ),
         })),
@@ -397,18 +399,18 @@ function StepRow({ node, depth, h }: { node: StepNode; depth: number; h: TreeHan
       </span>
       {hover && (
         <Space size={0} style={{ flexShrink: 0 }}>
-          <AddStepMenu onPick={(t) => h.onInsertBelow(node.id, makeStep(t))}>
-            <Tooltip title="在下方插入步骤">
+          <AddStepMenu onPick={(ty) => h.onInsertBelow(node.id, makeStep(ty))}>
+            <Tooltip title={t('Insert step below')}>
               <Button type="text" size="small" icon={<PlusOutlined />} />
             </Tooltip>
           </AddStepMenu>
-          <Tooltip title="复制">
+          <Tooltip title={t('Duplicate')}>
             <Button
               type="text" size="small" icon={<CopyOutlined />}
               onClick={(e) => { e.stopPropagation(); h.onDuplicate(node.id) }}
             />
           </Tooltip>
-          <Popconfirm title="删除该步骤（含子步骤）？" onConfirm={() => h.onDelete(node.id)}>
+          <Popconfirm title={t('Delete this step (including sub-steps)?')} onConfirm={() => h.onDelete(node.id)}>
             <Button
               type="text" size="small" danger icon={<DeleteOutlined />}
               onClick={(e) => e.stopPropagation()}
@@ -435,14 +437,14 @@ function ChildBlock({
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 8 + depth * 16, paddingTop: 2 }}>
         <span style={{ fontSize: 11, color: PALETTE.textTertiary }}>{label}</span>
         <span style={{ flex: 1, borderTop: `1px dashed ${PALETTE.border}` }} />
-        <AddStepMenu onPick={(t) => h.onAddChild(parentId, childKey, makeStep(t))}>
+        <AddStepMenu onPick={(ty) => h.onAddChild(parentId, childKey, makeStep(ty))}>
           <Button type="text" size="small" icon={<PlusOutlined />} style={{ color: PALETTE.primary, fontSize: 12 }} />
         </AddStepMenu>
       </div>
       {nodes.length > 0 && <StepTree nodes={nodes} depth={depth} {...h} />}
       {nodes.length === 0 && (
         <div style={{ paddingLeft: 8 + depth * 16 + 14, fontSize: 11, color: PALETTE.textTertiary, paddingBottom: 2 }}>
-          空
+          {t('Empty')}
         </div>
       )}
     </div>
@@ -458,12 +460,12 @@ function StepTree({ nodes, depth = 0, ...h }: { nodes: StepNode[]; depth?: numbe
           <StepRow node={n} depth={depth} h={h} />
           {n.if_step && (
             <>
-              <ChildBlock label="满足时" nodes={n.if_step.then_steps ?? []} parentId={n.id} childKey="then" depth={depth + 1} h={h} />
-              <ChildBlock label="否则" nodes={n.if_step.else_steps ?? []} parentId={n.id} childKey="else" depth={depth + 1} h={h} />
+              <ChildBlock label={t('then')} nodes={n.if_step.then_steps ?? []} parentId={n.id} childKey="then" depth={depth + 1} h={h} />
+              <ChildBlock label={t('else')} nodes={n.if_step.else_steps ?? []} parentId={n.id} childKey="else" depth={depth + 1} h={h} />
             </>
           )}
           {n.loop_step && (
-            <ChildBlock label="循环体" nodes={n.loop_step.body_steps ?? []} parentId={n.id} childKey="body" depth={depth + 1} h={h} />
+            <ChildBlock label={t('Loop body')} nodes={n.loop_step.body_steps ?? []} parentId={n.id} childKey="body" depth={depth + 1} h={h} />
           )}
           {n.retry_step?.body_step && (
             <StepTree nodes={[n.retry_step.body_step]} depth={depth + 1} {...h} />
@@ -496,7 +498,7 @@ function ApiCallForm({ node, apis, onChange }: { node: StepNode; apis: HttpApi[]
 
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="方式">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Mode')}>
         <Segmented
           value={mode}
           onChange={(v) => {
@@ -504,14 +506,14 @@ function ApiCallForm({ node, apis, onChange }: { node: StepNode; apis: HttpApi[]
             else setA({ inline: { method: 1, uri: '', params: [], headers: [], body: { contentType: 0 } } })
           }}
           options={[
-            { label: '内联', value: 'inline' },
-            { label: '引用接口', value: 'ref' },
+            { label: t('Inline'), value: 'inline' },
+            { label: t('Reference API'), value: 'ref' },
           ]}
         />
       </Form.Item>
       {mode === 'inline' ? (
         <>
-          <Form.Item style={FORM_ITEM_STYLE} label="方法与 URI">
+          <Form.Item style={FORM_ITEM_STYLE} label={t('Method & URI')}>
             <Space.Compact block>
               <Select
                 style={{ width: 110 }}
@@ -521,7 +523,7 @@ function ApiCallForm({ node, apis, onChange }: { node: StepNode; apis: HttpApi[]
               />
               <Input
                 value={inline.uri}
-                placeholder="/users/{id} 或完整 URL"
+                placeholder={t('/users/{id} or full URL')}
                 onChange={(e) => setA({ ...a, inline: { ...inline, uri: e.target.value } })}
               />
             </Space.Compact>
@@ -533,7 +535,7 @@ function ApiCallForm({ node, apis, onChange }: { node: StepNode; apis: HttpApi[]
             <KvEditor
               value={inline.headers ?? []}
               onChange={(kv) => setA({ ...a, inline: { ...inline, headers: kv } })}
-              keyPlaceholder="Header 名" valuePlaceholder="Header 值（支持 {{var}}）"
+              keyPlaceholder={t('Header name')} valuePlaceholder={t('Header value (supports {{var}})')}
             />
           </Form.Item>
           <Form.Item style={FORM_ITEM_STYLE} label="Body">
@@ -542,11 +544,11 @@ function ApiCallForm({ node, apis, onChange }: { node: StepNode; apis: HttpApi[]
         </>
       ) : (
         <>
-          <Form.Item style={FORM_ITEM_STYLE} label="接口">
+          <Form.Item style={FORM_ITEM_STYLE} label={t('API')}>
             <Select
               showSearch
               optionFilterProp="label"
-              placeholder="选择接口"
+              placeholder={t('Select an API')}
               value={a.api_id || undefined}
               onChange={(v) => setA({ ...a, api_id: v })}
               options={apis.map((x) => ({ value: x.id, label: `${HTTP_METHODS[x.method]?.text ?? x.method} ${x.uri}` }))}
@@ -584,9 +586,9 @@ function OverrideEditor({ value, onChange }: { value?: OverrideParam; onChange: 
     </div>
   )
   return (
-    <Form.Item style={FORM_ITEM_STYLE} label="覆盖（引用接口模式下可选）">
+    <Form.Item style={FORM_ITEM_STYLE} label={t('Overrides (optional in reference mode)')}>
       <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: SPACING[3], display: 'flex', flexDirection: 'column', gap: SPACING[3] }}>
-        {row('method', '方法', (
+        {row('method', t('Method'), (
           <Select
             style={{ width: 140 }}
             value={ov.method ?? 1}
@@ -598,7 +600,7 @@ function OverrideEditor({ value, onChange }: { value?: OverrideParam; onChange: 
           <Input value={ov.uri ?? ''} placeholder="/overridden/path" onChange={(e) => onChange({ ...ov, uri: e.target.value })} />
         ))}
         {row('headers', 'Headers', (
-          <KvEditor value={ov.headers ?? []} onChange={(kv) => onChange({ ...ov, headers: kv })} keyPlaceholder="Header 名" valuePlaceholder="Header 值" />
+          <KvEditor value={ov.headers ?? []} onChange={(kv) => onChange({ ...ov, headers: kv })} keyPlaceholder={t('Header name')} valuePlaceholder={t('Header value')} />
         ))}
         {row('params', 'Params', (
           <KvEditor value={ov.params ?? []} onChange={(kv) => onChange({ ...ov, params: kv })} />
@@ -620,17 +622,17 @@ function GrpcCallForm({ node, grpcApis, onChange }: { node: StepNode; grpcApis: 
 
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="gRPC 接口">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('gRPC API')}>
         <Select
           showSearch
           optionFilterProp="label"
-          placeholder="选择 gRPC 接口"
+          placeholder={t('Select a gRPC API')}
           value={g.grpc_api_id || undefined}
           onChange={(v) => setG({ ...g, grpc_api_id: v })}
           options={grpcApis.map((x) => ({ value: x.id, label: `${x.full_service}/${x.method}` }))}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="request_override（JSON 对象）" extra="合法 JSON 对象才会写入 definition；文本为空则清除覆盖">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('request_override (JSON object)')} extra={t('Only a valid JSON object is written to the definition; empty text clears the override')}>
         <Input.TextArea
           rows={6}
           style={{ fontFamily: MONO, fontSize: 12 }}
@@ -638,15 +640,15 @@ function GrpcCallForm({ node, grpcApis, onChange }: { node: StepNode; grpcApis: 
           value={reqText}
           placeholder={'{\n  "name": "neo"\n}'}
           onChange={(e) => {
-            const t = e.target.value
-            setReqText(t)
-            if (!t.trim()) {
+            const txt = e.target.value
+            setReqText(txt)
+            if (!txt.trim()) {
               setReqInvalid(false)
               setG({ ...g, request_override: undefined })
               return
             }
             try {
-              const parsed = JSON.parse(t)
+              const parsed = JSON.parse(txt)
               if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
                 setReqInvalid(false)
                 setG({ ...g, request_override: parsed })
@@ -663,7 +665,7 @@ function GrpcCallForm({ node, grpcApis, onChange }: { node: StepNode; grpcApis: 
         <KvEditor
           value={g.metadata_override ?? []}
           onChange={(kv) => setG({ ...g, metadata_override: kv })}
-          keyPlaceholder="Metadata 键" valuePlaceholder="值"
+          keyPlaceholder={t('Metadata key')} valuePlaceholder={t('Value')}
         />
       </Form.Item>
     </>
@@ -679,10 +681,10 @@ function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange 
     onChange({ assertion: { assertions: update(rs) } })
   const setRow = (i: number, patch: Partial<{ target: number; path: string; op: number; expected: string }>) =>
     setRows(rows.map((r, idx) => (idx === i ? { ...r, ...patch } : r)))
-  const needPath = (t: number) => t === 2 || t === 4
+  const needPath = (target: number) => target === 2 || target === 4
 
   return (
-    <Form.Item style={FORM_ITEM_STYLE} label="断言行" extra="target：STATUS/HEADER/BODY/JSONPATH/ELAPSED；path 仅 HEADER / JSONPATH 需要">
+    <Form.Item style={FORM_ITEM_STYLE} label={t('Assertion rows')} extra={t('target: STATUS/HEADER/BODY/JSONPATH/ELAPSED; path is required for HEADER/JSONPATH only')}>
       {stable.map((s, i) => {
         const r = s.item
         return (
@@ -697,7 +699,7 @@ function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange 
             <Input
               style={{ width: 150 }}
               value={r.path ?? ''}
-              placeholder={r.target === 4 ? '$.json.id' : 'Header 名'}
+              placeholder={r.target === 4 ? '$.json.id' : t('Header name')}
               onChange={(e) => setRow(i, { path: e.target.value })}
             />
           )}
@@ -710,7 +712,7 @@ function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange 
           <Input
             style={{ flex: 1 }}
             value={r.expected ?? ''}
-            placeholder="期望值"
+            placeholder={t('Expected value')}
             onChange={(e) => setRow(i, { expected: e.target.value })}
           />
           <Button
@@ -725,7 +727,7 @@ function AssertionForm({ node, onChange }: { node: StepNode; onChange: OnChange 
         type="dashed" size="small" icon={<PlusOutlined />} block
         onClick={() => setRows([...rows, { target: 1, path: '', op: 1, expected: '' }])}
       >
-        添加断言行
+        {t('Add assertion row')}
       </Button>
     </Form.Item>
   )
@@ -736,14 +738,14 @@ function SetVarForm({ node, onChange }: { node: StepNode; onChange: OnChange }) 
   const setV = (next: { key?: string; value_expr?: string }) => onChange({ set_var: next })
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="变量名">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Variable name')}>
         <Input
           value={v.key ?? ''}
-          placeholder="变量名，如 uid"
+          placeholder={t('Variable name, e.g. uid')}
           onChange={(e) => setV({ ...v, key: e.target.value })}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="取值表达式" extra="受限表达式：JSONPath + 安全求值器">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Value expression')} extra={t('Restricted expression: JSONPath + a safe evaluator')}>
         <Input
           value={v.value_expr ?? ''}
           placeholder="response.json.id"
@@ -770,12 +772,12 @@ function ChildrenArea({
           <StepTree nodes={nodes} {...tree} />
         ) : (
           <div style={{ textAlign: 'center', color: PALETTE.textTertiary, fontSize: 12, padding: '4px 0 8px' }}>
-            暂无步骤
+            {t('No steps')}
           </div>
         )}
-        <AddStepMenu onPick={(t) => tree.onAddChild(parentId, childKey, makeStep(t))}>
+        <AddStepMenu onPick={(ty) => tree.onAddChild(parentId, childKey, makeStep(ty))}>
           <Button type="dashed" size="small" icon={<PlusOutlined />} block>
-            添加子步骤
+            {t('Add sub-step')}
           </Button>
         </AddStepMenu>
       </div>
@@ -788,15 +790,15 @@ function IfForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandlers; 
   const setF = (next: typeof f) => onChange({ if_step: next })
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="条件表达式">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Condition expression')}>
         <Input
           value={f.condition_expr ?? ''}
-          placeholder="如 response.status == 200 或 {{token}} != ''"
+          placeholder={t("e.g. response.status == 200 or {{token}} != ''")}
           onChange={(e) => setF({ ...f, condition_expr: e.target.value })}
         />
       </Form.Item>
-      <ChildrenArea label="满足时执行（then）" nodes={f.then_steps ?? []} parentId={node.id} childKey="then" tree={tree} />
-      <ChildrenArea label="否则执行（else）" nodes={f.else_steps ?? []} parentId={node.id} childKey="else" tree={tree} />
+      <ChildrenArea label={t('Then steps')} nodes={f.then_steps ?? []} parentId={node.id} childKey="then" tree={tree} />
+      <ChildrenArea label={t('Else steps')} nodes={f.else_steps ?? []} parentId={node.id} childKey="else" tree={tree} />
     </>
   )
 }
@@ -807,14 +809,14 @@ function LoopForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandlers
   const boundsMode: 'count' | 'range' = l.range !== undefined ? 'range' : 'count'
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="迭代变量">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Iterator variable')}>
         <Input
           style={{ width: 160 }}
           value={l.iterator ?? 'i'}
           onChange={(e) => setL({ ...l, iterator: e.target.value })}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="边界">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Bounds')}>
         <Segmented
           value={boundsMode}
           onChange={(v) => {
@@ -829,23 +831,23 @@ function LoopForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandlers
             }
           }}
           options={[
-            { label: '按次数', value: 'count' },
-            { label: '按范围', value: 'range' },
+            { label: t('By count'), value: 'count' },
+            { label: t('By range'), value: 'range' },
           ]}
         />
       </Form.Item>
       {boundsMode === 'count' ? (
-        <Form.Item style={FORM_ITEM_STYLE} label="次数">
+        <Form.Item style={FORM_ITEM_STYLE} label={t('Count')}>
           <InputNumber min={1} max={10000} value={l.count ?? 1} onChange={(v) => setL({ ...l, count: v ?? 1 })} />
         </Form.Item>
       ) : (
-        <Form.Item style={FORM_ITEM_STYLE} label="范围（含端点）">
+        <Form.Item style={FORM_ITEM_STYLE} label={t('Range (inclusive)')}>
           <Space>
             <InputNumber
               value={l.range?.start ?? 0}
               onChange={(v) => setL({ ...l, range: { start: v ?? 0, end: l.range?.end ?? 0 } })}
             />
-            <span style={{ color: PALETTE.textTertiary }}>至</span>
+            <span style={{ color: PALETTE.textTertiary }}>{t('to')}</span>
             <InputNumber
               value={l.range?.end ?? 0}
               onChange={(v) => setL({ ...l, range: { start: l.range?.start ?? 0, end: v ?? 0 } })}
@@ -853,10 +855,10 @@ function LoopForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandlers
           </Space>
         </Form.Item>
       )}
-      <Form.Item style={FORM_ITEM_STYLE} label="并行执行">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Run in parallel')}>
         <Switch checked={!!l.parallel} onChange={(v) => setL({ ...l, parallel: v })} />
       </Form.Item>
-      <ChildrenArea label="循环体" nodes={l.body_steps ?? []} parentId={node.id} childKey="body" tree={tree} />
+      <ChildrenArea label={t('Loop body')} nodes={l.body_steps ?? []} parentId={node.id} childKey="body" tree={tree} />
     </>
   )
 }
@@ -866,10 +868,10 @@ function RetryForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandler
   const setR = (next: typeof r) => onChange({ retry_step: next })
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="最大尝试次数">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Max attempts')}>
         <InputNumber min={1} max={100} value={r.max_attempts ?? 1} onChange={(v) => setR({ ...r, max_attempts: v ?? 1 })} />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="退避间隔" extra="proto Duration 文本，如 1s / 500ms">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Backoff interval')} extra={t('proto Duration text, e.g. 1s / 500ms')}>
         <Input
           style={{ width: 180 }}
           value={r.backoff ?? ''}
@@ -877,15 +879,15 @@ function RetryForm({ node, tree, onChange }: { node: StepNode; tree: TreeHandler
           onChange={(e) => setR({ ...r, backoff: e.target.value })}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="重试的子步骤（单个）">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Sub-step to retry (single)')}>
         {r.body_step ? (
           <div style={{ border: `1px solid ${PALETTE.border}`, borderRadius: 6, padding: 8, background: '#FAFBFC' }}>
             <StepTree nodes={[r.body_step]} {...tree} />
           </div>
         ) : (
-          <AddStepMenu onPick={(t) => setR({ ...r, body_step: makeStep(t) })}>
+          <AddStepMenu onPick={(ty) => setR({ ...r, body_step: makeStep(ty) })}>
             <Button type="dashed" icon={<PlusOutlined />} block>
-              添加子步骤
+              {t('Add sub-step')}
             </Button>
           </AddStepMenu>
         )}
@@ -899,7 +901,7 @@ function CodeBlockForm({ node, onChange }: { node: StepNode; onChange: OnChange 
   const setC = (next: typeof c) => onChange({ code_block: next })
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="语言">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Language')}>
         <Select
           style={{ width: 160 }}
           value={c.lang ?? 'python'}
@@ -907,12 +909,12 @@ function CodeBlockForm({ node, onChange }: { node: StepNode; onChange: OnChange 
           options={[{ value: 'python', label: 'python' }]}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="代码" extra="在沙箱内执行：无网络出口，可访问已设置的变量">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Code')} extra={t('Executed in the sandbox: no network access; declared variables are available')}>
         <Input.TextArea
           rows={12}
           style={{ fontFamily: MONO, fontSize: 12 }}
           value={c.source ?? ''}
-          placeholder={'# Python 代码\nasync def main(ctx):\n    ...'}
+          placeholder={t('# Python code\nasync def main(ctx):\n    ...')}
           onChange={(e) => setC({ ...c, source: e.target.value })}
         />
       </Form.Item>
@@ -923,7 +925,7 @@ function CodeBlockForm({ node, onChange }: { node: StepNode; onChange: OnChange 
 function DelayForm({ node, onChange }: { node: StepNode; onChange: OnChange }) {
   const d = node.delay ?? { duration: '1s' }
   return (
-    <Form.Item style={FORM_ITEM_STYLE} label="等待时长" extra="proto Duration 文本，如 2s / 500ms">
+    <Form.Item style={FORM_ITEM_STYLE} label={t('Duration')} extra={t('proto Duration text, e.g. 2s / 500ms')}>
       <Input
         style={{ width: 200 }}
         value={d.duration ?? ''}
@@ -939,7 +941,7 @@ function UiActionForm({ node, onChange }: { node: StepNode; onChange: OnChange }
   const setU = (next: typeof u) => onChange({ ui_action: next })
   return (
     <>
-      <Form.Item style={FORM_ITEM_STYLE} label="动作">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Action')}>
         <Select
           style={{ width: 200 }}
           value={u.action ?? 1}
@@ -947,17 +949,17 @@ function UiActionForm({ node, onChange }: { node: StepNode; onChange: OnChange }
           options={Object.entries(UI_ACTIONS).map(([k, label]) => ({ value: Number(k), label }))}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="目标（locator）">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Target (locator)')}>
         <Input
           value={u.target ?? ''}
-          placeholder="Playwright locator，如 #login-btn"
+          placeholder={t('Playwright locator, e.g. #login-btn')}
           onChange={(e) => setU({ ...u, target: e.target.value })}
         />
       </Form.Item>
-      <Form.Item style={FORM_ITEM_STYLE} label="值">
+      <Form.Item style={FORM_ITEM_STYLE} label={t('Value')}>
         <Input
           value={u.value ?? ''}
-          placeholder="如要填写的文本 / 按键"
+          placeholder={t('Text to fill / key to press')}
           onChange={(e) => setU({ ...u, value: e.target.value })}
         />
       </Form.Item>
@@ -987,8 +989,8 @@ function StepForm({
         requiredMark={false}
         styles={{ label: FORM_LABEL_STYLE, extra: FORM_EXTRA_STYLE }}
       >
-        <Form.Item style={FORM_ITEM_STYLE} label="名称">
-          <Input value={node.name} placeholder="步骤名称" onChange={(e) => onChange({ name: e.target.value })} />
+        <Form.Item style={FORM_ITEM_STYLE} label={t('Name')}>
+          <Input value={node.name} placeholder={t('Step name')} onChange={(e) => onChange({ name: e.target.value })} />
         </Form.Item>
         {node.type === 1 && <ApiCallForm node={node} apis={apis} onChange={onChange} />}
         {node.type === 2 && <GrpcCallForm node={node} grpcApis={grpcApis} onChange={onChange} />}
@@ -1060,13 +1062,13 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
             def = {}
           }
         }
-        const t = c.type === 2 ? 2 : 1
+        const ct = c.type === 2 ? 2 : 1
         setName(c.name)
         setDescription(c.description)
-        setCaseType(t)
-        let snap = { n: c.name, d: c.description, t, s: [] as StepNode[], src: '', e: 'run', p: '', hr: [], gr: [] }
+        setCaseType(ct)
+        let snap = { n: c.name, d: c.description, t: ct, s: [] as StepNode[], src: '', e: 'run', p: '', hr: [], gr: [] }
         if (def && typeof def === 'object') {
-          if (t === 2) {
+          if (ct === 2) {
             const src = typeof def.source === 'string' ? def.source : ''
             const entry = typeof def.entry === 'string' ? def.entry : 'run'
             const params = def.parameters && typeof def.parameters === 'object'
@@ -1101,11 +1103,11 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   // persist：校验并保存当前编辑器内容，返回用例 ID（不负责导航）。
   const persist = async (): Promise<string | undefined> => {
     if (!projectId) {
-      message.warning('请先在顶部选择项目')
+      message.warning(t('Select a project at the top first'))
       return
     }
     if (!name.trim()) {
-      message.warning('请输入用例名称')
+      message.warning(t('Enter a case name'))
       return
     }
     let definition: any
@@ -1122,11 +1124,11 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
           if (p && typeof p === 'object' && !Array.isArray(p)) {
             definition.parameters = p
           } else {
-            message.error('parameters 必须是 JSON 对象')
+            message.error(t('parameters must be a JSON object'))
             return
           }
         } catch (e: any) {
-          message.error(`parameters 不是合法 JSON：${e.message}`)
+          message.error(t('Invalid parameters JSON: {msg}', { msg: e.message }))
           return
         }
       }
@@ -1153,7 +1155,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const save = async () => {
     const cid = await persist()
     if (!cid) return
-    message.success('已保存')
+    message.success(t('Saved'))
     allowOnce() // setSavedSnap 提交晚于同步 nav，显式放行一次
     nav(`/cases/${cid}/edit`)
   }
@@ -1165,7 +1167,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     const cid = needPersist ? await persist() : id
     if (!cid) return
     if (needPersist) {
-      message.success('已保存，正在触发运行')
+      message.success(t('Saved; triggering run'))
       if (isNew) {
         allowOnce()
         nav(`/cases/${cid}/edit`)
@@ -1174,7 +1176,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     setRunningCase(true)
     try {
       const r = await post<{ run_id: string }>(`/api/v1/cases/${cid}/run`, { env_id: envId || undefined })
-      message.success(`已触发运行 ${r.run_id}`)
+      message.success(t('Run triggered: {id}', { id: r.run_id }))
       const first = await get<TestRun>(`/api/v1/runs/${r.run_id}`)
       setRunDetail(first)
       setRunDrawerOpen(true)
@@ -1214,7 +1216,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     setWrapperLoading(true)
     try {
       const r = await get<{ source: string; count: number }>(wrappersBaseUrl())
-      setWrapperPreview(r.source || '# （项目内暂无接口）')
+      setWrapperPreview(r.source || '# (no APIs in this project yet)')
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -1225,7 +1227,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
   const extractRefs = () => {
     const found = extractApiRefs(lowSource)
     if (!found.http.length && !found.grpc.length) {
-      message.info('未从脚本中提取到字面量接口 ID')
+      message.info(t('No literal API IDs found in the script'))
       return
     }
     setHttpRefs((prev) => Array.from(new Set([...prev, ...found.http])))
@@ -1280,7 +1282,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
     onAddChild: addChild,
   }
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   return (
     <>
@@ -1289,35 +1291,35 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
       toolbar={
         <div style={{ display: 'flex', alignItems: 'center', gap: SPACING[3], flexWrap: 'wrap' }}>
           <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => nav('/cases')}>
-            返回
+            {t('Back')}
           </Button>
-          <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>名称</span>
+          <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>{t('Name')}</span>
           <Input
-            size="small" style={{ width: 200 }} value={name} placeholder="用例名称"
+            size="small" style={{ width: 200 }} value={name} placeholder={t('Case name')}
             onChange={(e) => setName(e.target.value)}
           />
           {caseType === 1 && (
             <>
-              <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>描述</span>
+              <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>{t('Description')}</span>
               <Input
-                size="small" style={{ width: 240 }} value={description} placeholder="描述（可选）"
+                size="small" style={{ width: 240 }} value={description} placeholder={t('Description (optional)')}
                 onChange={(e) => setDescription(e.target.value)}
               />
             </>
           )}
-          <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>类型</span>
+          <span style={{ fontSize: 13, color: PALETTE.textSecondary }}>{t('Type')}</span>
           <Segmented
             size="small"
             value={caseType}
             onChange={(v) => setCaseType(v as number)}
             options={[
-              { label: '声明式', value: 1 },
-              { label: '低代码', value: 2 },
+              { label: t('Declarative'), value: 1 },
+              { label: t('Low-code'), value: 2 },
             ]}
           />
           {!isNew && (
             <Typography.Text
-              copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+              copyable={{ text: id, tooltips: [t('Copy ID'), t('Copied')] }}
               style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
             >
               ID {id}
@@ -1325,10 +1327,10 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
           )}
           <span style={{ flex: 1 }} />
           <Button size="small" icon={<PlayCircleOutlined />} loading={runningCase} onClick={runNow}>
-            运行
+            {t('Run')}
           </Button>
           <Button type="primary" size="small" loading={saving} onClick={save}>
-            保存
+            {t('Save')}
           </Button>
         </div>
       }
@@ -1337,11 +1339,11 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
           <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
             <div style={{ padding: '10px 12px', borderBottom: `1px solid ${PALETTE.border}` }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                <span style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>步骤树</span>
+                <span style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{t('Step tree')}</span>
               </div>
-              <AddStepMenu onPick={(t) => addRoot(makeStep(t))}>
+              <AddStepMenu onPick={(ty) => addRoot(makeStep(ty))}>
                 <Button type="dashed" size="small" icon={<PlusOutlined />} block>
-                  添加步骤
+                  {t('Add step')}
                 </Button>
               </AddStepMenu>
             </div>
@@ -1350,7 +1352,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
                 <StepTree nodes={steps} {...tree} />
               ) : (
                 <div style={{ textAlign: 'center', color: PALETTE.textTertiary, fontSize: 12, padding: 32 }}>
-                  暂无步骤，点击「添加步骤」开始
+                  {t('No steps yet; click "Add step" to start')}
                 </div>
               )}
             </div>
@@ -1370,7 +1372,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
               onChange={updateNode}
             />
           ) : (
-            <Empty style={{ marginTop: 96 }} description="在左侧选择一个步骤查看配置" />
+            <Empty style={{ marginTop: 96 }} description={t('Select a step on the left to see its config')} />
           )}
         </div>
       ) : (
@@ -1382,21 +1384,21 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
               requiredMark={false}
               styles={{ label: FORM_LABEL_STYLE, extra: FORM_EXTRA_STYLE }}
             >
-              <Form.Item style={FORM_ITEM_STYLE} label="描述"
-                extra="用例用途/覆盖场景等补充说明，保存后展示在用例列表与运行报告">
+              <Form.Item style={FORM_ITEM_STYLE} label={t('Description')}
+                extra={t('Extra notes about the case purpose/coverage; shown in the case list and run reports after saving')}>
                 <Input
-                  style={{ width: 420 }} value={description} placeholder="描述（可选）"
+                  style={{ width: 420 }} value={description} placeholder={t('Description (optional)')}
                   onChange={(e) => setDescription(e.target.value)}
                 />
               </Form.Item>
-              <Form.Item style={FORM_ITEM_STYLE} label="入口函数（可选，默认 run）"
-                extra="脚本内可定义多个流程函数，通过入口函数切换；留空等价于 run">
+              <Form.Item style={FORM_ITEM_STYLE} label={t('Entry function (optional, default run)')}
+                extra={t('A script may define multiple flow functions switched via the entry; empty means run')}>
                 <Input
                   style={{ width: 220 }} value={lowEntry} placeholder="run"
                   onChange={(e) => setLowEntry(e.target.value)}
                 />
               </Form.Item>
-              <Form.Item style={FORM_ITEM_STYLE} label="Source（Python）" extra="脚本在沙箱中运行：无网络出口（HTTP 经能力桥由 Worker 代执行）、环境变量白名单、CPU/内存受限">
+              <Form.Item style={FORM_ITEM_STYLE} label={t('Source (Python)')} extra={t('The script runs in a sandbox: no network (HTTP goes through the capability bridge via the Worker), env allowlist, CPU/memory limits')}>
                 <Input.TextArea
                   rows={18}
                   style={{ fontFamily: MONO, fontSize: 12 }}
@@ -1405,13 +1407,13 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
                   onChange={(e) => setLowSource(e.target.value)}
                 />
               </Form.Item>
-              <Form.Item style={FORM_ITEM_STYLE} label="接口依赖（按 ID 调用）"
-                extra="保存为 definition.httpApiRefs/grpcApiRefs；脚本中的字面量 ID 派发时也会自动解析。动态拼接 ID 必须在此显式声明。">
+              <Form.Item style={FORM_ITEM_STYLE} label={t('API dependencies (by ID)')}
+                extra={t('Saved as definition.httpApiRefs/grpcApiRefs; literal IDs in the script are also resolved at dispatch. Dynamically built IDs must be declared here explicitly.')}>
                 <Space wrap style={{ width: '100%' }}>
                   <Select
                     mode="multiple"
                     allowClear
-                    placeholder="HTTP 接口依赖"
+                    placeholder={t('HTTP API dependencies')}
                     style={{ minWidth: 340 }}
                     value={httpRefs}
                     onChange={(v) => setHttpRefs(v)}
@@ -1423,7 +1425,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
                   <Select
                     mode="multiple"
                     allowClear
-                    placeholder="gRPC 接口依赖"
+                    placeholder={t('gRPC API dependencies')}
                     style={{ minWidth: 340 }}
                     value={grpcRefs}
                     onChange={(v) => setGrpcRefs(v)}
@@ -1432,13 +1434,13 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
                       label: `[gRPC] ${a.full_service}/${a.method} (${a.id})`,
                     }))}
                   />
-                  <Button size="small" onClick={extractRefs}>从脚本提取</Button>
+                  <Button size="small" onClick={extractRefs}>{t('Extract from script')}</Button>
                   <Button size="small" loading={wrapperLoading} onClick={previewWrappers}>
-                    预览封装
+                    {t('Preview wrappers')}
                   </Button>
                 </Space>
               </Form.Item>
-              <Form.Item style={FORM_ITEM_STYLE} label="parameters（JSON 对象，可选）">
+              <Form.Item style={FORM_ITEM_STYLE} label={t('parameters (JSON object, optional)')}>
                 <Input.TextArea
                   rows={4}
                   style={{ fontFamily: MONO, fontSize: 12 }}
@@ -1461,7 +1463,7 @@ export default function CaseEditor({ onSaved }: { onSaved?: (id?: string) => voi
       open={!!wrapperPreview}
       source={wrapperPreview}
       baseUrl={wrappersBaseUrl()}
-      title="tp_api_wrappers.py（当前依赖）"
+      title={t('tp_api_wrappers.py (current dependencies)')}
       onClose={() => setWrapperPreview('')}
     />
     {guard}

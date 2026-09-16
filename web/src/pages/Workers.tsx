@@ -4,6 +4,7 @@ import { CAPS, get } from '../api'
 import type { ListResp, WorkerInfo } from '../api'
 import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 export default function Workers() {
   const [rows, setRows] = useState<WorkerInfo[]>([])
@@ -21,7 +22,7 @@ export default function Workers() {
   useEventStream(['workers'], () => void load().catch(() => undefined))
 
   return (
-    <Card title="在线 Worker">
+    <Card title={t('Online workers')}>
       <Table
         rowKey="id"
         dataSource={rows}
@@ -29,26 +30,26 @@ export default function Workers() {
         columns={[
           { title: 'ID', dataIndex: 'id' },
           {
-            title: '能力',
+            title: t('Capabilities'),
             dataIndex: 'capabilities',
             render: (v: number[]) => v.map((c) => <Tag key={c} color="blue">{CAPS[c] || c}</Tag>),
           },
           {
-            title: '负载',
+            title: t('Load'),
             width: 120,
             render: (_, r) => `${r.load} / ${r.max_concurrency}`,
           },
           {
-            title: '标签',
+            title: t('Tags'),
             dataIndex: 'tags',
             render: (v: string[]) => (v || []).map((t) => <Tag key={t}>{t}</Tag>),
           },
           { title: 'SDK', dataIndex: 'sdk_version', width: 80 },
           {
-            title: '租户',
+            title: t('Tenant'),
             dataIndex: 'tenant_id',
             width: 100,
-            render: (v: string) => (v === '0' ? '共享' : v),
+            render: (v: string) => (v === '0' ? t('Shared') : v),
           },
         ]}
       />

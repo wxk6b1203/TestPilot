@@ -4,6 +4,7 @@ import {
   CaretDownOutlined, CaretRightOutlined, MinusOutlined, PlusOutlined,
 } from '@ant-design/icons'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 import {
   SCHEMA_TYPES, rowsToSchema, schemaToRows,
 } from '../lib/jsonSchema'
@@ -130,11 +131,11 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
     <div>
       {/* 列头 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 4, paddingLeft: 4 }}>
-        <span style={{ ...headStyle, width: 220 }}>字段名</span>
-        <span style={{ ...headStyle, width: 120 }}>类型</span>
-        <span style={{ ...headStyle, width: 60 }}>必填</span>
-        <span style={{ ...headStyle, flex: 1 }}>默认值</span>
-        <span style={{ ...headStyle, flex: 1 }}>说明</span>
+        <span style={{ ...headStyle, width: 220 }}>{t('Field name')}</span>
+        <span style={{ ...headStyle, width: 120 }}>{t('Type')}</span>
+        <span style={{ ...headStyle, width: 60 }}>{t('Required')}</span>
+        <span style={{ ...headStyle, flex: 1 }}>{t('Default')}</span>
+        <span style={{ ...headStyle, flex: 1 }}>{t('Description')}</span>
         <span style={{ width: 64 }} />
       </div>
       {visible.map(({ row, depth, parentType }) => {
@@ -170,11 +171,11 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
                     padding: '1px 8px', borderRadius: 4, whiteSpace: 'nowrap',
                   }}
                 >
-                  {row.name || '根节点'}
+                  {row.name || t('Root node')}
                 </span>
               ) : (
                 <Input
-                  size="small" value={row.name} placeholder="字段名"
+                  size="small" value={row.name} placeholder={t('Field name')}
                   onChange={(e) => patch(row.key, { name: e.target.value })}
                 />
               )}
@@ -187,7 +188,7 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
             {/* 必填（root/ITEMS 无意义） */}
             <span style={{ width: 60, textAlign: 'center' }}>
               {!row.locked && (
-                <Tooltip title="必填">
+                <Tooltip title={t('Required')}>
                   <Button
                     size="small" type="text"
                     style={{ padding: 0, width: 24, color: row.required ? '#ff4d4f' : PALETTE.textTertiary, fontWeight: 700 }}
@@ -202,7 +203,7 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
             <span style={{ flex: 1, minWidth: 0 }}>
               {!row.locked && (
                 <Input
-                  size="small" value={row.defaultValue} placeholder="默认值"
+                  size="small" value={row.defaultValue} placeholder={t('Default')}
                   onChange={(e) => patch(row.key, { defaultValue: e.target.value })}
                 />
               )}
@@ -210,7 +211,7 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
             {/* 说明 */}
             <span style={{ flex: 1, minWidth: 0 }}>
               <Input
-                size="small" value={row.description} placeholder="说明"
+                size="small" value={row.description} placeholder={t('Description')}
                 onChange={(e) => patch(row.key, { description: e.target.value })}
               />
             </span>
@@ -220,14 +221,14 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
                 <Button
                   type="text" size="small" icon={<PlusOutlined />}
                   style={{ color: PALETTE.textTertiary }}
-                  title="添加子字段"
+                  title={t('Add child field')}
                   onClick={addItem}
                 />
               )}
               {row.type === 'array' && (isItems ? (
                 <Button
                   type="text" size="small" icon={<PlusOutlined />}
-                  style={{ color: PALETTE.textTertiary }} title="定义元素结构"
+                  style={{ color: PALETTE.textTertiary }} title={t('Define item structure')}
                   onClick={() => addChild(row.key, newRow())}
                 />
               ) : null)}
@@ -235,7 +236,7 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
               {!row.locked && parentType !== 'array' && (
                 <Button
                   type="text" size="small" icon={<MinusOutlined />}
-                  style={{ color: PALETTE.textTertiary }} title="删除字段"
+                  style={{ color: PALETTE.textTertiary }} title={t('Delete field')}
                   onClick={() => removeRow(row.key)}
                 />
               )}
@@ -250,11 +251,11 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
             style={{ color: PALETTE.textTertiary }}
             onClick={() => addChild(root.key, newRow())}
           >
-            添加字段
+            {t('Add field')}
           </Button>
         )}
         <span style={{ fontSize: 11, color: PALETTE.textTertiary, alignSelf: 'center' }}>
-          object 类型可添加子字段；array 通过 ITEMS 行定义元素结构
+          {t('object rows accept child fields; arrays define their item structure via the ITEMS row')}
         </span>
       </div>
     </div>

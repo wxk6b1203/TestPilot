@@ -7,6 +7,7 @@ import { del, get } from '../../api'
 import type { ListResp } from '../../api'
 import { PALETTE } from '../../theme'
 import { message } from '../../messageBridge'
+import { t } from '../../i18n'
 
 interface TrashSession {
   id: string
@@ -45,7 +46,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
   const purge = async (id: string) => {
     try {
       await del(`/api/v1/copilot/trash/${id}`)
-      message.success('已彻底删除')
+      message.success(t('Permanently deleted'))
       // 当前页删空则回退一页
       const left = total - 1
       const maxPage = Math.max(1, Math.ceil(left / pageSize))
@@ -63,15 +64,15 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
         padding: '8px 12px', borderBottom: `1px solid ${PALETTE.border}`,
         display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0,
       }}>
-        <Button size="small" icon={<ArrowLeftOutlined />} onClick={onBack}>返回对话</Button>
-        <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>回收站</span>
-        <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>30 天后自动清理</span>
+        <Button size="small" icon={<ArrowLeftOutlined />} onClick={onBack}>{t('Back to chat')}</Button>
+        <span style={{ fontWeight: 600, fontSize: 14, color: PALETTE.text }}>{t('Trash')}</span>
+        <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>{t('Auto-purged after 30 days')}</span>
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: 12 }}>
         {items.length === 0 ? (
           <div style={{ textAlign: 'center', color: PALETTE.textTertiary, paddingTop: 80 }}>
             <DeleteOutlined style={{ fontSize: 28 }} />
-            <div style={{ marginTop: 8 }}>回收站是空的</div>
+            <div style={{ marginTop: 8 }}>{t('Trash is empty')}</div>
           </div>
         ) : (<>
           {items.map((item) => (
@@ -84,18 +85,18 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
               }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>
-                <Typography.Text ellipsis style={{ fontSize: 13 }}>{item.title || '新对话'}</Typography.Text>
+                <Typography.Text ellipsis style={{ fontSize: 13 }}>{item.title || t('New chat')}</Typography.Text>
                 <div style={{ fontSize: 12, color: PALETTE.textTertiary, marginTop: 2 }}>
-                  {item.message_count} 条消息 · 删除于 {formatTime(item.deleted_at)}
+                  {t('{n} messages · deleted {time}', { n: item.message_count, time: formatTime(item.deleted_at) })}
                 </div>
               </div>
               <Popconfirm
-                title="彻底删除后不可恢复"
-                okText="彻底删除"
+                title={t('Permanently deleted items cannot be recovered')}
+                okText={t('Delete forever')}
                 okButtonProps={{ danger: true }}
                 onConfirm={() => void purge(item.id)}
               >
-                <Button size="small" danger icon={<DeleteOutlined />}>彻底删除</Button>
+                <Button size="small" danger icon={<DeleteOutlined />}>{t('Delete forever')}</Button>
               </Popconfirm>
             </div>
           ))}
@@ -107,7 +108,7 @@ export default function TrashView({ onBack }: { onBack: () => void }) {
           <Pagination
             size="small" current={page} pageSize={pageSize} total={total}
             showSizeChanger pageSizeOptions={[10, 20, 50]}
-            showTotal={(t) => `共 ${t} 条`}
+            showTotal={(total) => t('{total} items in total', { total })}
             onChange={(pg, ps) => {
               setPage(pg)
               setPageSize(ps)

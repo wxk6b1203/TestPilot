@@ -12,6 +12,7 @@ import type { Kv } from '../components/KvEditor'
 import { PALETTE } from '../theme'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 type TabKey = 'grpc' | 'proto'
 
@@ -38,7 +39,7 @@ function parseJson(text: string, label: string): any {
   try {
     return JSON.parse(text)
   } catch (e: any) {
-    throw new Error(`${label} 不是合法 JSON：${e.message}`)
+    throw new Error(t('{label}: invalid JSON — {msg}', { label, msg: e.message }))
   }
 }
 
@@ -133,7 +134,7 @@ export default function GrpcApis() {
   }
   const saveGrpc = async () => {
     if (!draft.fullService.trim() || !draft.method.trim()) {
-      message.error('full_service 与 method 必填')
+      message.error(t('full_service and method are required'))
       return
     }
     try {
@@ -152,12 +153,12 @@ export default function GrpcApis() {
       if (tls_settings !== undefined) payload.tls_settings = tls_settings
       if (selectedGrpcId) {
         await put(`/api/v1/grpc-apis/${selectedGrpcId}`, payload)
-        message.success('已保存')
+        message.success(t('Saved'))
         setSavedGrpc(JSON.stringify(draft))
       } else {
         const r = await post<GrpcApi>('/api/v1/grpc-apis', payload)
         setSelectedGrpcId(r.id)
-        message.success('已创建')
+        message.success(t('Created'))
         setSavedGrpc(JSON.stringify(draft))
       }
       loadGrpc()
@@ -169,7 +170,7 @@ export default function GrpcApis() {
     if (!selectedGrpcId) return
     try {
       await del(`/api/v1/grpc-apis/${selectedGrpcId}`)
-      message.success('已删除')
+      message.success(t('Deleted'))
       setSelectedGrpcId(undefined)
       setDraft({ ...EMPTY_GRPC })
       setSavedGrpc(JSON.stringify(EMPTY_GRPC))
@@ -193,7 +194,7 @@ export default function GrpcApis() {
   }
   const saveProto = async () => {
     if (!draftProto.filename.trim() || !draftProto.content.trim()) {
-      message.error('filename 与 content 必填')
+      message.error(t('filename and content are required'))
       return
     }
     const payload = {
@@ -204,12 +205,12 @@ export default function GrpcApis() {
     try {
       if (selectedProtoId) {
         await put(`/api/v1/proto-files/${selectedProtoId}`, payload)
-        message.success('已保存')
+        message.success(t('Saved'))
         setSavedProto(JSON.stringify(draftProto))
       } else {
         const r = await post<ProtoFile>('/api/v1/proto-files', payload)
         setSelectedProtoId(r.id)
-        message.success('已创建')
+        message.success(t('Created'))
         setSavedProto(JSON.stringify(draftProto))
       }
       loadProto()
@@ -222,7 +223,7 @@ export default function GrpcApis() {
     if (!selectedProtoId) return
     try {
       await del(`/api/v1/proto-files/${selectedProtoId}`)
-      message.success('已删除')
+      message.success(t('Deleted'))
       setSelectedProtoId(undefined)
       setDraftProto({ ...EMPTY_PROTO })
       setSavedProto(JSON.stringify(EMPTY_PROTO))
@@ -232,7 +233,7 @@ export default function GrpcApis() {
     }
   }
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const panel = (
     <div style={{ height: '100%', overflow: 'auto', padding: '6px 8px' }}>
@@ -242,13 +243,13 @@ export default function GrpcApis() {
         items={[
           {
             key: 'grpc',
-            label: <span style={{ fontWeight: 600, fontSize: 13 }}>gRPC 接口（{grpcApis.length}）</span>,
+            label: <span style={{ fontWeight: 600, fontSize: 13 }}>{t('gRPC APIs ({count})', { count: grpcApis.length })}</span>,
             children: (
               <div>
                 <Input
                   size="small" allowClear
                   prefix={<SearchOutlined style={{ color: PALETTE.textTertiary }} />}
-                  placeholder="搜索…" value={searchGrpc}
+                  placeholder={t('Search…')} value={searchGrpc}
                   onChange={(e) => setSearchGrpc(e.target.value)}
                 />
                 <div style={{ marginTop: 6 }}>
@@ -256,12 +257,12 @@ export default function GrpcApis() {
                     <PaneRow key={g.id} active={g.id === selectedGrpcId} onClick={() => pickGrpc(g)}>
                       <div style={{ fontFamily: 'monospace', fontSize: 12 }}>{g.full_service}.{g.method}</div>
                       <div style={{ fontSize: 11, color: PALETTE.textTertiary, marginTop: 2 }}>
-                        {g.address || '使用环境 base_url'}
+                        {g.address || t('use environment base_url')}
                       </div>
                     </PaneRow>
                   ))}
                   {grpcFiltered.length === 0 && (
-                    <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无数据</div>
+                    <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>{t('No data')}</div>
                   )}
                 </div>
               </div>
@@ -269,13 +270,13 @@ export default function GrpcApis() {
           },
           {
             key: 'proto',
-            label: <span style={{ fontWeight: 600, fontSize: 13 }}>Proto 文件（{protoFiles.length}）</span>,
+            label: <span style={{ fontWeight: 600, fontSize: 13 }}>{t('Proto files ({count})', { count: protoFiles.length })}</span>,
             children: (
               <div>
                 <Input
                   size="small" allowClear
                   prefix={<SearchOutlined style={{ color: PALETTE.textTertiary }} />}
-                  placeholder="搜索…" value={searchProto}
+                  placeholder={t('Search…')} value={searchProto}
                   onChange={(e) => setSearchProto(e.target.value)}
                 />
                 <div style={{ marginTop: 6 }}>
@@ -285,7 +286,7 @@ export default function GrpcApis() {
                     </PaneRow>
                   ))}
                   {protoFiltered.length === 0 && (
-                    <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无数据</div>
+                    <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>{t('No data')}</div>
                   )}
                 </div>
               </div>
@@ -303,29 +304,29 @@ export default function GrpcApis() {
         padding: '10px 16px', borderBottom: `1px solid ${PALETTE.border}`,
       }}>
         <Typography.Text strong style={{ fontSize: 14 }}>
-          {selectedGrpcId ? '编辑 gRPC 接口' : '新建 gRPC 接口'}
+          {selectedGrpcId ? t('Edit gRPC API') : t('New gRPC API')}
         </Typography.Text>
         <Space>
-          <Button size="small" icon={<PlusOutlined />} onClick={newGrpc}>新建</Button>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveGrpc}>保存</Button>
-          <Popconfirm title="删除该 gRPC 接口？" onConfirm={removeGrpc} disabled={!selectedGrpcId}>
-            <Button size="small" danger icon={<DeleteOutlined />} disabled={!selectedGrpcId}>删除</Button>
+          <Button size="small" icon={<PlusOutlined />} onClick={newGrpc}>{t('New')}</Button>
+          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveGrpc}>{t('Save')}</Button>
+          <Popconfirm title={t('Delete this gRPC API?')} onConfirm={removeGrpc} disabled={!selectedGrpcId}>
+            <Button size="small" danger icon={<DeleteOutlined />} disabled={!selectedGrpcId}>{t('Delete')}</Button>
           </Popconfirm>
         </Space>
       </div>
       <div style={{ padding: 16, maxWidth: 920 }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
-          <Field label="proto_ref（可选，关联 Proto 文件）">
+          <Field label={t('proto_ref (optional, link to a Proto file)')}>
             <Select
               allowClear
-              placeholder="不关联"
+              placeholder={t('Not linked')}
               style={{ width: '100%' }}
               value={draft.protoRef}
               onChange={(v) => setDraft({ ...draft, protoRef: v })}
               options={protoFiles.map((p) => ({ value: p.id, label: p.filename }))}
             />
           </Field>
-          <Field label="address（host:port，留空使用环境 base_url）">
+          <Field label={t('address (host:port; empty = environment base_url)')}>
             <Input
               placeholder="host:port"
               value={draft.address}
@@ -347,14 +348,14 @@ export default function GrpcApis() {
             />
           </Field>
         </div>
-        <Field label="deadline_ms（毫秒，可选）">
+        <Field label={t('deadline_ms (ms, optional)')}>
           <InputNumber
-            style={{ width: 240 }} min={0} placeholder="不限"
+            style={{ width: 240 }} min={0} placeholder={t('No limit')}
             value={draft.deadlineMs}
             onChange={(v) => setDraft({ ...draft, deadlineMs: v })}
           />
         </Field>
-        <Field label="request_message（JSON）">
+        <Field label={t('request_message (JSON)')}>
           <Input.TextArea
             rows={6}
             style={{ fontFamily: 'monospace', fontSize: 12 }}
@@ -370,7 +371,7 @@ export default function GrpcApis() {
             keyPlaceholder="key" valuePlaceholder="value"
           />
         </Field>
-        <Field label="tls_settings（JSON，可选）">
+        <Field label={t('tls_settings (JSON, optional)')}>
           <Input.TextArea
             rows={4}
             style={{ fontFamily: 'monospace', fontSize: 12 }}
@@ -381,7 +382,7 @@ export default function GrpcApis() {
         </Field>
         {envBase && (
           <div style={{ fontSize: 12, color: PALETTE.textTertiary }}>
-            环境 base_url：{envBase}（address 留空时使用）
+            {t('Environment base_url: {url} (used when address is empty)', { url: envBase })}
           </div>
         )}
       </div>
@@ -395,13 +396,13 @@ export default function GrpcApis() {
         padding: '10px 16px', borderBottom: `1px solid ${PALETTE.border}`,
       }}>
         <Typography.Text strong style={{ fontSize: 14 }}>
-          {selectedProtoId ? '编辑 Proto 文件' : '新建 Proto 文件'}
+          {selectedProtoId ? t('Edit Proto file') : t('New Proto file')}
         </Typography.Text>
         <Space>
-          <Button size="small" icon={<PlusOutlined />} onClick={newProto}>新建</Button>
-          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveProto}>保存</Button>
-          <Popconfirm title="删除该 Proto 文件？" onConfirm={removeProto} disabled={!selectedProtoId}>
-            <Button size="small" danger icon={<DeleteOutlined />} disabled={!selectedProtoId}>删除</Button>
+          <Button size="small" icon={<PlusOutlined />} onClick={newProto}>{t('New')}</Button>
+          <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveProto}>{t('Save')}</Button>
+          <Popconfirm title={t('Delete this Proto file?')} onConfirm={removeProto} disabled={!selectedProtoId}>
+            <Button size="small" danger icon={<DeleteOutlined />} disabled={!selectedProtoId}>{t('Delete')}</Button>
           </Popconfirm>
         </Space>
       </div>
@@ -433,8 +434,8 @@ export default function GrpcApis() {
         activeKey={activeTab}
         onChange={(k) => setActiveTab(k as TabKey)}
         items={[
-          { key: 'grpc', label: 'gRPC 编辑', children: grpcTab },
-          { key: 'proto', label: 'Proto 编辑', children: protoTab },
+          { key: 'grpc', label: t('gRPC editor'), children: grpcTab },
+          { key: 'proto', label: t('Proto editor'), children: protoTab },
         ]}
       />
       {guard}

@@ -12,25 +12,27 @@ import {
 } from '../api'
 import type { Environment, ListResp, Me, Project, TenantView } from '../api'
 import { PALETTE, SPACING } from '../theme'
+import { t } from '../i18n'
+import LangToggle from '../components/LangToggle'
 import type { LayoutCtx } from '../hooks/useLayout'
 import { message } from '../messageBridge'
 
 // 图标栏导航（IDE 式一级功能栏：图标在上、文字在下）
 const NAV = [
-  { path: '/apis', label: '接口', icon: <ApiOutlined /> },
-  { path: '/models', label: '结构', icon: <ApartmentOutlined /> }, // 数据模型（JSON Schema 结构定义）
-  { path: '/cases', label: '用例', icon: <ExperimentOutlined /> },
-  { path: '/suites', label: '套件', icon: <ClusterOutlined /> },
-  { path: '/scripts', label: '脚本', icon: <FileTextOutlined /> },
-  { path: '/plans', label: '计划', icon: <PlayCircleOutlined /> },
-  { path: '/runs', label: '运行', icon: <ThunderboltOutlined /> },
-  { path: '/stress', label: '压测', icon: <ThunderboltOutlined /> },
+  { path: '/apis', label: 'APIs', icon: <ApiOutlined /> },
+  { path: '/models', label: 'Models', icon: <ApartmentOutlined /> }, // 数据模型（JSON Schema 结构定义）
+  { path: '/cases', label: 'Cases', icon: <ExperimentOutlined /> },
+  { path: '/suites', label: 'Suites', icon: <ClusterOutlined /> },
+  { path: '/scripts', label: 'Scripts', icon: <FileTextOutlined /> },
+  { path: '/plans', label: 'Plans', icon: <PlayCircleOutlined /> },
+  { path: '/runs', label: 'Runs', icon: <ThunderboltOutlined /> },
+  { path: '/stress', label: 'Stress', icon: <ThunderboltOutlined /> },
   { path: '/grpc', label: 'gRPC', icon: <ApiOutlined /> },
-  { path: '/envs', label: '环境', icon: <EnvironmentOutlined /> },
-  { path: '/certs', label: '证书', icon: <SafetyCertificateOutlined /> },
-  { path: '/artifacts', label: '产物', icon: <FolderOutlined /> },
-  { path: '/projects', label: '项目', icon: <ProjectOutlined /> },
-  { path: '/admin', label: '管理', icon: <SettingOutlined />, admin: true },
+  { path: '/envs', label: 'Envs', icon: <EnvironmentOutlined /> },
+  { path: '/certs', label: 'Certs', icon: <SafetyCertificateOutlined /> },
+  { path: '/artifacts', label: 'Artifacts', icon: <FolderOutlined /> },
+  { path: '/projects', label: 'Projects', icon: <ProjectOutlined /> },
+  { path: '/admin', label: 'Admin', icon: <SettingOutlined />, admin: true },
   { path: '/workers', label: 'Worker', icon: <DesktopOutlined /> },
   { path: '/copilot', label: 'Copilot', icon: <RobotOutlined /> },
 ]
@@ -126,7 +128,7 @@ export default function Layout() {
         <span style={{ fontWeight: 700, fontSize: 15, color: PALETTE.text }}>TestPilot</span>
         <Select
           size="small" style={{ width: 180 }} value={projectId || undefined}
-          placeholder="选择项目"
+          placeholder={t('Select project')}
           options={projects.map((p) => ({ value: p.id, label: p.name }))}
           onChange={(v) => {
             setPid(v)
@@ -135,7 +137,7 @@ export default function Layout() {
         />
         <Select
           size="small" style={{ width: 150 }} value={envId || undefined}
-          placeholder="环境"
+          placeholder={t('Environment')}
           allowClear
           options={envs.map((e) => ({ value: e.id, label: e.name }))}
           onChange={(v) => {
@@ -144,6 +146,8 @@ export default function Layout() {
           }}
         />
         <span style={{ flex: 1 }} />
+        {/* 语言切换：持久化在 localStorage('tp_lang')，antd locale 与文案一起切换 */}
+        <LangToggle />
         {tenants.length > 0 && (
           <Dropdown
             menu={{
@@ -156,13 +160,13 @@ export default function Layout() {
             }}
           >
             <Typography.Link style={{ color: PALETTE.textSecondary, fontSize: 13 }}>
-              {tenants.find((t) => t.is_current)?.name ?? '租户'} <DownOutlined style={{ fontSize: 10 }} />
+              {tenants.find((item) => item.is_current)?.name ?? t('Tenant')} <DownOutlined style={{ fontSize: 10 }} />
             </Typography.Link>
           </Dropdown>
         )}
         <Dropdown
           menu={{
-            items: [{ key: 'logout', icon: <LogoutOutlined />, label: '退出登录' }],
+            items: [{ key: 'logout', icon: <LogoutOutlined />, label: t('Sign out') }],
             onClick: () => {
               setToken(null)
               nav('/login', { replace: true })
@@ -174,7 +178,7 @@ export default function Layout() {
               {(me?.user?.username ?? '?').slice(0, 1).toUpperCase()}
             </Avatar>
             <span style={{ fontSize: 13, color: PALETTE.text }}>
-              {me?.user?.display_name || me?.user?.username || '用户'}
+              {me?.user?.display_name || me?.user?.username || t('User')}
             </span>
             {me && <Tag style={{ margin: 0 }} color={me.role <= 2 ? 'blue' : 'default'}>{ROLE_NAMES[me.role]}</Tag>}
           </Space>
@@ -201,7 +205,7 @@ export default function Layout() {
                 }}
               >
                 <div style={{ fontSize: 18 }}>{n.icon}</div>
-                <div style={{ fontSize: 11 }}>{n.label}</div>
+                <div style={{ fontSize: 11 }}>{t(n.label)}</div>
               </div>
             )
           })}

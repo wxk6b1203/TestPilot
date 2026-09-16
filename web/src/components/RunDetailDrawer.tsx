@@ -4,13 +4,18 @@ import { useEffect, useState } from 'react'
 import { download, getToken, STATUS } from '../api'
 import type { Artifact, TestRun } from '../api'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 export function StatusTag({ v }: { v: number }) {
   const s = STATUS[v] || { text: String(v), color: 'default' }
   return <Badge status={s.color as any} text={s.text} />
 }
 
-const ART_KIND: Record<number, string> = { 1: '截图', 2: '视频', 3: 'Trace', 4: 'HAR', 5: '下载', 6: '日志' }
+// getter 每次读取求值：语言切换即时生效
+const ART_KIND: Record<number, string> = {
+  get 1() { return t('Screenshot') }, get 2() { return t('Video') }, get 3() { return 'Trace' },
+  get 4() { return 'HAR' }, get 5() { return t('Download') }, get 6() { return t('Log') },
+}
 
 function useArtifactUrl(id: string) {
   const [url, setUrl] = useState<string>()
@@ -36,7 +41,7 @@ function useArtifactUrl(id: string) {
 function ArtifactView({ a }: { a: Artifact }) {
   const url = useArtifactUrl(a.id)
   const name = a.uri.split('/').pop() || `artifact-${a.id}`
-  if (!url) return <Tag>{ART_KIND[a.kind] || a.kind} 加载中…</Tag>
+  if (!url) return <Tag>{ART_KIND[a.kind] || a.kind} {t('loading…')}</Tag>
   if (a.kind === 1) {
     return (
       <a href={url} target="_blank" rel="noreferrer">
@@ -44,10 +49,10 @@ function ArtifactView({ a }: { a: Artifact }) {
       </a>
     )
   }
-  const hint = a.kind === 3 ? '（可用 npx playwright show-trace 回放）' : ''
+  const hint = a.kind === 3 ? t('(replay with npx playwright show-trace)') : ''
   return (
     <Typography.Link href={url} download={name}>
-      {ART_KIND[a.kind] || '产物'}: {name}（{(a.size / 1024).toFixed(1)}KB）{hint}
+      {ART_KIND[a.kind] || t('Artifact')}: {name} ({(a.size / 1024).toFixed(1)}KB){hint}
     </Typography.Link>
   )
 }
@@ -62,7 +67,7 @@ export default function RunDetailDrawer({
 }) {
   return (
     <Drawer
-      title={run ? `运行 ${run.id.slice(-8)} — ${STATUS[run.status]?.text ?? run.status}` : '运行结果'}
+      title={run ? t('Run {id} — {status}', { id: run.id.slice(-8), status: STATUS[run.status]?.text ?? String(run.status) }) : t('Run result')}
       open={open}
       onClose={onClose}
       width={860}
@@ -78,7 +83,7 @@ export default function RunDetailDrawer({
                   .catch((e) => message.error(e.message))
               }}
             >
-              导出 JUnit
+              {t('Export JUnit')}
             </Button>
           </div>
           {run.summary?.error && (
@@ -121,15 +126,15 @@ export default function RunDetailDrawer({
                             <Tag color={a.passed ? 'success' : 'error'}>{a.passed ? 'PASS' : 'FAIL'}</Tag>
                             <Typography.Text>
                               target={a.assertion?.target} path={a.assertion?.path || '-'} op={a.assertion?.op}，
-                              实际 {a.actual || '-'}，期望 {a.assertion?.expected || '-'}（{a.message}）
+                              {t('actual {actual}, expected {expected} ({message})', { actual: a.actual || '-', expected: a.assertion?.expected || '-', message: a.message })}
                             </Typography.Text>
                           </div>
                         ))}
                         {s.request && (
                           <Descriptions size="small" column={1} style={{ marginTop: 8 }}
                             items={[
-                              { key: 'q', label: '请求', children: <pre style={{ margin: 0 }}>{JSON.stringify(s.request, null, 2)}</pre> },
-                              { key: 'p', label: '响应', children: <pre style={{ margin: 0, maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(s.response, null, 2)}</pre> },
+                              { key: 'q', label: t('Request'), children: <pre style={{ margin: 0 }}>{JSON.stringify(s.request, null, 2)}</pre> },
+                              { key: 'p', label: t('Response'), children: <pre style={{ margin: 0, maxHeight: 240, overflow: 'auto' }}>{JSON.stringify(s.response, null, 2)}</pre> },
                             ]}
                           />
                         )}

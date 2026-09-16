@@ -5,6 +5,7 @@ import { del, get, post, put } from '../api'
 import type { Certificate, ListResp } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // 证书管理页：当前为资产 CRUD（pem/p12 引用）。
 // cert_ref/key_ref 为统一凭证引用；Worker 实际加载客户端证书依赖密钥后端，暂属另议项。
@@ -56,10 +57,10 @@ export default function Certificates() {
     try {
       if (editing) {
         await put(`/api/v1/certificates/${editing.id}`, { ...values, project_id: projectId })
-        message.success('已保存')
+        message.success(t('Saved'))
       } else {
         await post('/api/v1/certificates', { ...values, project_id: projectId })
-        message.success('已创建')
+        message.success(t('Created'))
       }
       setOpen(false)
       void load()
@@ -71,7 +72,7 @@ export default function Certificates() {
   const remove = async (id: string) => {
     try {
       await del(`/api/v1/certificates/${id}`)
-      message.success('已删除')
+      message.success(t('Deleted'))
       void load()
     } catch (e: any) {
       message.error(e.message)
@@ -80,9 +81,9 @@ export default function Certificates() {
 
   return (
     <Card
-      title={`证书（共 ${total} 张）`}
+      title={t('Certificates ({total})', { total })}
       extra={(
-        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建证书</Button>
+        <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>{t('New certificate')}</Button>
       )}
       style={{ margin: 16 }}
     >
@@ -92,21 +93,21 @@ export default function Certificates() {
         dataSource={items}
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
         columns={[
-          { title: '名称', dataIndex: 'name' },
+          { title: t('Name'), dataIndex: 'name' },
           {
-            title: '类型', dataIndex: 'type', width: 100,
+            title: t('Type'), dataIndex: 'type', width: 100,
             render: (v: string) => <Tag color={v === 'p12' ? 'orange' : 'blue'}>{v || 'pem'}</Tag>,
           },
-          { title: '证书引用', dataIndex: 'cert_ref', ellipsis: true },
-          { title: '密钥引用', dataIndex: 'key_ref', ellipsis: true },
-          { title: '描述', dataIndex: 'description', ellipsis: true },
+          { title: t('Cert reference'), dataIndex: 'cert_ref', ellipsis: true },
+          { title: t('Key reference'), dataIndex: 'key_ref', ellipsis: true },
+          { title: t('Description'), dataIndex: 'description', ellipsis: true },
           {
-            title: '操作', width: 140,
+            title: t('Actions'), width: 140,
             render: (_, c) => (
               <Space>
-                <a onClick={() => openEdit(c)}>编辑</a>
-                <Popconfirm title="删除该证书？" onConfirm={() => remove(c.id)}>
-                  <a style={{ color: '#ff4d4f' }}>删除</a>
+                <a onClick={() => openEdit(c)}>{t('Edit')}</a>
+                <Popconfirm title={t('Delete this certificate?')} onConfirm={() => remove(c.id)}>
+                  <a style={{ color: '#ff4d4f' }}>{t('Delete')}</a>
                 </Popconfirm>
               </Space>
             ),
@@ -114,18 +115,18 @@ export default function Certificates() {
         ]}
       />
       <Modal
-        title={editing ? '编辑证书' : '新建证书'}
+        title={editing ? t('Edit certificate') : t('New certificate')}
         open={open}
         onCancel={() => setOpen(false)}
         onOk={submit}
         destroyOnHidden
-        okText="保存"
+        okText={t('Save')}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入名称' }]}>
-            <Input placeholder="例如：内部网关客户端证书" />
+          <Form.Item name="name" label={t('Name')} rules={[{ required: true, message: t('Enter a name') }]}>
+            <Input placeholder={t('e.g. internal gateway client certificate')} />
           </Form.Item>
-          <Form.Item name="type" label="类型" rules={[{ required: true }]}>
+          <Form.Item name="type" label={t('Type')} rules={[{ required: true }]}>
             <Select
               options={[
                 { value: 'pem', label: 'PEM' },
@@ -133,16 +134,16 @@ export default function Certificates() {
               ]}
             />
           </Form.Item>
-          <Form.Item name="cert_ref" label="证书引用 cert_ref">
+          <Form.Item name="cert_ref" label={t('Cert reference (cert_ref)')}>
             <Input placeholder="artifact://... 或密钥后端引用" />
           </Form.Item>
-          <Form.Item name="key_ref" label="私钥引用 key_ref">
+          <Form.Item name="key_ref" label={t('Private key reference (key_ref)')}>
             <Input placeholder="artifact://... 或密钥后端引用" />
           </Form.Item>
-          <Form.Item name="password_secret_ref" label="口令引用 password_secret_ref">
+          <Form.Item name="password_secret_ref" label={t('Password reference (password_secret_ref)')}>
             <Input placeholder="vault://... / secret_ref" />
           </Form.Item>
-          <Form.Item name="description" label="描述">
+          <Form.Item name="description" label={t('Description')}>
             <Input.TextArea rows={3} />
           </Form.Item>
         </Form>

@@ -5,6 +5,7 @@ import type { Environment, HttpApi, ListResp, TestCase } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 interface StressPlan {
   id: string
@@ -53,7 +54,7 @@ function SeriesChart({ points, series, height = 160, yFmt }: {
   yFmt?: (v: number) => string
 }) {
   const W = 760, H = height, PAD = 8
-  if (points.length < 2) return <Typography.Text type="secondary">暂无数据</Typography.Text>
+  if (points.length < 2) return <Typography.Text type="secondary">{t('No data')}</Typography.Text>
   const maxY = Math.max(0.0001, ...points.flatMap((p) => series.map((s) => Number(p[s.key]) || 0)))
   const x = (i: number) => PAD + (i / (points.length - 1)) * (W - 2 * PAD)
   const y = (v: number) => H - PAD - (v / maxY) * (H - 2 * PAD)
@@ -74,7 +75,7 @@ function SeriesChart({ points, series, height = 160, yFmt }: {
         {series.map((s) => (
           <span key={String(s.key)}><span style={{ color: s.color }}>●</span> {s.label}</span>
         ))}
-        <Typography.Text type="secondary">峰值 {yFmt ? yFmt(maxY) : maxY.toFixed(1)}</Typography.Text>
+        <Typography.Text type="secondary">{t('peak {v}', { v: yFmt ? yFmt(maxY) : maxY.toFixed(1) })}</Typography.Text>
       </Space>
     </div>
   )
@@ -115,8 +116,8 @@ export default function Stress() {
       .then((r) => setCases(r.items)).catch((e) => message.error(e.message))
     get<ListResp<Environment>>(`/api/v1/environments?project_id=${projectId}&page_size=100`)
       .then((r) => setEnvs(r.items)).catch((e) => message.error(e.message))
-    const t = setInterval(load, 30000) // 兜底对账；实时更新走 SSE
-    return () => clearInterval(t)
+    const timer = setInterval(load, 30000) // 兜底对账；实时更新走 SSE
+    return () => clearInterval(timer)
   }, [projectId])
 
   // 项目压测创建/收尾事件 → 刷新列表
@@ -148,7 +149,7 @@ export default function Stress() {
     !!detail,
   )
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const apiName = (id: string) => {
     const a = apis.find((x) => x.id === id)
@@ -162,12 +163,12 @@ export default function Stress() {
 
   return (
     <>
-      <Card title="压测计划" extra={
+      <Card title={t('Stress plans')} extra={
         <Space>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-            共 {planTotal} 条{planTotal > plans.length ? `（已加载前 ${plans.length} 条）` : ''}
+            {t('{total} in total', { total: planTotal })}{planTotal > plans.length ? t(' (loaded first {count})', { count: plans.length }) : ''}
           </Typography.Text>
-          <Button type="primary" onClick={() => setOpen(true)}>新建压测计划</Button>
+          <Button type="primary" onClick={() => setOpen(true)}>{t('New stress plan')}</Button>
         </Space>
       } style={{ marginBottom: 16 }}>
         <Table
@@ -176,31 +177,31 @@ export default function Stress() {
           pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
           columns={[
             {
-              title: '类型', dataIndex: 'target_type', width: 90,
-              render: (v: number) => <Tag color={v === 2 ? 'purple' : 'blue'}>{v === 2 ? '行为用例' : '接口'}</Tag>,
+              title: t('Type'), dataIndex: 'target_type', width: 90,
+              render: (v: number) => <Tag color={v === 2 ? 'purple' : 'blue'}>{v === 2 ? t('Behavior case') : t('API')}</Tag>,
             },
-            { title: '目标', dataIndex: 'target_id', render: (v: string, r: StressPlan) => (r.target_type === 2 ? caseName(v) : apiName(v)) },
-            { title: 'Worker 数', dataIndex: 'worker_count', width: 90 },
+            { title: t('Target'), dataIndex: 'target_id', render: (v: string, r: StressPlan) => (r.target_type === 2 ? caseName(v) : apiName(v)) },
+            { title: t('Workers'), dataIndex: 'worker_count', width: 90 },
             {
-              title: '负载', dataIndex: 'load_profile', render: (v: any) => {
+              title: t('Load'), dataIndex: 'load_profile', render: (v: any) => {
                 const ramp = v?.ramp?.map((s: any) => `${s.at}→${s.target}`).join(' / ') || '-'
                 return <Typography.Text code style={{ fontSize: 12 }}>{ramp} · {v?.duration}</Typography.Text>
               },
             },
             {
-              title: '操作', width: 200,
+              title: t('Actions'), width: 200,
               render: (_, r) => (
                 <Space>
                   <Button size="small" type="primary" onClick={async () => {
                     try {
                       const res = await post(`/api/v1/stress-plans/${r.id}/run`, {})
-                      message.success(`压测已触发: ${res.run_id}`)
+                      message.success(t('Stress run triggered: {id}', { id: res.run_id }))
                       load()
                     } catch (e: any) {
                       message.error(e.message)
                     }
-                  }}>发压</Button>
-                  <Popconfirm title="删除计划？" onConfirm={async () => {
+                  }}>{t('Start stress')}</Button>
+                  <Popconfirm title={t('Delete this plan?')} onConfirm={async () => {
                     try {
                       await del(`/api/v1/stress-plans/${r.id}`)
                       load()
@@ -208,7 +209,7 @@ export default function Stress() {
                       message.error(e.message)
                     }
                   }}>
-                    <Button danger size="small">删除</Button>
+                    <Button danger size="small">{t('Delete')}</Button>
                   </Popconfirm>
                 </Space>
               ),
@@ -217,9 +218,9 @@ export default function Stress() {
         />
       </Card>
 
-      <Card title="压测运行" extra={
+      <Card title={t('Stress runs')} extra={
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          共 {runTotal} 条{runTotal > runs.length ? `（已加载前 ${runs.length} 条）` : ''}
+          {t('{total} in total', { total: runTotal })}{runTotal > runs.length ? t(' (loaded first {count})', { count: runs.length }) : ''}
         </Typography.Text>
       }>
         <Table
@@ -228,20 +229,20 @@ export default function Stress() {
           pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
           columns={[
             { title: 'ID', dataIndex: 'id', width: 190, render: (v: string) => <Typography.Text copyable={{ text: v }}>{v.slice(-8)}</Typography.Text> },
-            { title: '状态', dataIndex: 'status', width: 100, render: (v: number) => <Tag color={(STATUS[v]?.color as string) || 'default'}>{STATUS[v]?.text || v}</Tag> },
+            { title: t('Status'), dataIndex: 'status', width: 100, render: (v: number) => <Tag color={(STATUS[v]?.color as string) || 'default'}>{STATUS[v]?.text || v}</Tag> },
             {
-              title: '摘要', dataIndex: 'summary',
+              title: t('Summary'), dataIndex: 'summary',
               render: (v: any) => v ? (
                 <Space size={4} wrap>
-                  <Tag>均值 {Number(v.avg_rps ?? 0).toFixed(0)} rps</Tag>
-                  <Tag>p95峰值 {Number(v.max_p95_ms ?? 0).toFixed(0)}ms</Tag>
-                  <Tag color={Number(v.avg_error_rate) > 0 ? 'error' : 'success'}>错误率 {(Number(v.avg_error_rate ?? 0) * 100).toFixed(2)}%</Tag>
+                  <Tag>{t('avg {v}', { v: `${Number(v.avg_rps ?? 0).toFixed(0)} rps` })}</Tag>
+                  <Tag>{t('p95 peak {v}', { v: `${Number(v.max_p95_ms ?? 0).toFixed(0)}ms` })}</Tag>
+                  <Tag color={Number(v.avg_error_rate) > 0 ? 'error' : 'success'}>{t('error rate {v}', { v: `${(Number(v.avg_error_rate ?? 0) * 100).toFixed(2)}%` })}</Tag>
                 </Space>
               ) : '-',
             },
-            { title: '开始时间', dataIndex: 'started_at', width: 170, render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
+            { title: t('Started at'), dataIndex: 'started_at', width: 170, render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
             {
-              title: '操作', width: 90,
+              title: t('Actions'), width: 90,
               render: (_, r) => (
                 <Typography.Link onClick={async () => {
                   try {
@@ -249,23 +250,23 @@ export default function Stress() {
                   } catch (e: any) {
                     message.error(e.message)
                   }
-                }}>报告</Typography.Link>
+                }}>{t('Report')}</Typography.Link>
               ),
             },
           ]}
         />
       </Card>
 
-      <Modal title="新建压测计划" open={open} width={640} onCancel={() => setOpen(false)} onOk={() => form.submit()} destroyOnHidden>
+      <Modal title={t('New stress plan')} open={open} width={640} onCancel={() => setOpen(false)} onOk={() => form.submit()} destroyOnHidden>
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
-          对单个接口或低代码行为用例发压（Locust 库模式，独立子进程 + gevent）。ramp 为阶梯加压（at=起点，target=总并发）。
+          {t('Stress a single API or a low-code behavior case (Locust library mode, dedicated subprocess + gevent). ramp is stepped ramp-up: at = start time, target = total concurrency.')}
         </Typography.Paragraph>
         <Form form={form} layout="vertical" onFinish={async (v) => {
           let profile: any
           try {
             profile = JSON.parse(v.load_profile)
           } catch (e: any) {
-            message.error(`load_profile 不是合法 JSON：${e.message}`)
+            message.error(t('Invalid load_profile JSON: {msg}', { msg: e.message }))
             return
           }
           try {
@@ -277,37 +278,37 @@ export default function Stress() {
             setOpen(false)
             form.resetFields()
             load()
-            message.success('已创建')
+            message.success(t('Created'))
           } catch (e: any) {
             message.error(e.message)
           }
         }}>
-          <Form.Item name="target_type" label="目标类型" initialValue={1}>
+          <Form.Item name="target_type" label={t('Target type')} initialValue={1}>
             <Segmented
-              options={[{ label: '接口', value: 1 }, { label: '行为用例', value: 2 }]}
+              options={[{ label: t('API'), value: 1 }, { label: t('Behavior case'), value: 2 }]}
               onChange={() => form.setFieldValue('target_id', undefined)}
             />
           </Form.Item>
-          <Form.Item name="target_id" label="目标" rules={[{ required: true, message: '请选择目标' }]}>
+          <Form.Item name="target_id" label={t('Target')} rules={[{ required: true, message: t('Select a target') }]}>
             <Select
               showSearch optionFilterProp="label"
-              placeholder={targetType === 2 ? '选择低代码用例' : '选择接口'}
+              placeholder={targetType === 2 ? t('Select a low-code case') : t('Select an API')}
               options={targetType === 2
-                ? lowCodeCases.map((c) => ({ value: c.id, label: `[用例] ${c.name}` }))
+                ? lowCodeCases.map((c) => ({ value: c.id, label: `[${t('case')}] ${c.name}` }))
                 : apis.map((a) => ({ value: a.id, label: `[${HTTP_METHODS[a.method]?.text || a.method}] ${a.uri}` }))}
             />
           </Form.Item>
-          <Form.Item name="env_id" label="环境" rules={[{ required: true }]}>
+          <Form.Item name="env_id" label={t('Environment')} rules={[{ required: true }]}>
             <Select options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))} />
           </Form.Item>
           <Form.Item name="load_profile" label="LoadProfile（JSON）" initialValue={PROFILE_EXAMPLE} rules={[{ required: true }]}>
             <Input.TextArea rows={9} style={{ fontFamily: 'monospace', fontSize: 12 }} />
           </Form.Item>
           <Space size={16}>
-            <Form.Item name="worker_count" label="发压 Worker 数" initialValue={1}>
+            <Form.Item name="worker_count" label={t('Stress worker count')} initialValue={1}>
               <InputNumber min={1} max={16} />
             </Form.Item>
-            <Form.Item name="metrics_interval_ms" label="采样间隔 ms" initialValue={1000}>
+            <Form.Item name="metrics_interval_ms" label={t('Metrics interval (ms)')} initialValue={1000}>
               <InputNumber min={200} max={10000} step={100} />
             </Form.Item>
           </Space>
@@ -315,7 +316,7 @@ export default function Stress() {
       </Modal>
 
       <Drawer
-        title={detail ? `压测报告 ${detail.id.slice(-8)}` : ''}
+        title={detail ? t('Stress report {id}', { id: detail.id.slice(-8) }) : ''}
         open={!!detail}
         onClose={() => setDetail(null)}
         width={860}
@@ -324,25 +325,25 @@ export default function Stress() {
           <Space orientation="vertical" style={{ width: '100%' }} size={16}>
             {detail.summary && (
               <Space size={8} wrap>
-                <Tag>样本 {detail.summary.samples}</Tag>
-                <Tag>均值 {Number(detail.summary.avg_rps ?? 0).toFixed(1)} rps</Tag>
-                <Tag>峰值 {Number(detail.summary.peak_rps ?? 0).toFixed(1)} rps</Tag>
-                <Tag>p95峰值 {Number(detail.summary.max_p95_ms ?? 0).toFixed(1)} ms</Tag>
-                <Tag>最大并发 {detail.summary.max_concurrency}</Tag>
+                <Tag>{t('samples {n}', { n: detail.summary.samples })}</Tag>
+                <Tag>{t('avg {v}', { v: `${Number(detail.summary.avg_rps ?? 0).toFixed(1)} rps` })}</Tag>
+                <Tag>{t('peak {v}', { v: `${Number(detail.summary.peak_rps ?? 0).toFixed(1)} rps` })}</Tag>
+                <Tag>{t('p95 peak {v}', { v: `${Number(detail.summary.max_p95_ms ?? 0).toFixed(1)} ms` })}</Tag>
+                <Tag>{t('max concurrency {n}', { n: detail.summary.max_concurrency })}</Tag>
                 <Tag color={Number(detail.summary.avg_error_rate) > 0.01 ? 'error' : 'success'}>
-                  错误率 {(Number(detail.summary.avg_error_rate ?? 0) * 100).toFixed(2)}%
+                  {t('error rate {v}', { v: `${(Number(detail.summary.avg_error_rate ?? 0) * 100).toFixed(2)}%` })}
                 </Tag>
               </Space>
             )}
             <div>
-              <Typography.Title level={5}>RPS / 并发</Typography.Title>
+              <Typography.Title level={5}>{t('RPS / concurrency')}</Typography.Title>
               <SeriesChart points={detail.metrics || []} series={[
                 { key: 'rps', label: 'RPS', color: '#1677ff' },
-                { key: 'concurrency', label: '并发', color: '#722ed1' },
+                { key: 'concurrency', label: t('Concurrency'), color: '#722ed1' },
               ]} yFmt={(v) => v.toFixed(0)} />
             </div>
             <div>
-              <Typography.Title level={5}>延迟（ms）</Typography.Title>
+              <Typography.Title level={5}>{t('Latency (ms)')}</Typography.Title>
               <SeriesChart points={detail.metrics || []} series={[
                 { key: 'latency_p50_ms', label: 'p50', color: '#52c41a' },
                 { key: 'latency_p95_ms', label: 'p95', color: '#fa8c16' },
@@ -350,9 +351,9 @@ export default function Stress() {
               ]} yFmt={(v) => `${v.toFixed(1)}ms`} />
             </div>
             <div>
-              <Typography.Title level={5}>错误率</Typography.Title>
+              <Typography.Title level={5}>{t('Error rate')}</Typography.Title>
               <SeriesChart points={detail.metrics || []} series={[
-                { key: 'error_rate', label: '错误率', color: '#f5222d' },
+                { key: 'error_rate', label: t('Error rate'), color: '#f5222d' },
               ]} yFmt={(v) => `${(v * 100).toFixed(1)}%`} />
             </div>
           </Space>

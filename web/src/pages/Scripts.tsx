@@ -12,6 +12,7 @@ import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 const SCRIPT_TEMPLATE = `async def run(ctx):
     # 沙箱内无网络出口：HTTP 经能力桥由 Worker 代执行
@@ -92,11 +93,11 @@ export default function Scripts() {
 
   const save = async () => {
     if (!name.trim()) {
-      message.error('名称必填')
+      message.error(t('Name is required'))
       return
     }
     if (!content.trim()) {
-      message.error('内容必填')
+      message.error(t('Content is required'))
       return
     }
     if (saving) return
@@ -111,12 +112,12 @@ export default function Scripts() {
     try {
       if (id) {
         await put(`/api/v1/scripts/${id}`, payload)
-        message.success('已保存')
+        message.success(t('Saved'))
         setSavedSnap(JSON.stringify({ n: name.trim(), d: description, l: language.trim() || 'python', c: content }))
         loadScripts()
       } else {
         const r = await post<Script>('/api/v1/scripts', payload)
-        message.success('已创建')
+        message.success(t('Created'))
         allowOnce()
         nav(`/scripts/${r.id}/edit`)
       }
@@ -131,7 +132,7 @@ export default function Scripts() {
 
   const create = async () => {
     if (!createName.trim()) {
-      message.error('请输入脚本名称')
+      message.error(t('Enter a script name'))
       return
     }
     try {
@@ -144,7 +145,7 @@ export default function Scripts() {
       })
       setCreateOpen(false)
       setCreateName('')
-      message.success('已创建')
+      message.success(t('Created'))
       allowOnce()
       nav(`/scripts/${r.id}/edit`)
     } catch (e: any) {
@@ -155,7 +156,7 @@ export default function Scripts() {
   const removeScript = async (s: Script) => {
     try {
       await del(`/api/v1/scripts/${s.id}`)
-      message.success('已删除')
+      message.success(t('Deleted'))
       if (s.id === id) {
         allowOnce()
         nav('/scripts', { replace: true })
@@ -166,16 +167,16 @@ export default function Scripts() {
     }
   }
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const panel = (
     <PanelList
-      title="脚本"
+      title={t('Scripts')}
       search={search}
       onSearch={setSearch}
       extra={(
         <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>
-          新建
+          {t('New')}
         </Button>
       )}
       data={filtered}
@@ -191,8 +192,8 @@ export default function Scripts() {
               {s.language || 'python'}
             </Tag>
             <Popconfirm
-              title="删除脚本？"
-              description="删除后不可恢复"
+              title={t('Delete this script?')}
+              description={t('This cannot be undone')}
               onConfirm={async () => {
                 await removeScript(s)
               }}
@@ -207,11 +208,11 @@ export default function Scripts() {
 
   const toolbar = (
     <Space>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/scripts')}>返回</Button>
-      <Button type="primary" loading={saving} onClick={save}>保存</Button>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/scripts')}>{t('Back')}</Button>
+      <Button type="primary" loading={saving} onClick={save}>{t('Save')}</Button>
       {id && (
         <Typography.Text
-          copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+          copyable={{ text: id, tooltips: [t('Copy ID'), t('Copied')] }}
           style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
         >
           ID {id}
@@ -222,25 +223,25 @@ export default function Scripts() {
 
   const editor = (
     <div style={{ padding: 16, maxWidth: 1000 }}>
-      <Field label="名称">
+      <Field label={t('Name')}>
         <Input
           value={name} onChange={(e) => setName(e.target.value)}
-          placeholder="脚本名称" style={{ maxWidth: 480 }}
+          placeholder={t('Script name')} style={{ maxWidth: 480 }}
         />
       </Field>
-      <Field label="描述">
+      <Field label={t('Description')}>
         <Input
           value={description} onChange={(e) => setDescription(e.target.value)}
-          placeholder="脚本描述" style={{ maxWidth: 480 }}
+          placeholder={t('Script description')} style={{ maxWidth: 480 }}
         />
       </Field>
-      <Field label="语言">
+      <Field label={t('Language')}>
         <Input
           value={language} onChange={(e) => setLanguage(e.target.value)}
           placeholder="python" style={{ width: 160 }}
         />
       </Field>
-      <Field label="内容">
+      <Field label={t('Content')}>
         <Input.TextArea
           rows={18}
           style={{ fontFamily: 'monospace', fontSize: 12 }}
@@ -254,8 +255,8 @@ export default function Scripts() {
 
   const placeholder = (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 }}>
-      <Empty description="从左侧选择脚本，或新建一个脚本" />
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>新建脚本</Button>
+      <Empty description={t('Pick a script on the left, or create a new one')} />
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>{t('New script')}</Button>
     </div>
   )
 
@@ -265,9 +266,9 @@ export default function Scripts() {
         {editing ? editor : placeholder}
       </IdeLayout>
       <Modal
-        title="新建脚本"
+        title={t('New script')}
         open={createOpen}
-        okText="创建"
+        okText={t('Create')}
         onCancel={() => setCreateOpen(false)}
         onOk={create}
         destroyOnHidden
@@ -276,7 +277,7 @@ export default function Scripts() {
           value={createName}
           onChange={(e) => setCreateName(e.target.value)}
           onPressEnter={create}
-          placeholder="脚本名称"
+          placeholder={t('Script name')}
         />
       </Modal>
       {guard}

@@ -5,6 +5,7 @@ import { Button, Space, Tag, Typography } from 'antd'
 import { ClockCircleOutlined, DownOutlined, LoadingOutlined, RightOutlined } from '@ant-design/icons'
 import MarkdownView from '../../components/MarkdownView'
 import { PALETTE } from '../../theme'
+import { t } from '../../i18n'
 
 // busy 期间的状态条：计时状态放在独立组件里，避免每秒触发 Copilot 整页重渲染
 export function BusyIndicator({ idleTimeoutLabel }: { idleTimeoutLabel: string }) {
@@ -22,9 +23,9 @@ export function BusyIndicator({ idleTimeoutLabel }: { idleTimeoutLabel: string }
       padding: '2px 0 6px', fontSize: 12, color: PALETTE.textSecondary,
     }}>
       <LoadingOutlined spin style={{ color: PALETTE.primary }} />
-      <span>Copilot 正在处理，已等待 {seconds}s</span>
+      <span>{t('Copilot is working; waited {n}s', { n: seconds })}</span>
       <span style={{ color: PALETTE.textTertiary }}>
-        · 连续 {idleTimeoutLabel}无新输出会自动停止
+        · {t('no new output for {label} stops it automatically', { label: idleTimeoutLabel })}
       </span>
       <ClockCircleOutlined />
     </div>
@@ -54,7 +55,7 @@ const MAX_RICH_TEXT_CHARS = 200_000
 
 function truncateForDisplay(text: string, max: number): string {
   if (text.length <= max) return text
-  return `${text.slice(0, max)}\n…[内容过长，显示已截断，共 ${text.length} 字符]`
+  return `${text.slice(0, max)}\n${t('…[truncated; {n} characters in total]', { n: text.length })}`
 }
 
 // 工具卡 input/output 的显示值：
@@ -108,7 +109,7 @@ export const PartView = memo(function PartView({ part, role, onRespond }: {
   }
   if (part.type === 'reasoning') {
     return (
-      <Typography.Paragraph type="secondary" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }} ellipsis={{ expandable: true, symbol: '思考过程' }}>
+      <Typography.Paragraph type="secondary" style={{ fontSize: 12, whiteSpace: 'pre-wrap' }} ellipsis={{ expandable: true, symbol: t('Reasoning') }}>
         {part.text}
       </Typography.Paragraph>
     )
@@ -147,7 +148,7 @@ function ToolCard({ part, toolName, onRespond }: {
           size="small" type="text"
           icon={expanded ? <DownOutlined /> : <RightOutlined />}
           onClick={() => setUserExpanded(!expanded)}
-          title={expanded ? '收起' : '展开'}
+          title={expanded ? t('Collapse') : t('Expand')}
           style={{ width: 20, height: 20, padding: 0 }}
         />
         <Tag color="blue">{toolName}</Tag>
@@ -160,11 +161,11 @@ function ToolCard({ part, toolName, onRespond }: {
       )}
       {expanded && part.state === 'approval-requested' && (
         <Space>
-          <Button size="small" type="primary" onClick={() => onRespond(part, true)}>批准执行</Button>
-          <Button size="small" danger onClick={() => onRespond(part, false)}>拒绝</Button>
+          <Button size="small" type="primary" onClick={() => onRespond(part, true)}>{t('Approve & run')}</Button>
+          <Button size="small" danger onClick={() => onRespond(part, false)}>{t('Reject')}</Button>
         </Space>
       )}
-      {expanded && part.state === 'approval-responded' && <Typography.Text type="secondary">已审批，等待执行…</Typography.Text>}
+      {expanded && part.state === 'approval-responded' && <Typography.Text type="secondary">{t('Approved; waiting for execution…')}</Typography.Text>}
       {expanded && part.state === 'output-available' && part.output != null && (
         <pre style={TOOL_PRE_STYLE}>
           {stringifyToolValue(part.output)}
@@ -177,12 +178,12 @@ function ToolCard({ part, toolName, onRespond }: {
 
 function StateTag({ state }: { state?: string }) {
   const map: Record<string, [string, string]> = {
-    'input-streaming': ['default', '参数生成中'],
-    'input-available': ['default', '待调用'],
-    'approval-requested': ['orange', '待审批'],
-    'approval-responded': ['gold', '已审批'],
-    'output-available': ['green', '已完成'],
-    'output-error': ['red', '失败'],
+    'input-streaming': ['default', t('generating args')],
+    'input-available': ['default', t('pending call')],
+    'approval-requested': ['orange', t('awaiting approval')],
+    'approval-responded': ['gold', t('approved')],
+    'output-available': ['green', t('done')],
+    'output-error': ['red', t('failed')],
   }
   const [color, label] = map[state || ''] || ['default', state || '']
   return <Tag color={color}>{label}</Tag>

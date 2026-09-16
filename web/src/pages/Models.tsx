@@ -7,6 +7,7 @@ import ModelTreePanel from '../components/ModelTreePanel'
 import ModelDetail from './ModelDetail'
 import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 
 // 结构（数据模型）工作区：独立一级页签——左侧模型目录树，右侧模型编辑器。
 // 与接口页同构：页面只负责路由/工作区协调，树数据与目录管理都在 ModelTreePanel。
@@ -31,7 +32,7 @@ export default function Models() {
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: PALETTE.bgLayout, color: PALETTE.textTertiary,
       }}>
-        请先选择项目
+        {t('Select a project first')}
       </div>
     )
 
@@ -57,9 +58,9 @@ export default function Models() {
       justifyContent: 'center', gap: 12, background: '#FFFFFF',
     }}>
       <div style={{ color: PALETTE.textTertiary }}>
-        {workspaceNotice ?? '从左侧选择数据模型，或新建一个结构'}
+        {workspaceNotice ?? t('Pick a data model on the left, or create a new one')}
       </div>
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewModel()}>新建结构</Button>
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => openNewModel()}>{t('New model')}</Button>
     </div>
   )
 
@@ -78,7 +79,7 @@ export default function Models() {
           onNewModel={openNewModel}
           onDeleted={(deletedId) => {
             if (deletedId === id) {
-              setWorkspaceNotice('当前结构已删除，请重新选择')
+              setWorkspaceNotice(t('This model was deleted; pick another one'))
               nav('/models', { replace: true, state: null })
             }
           }}

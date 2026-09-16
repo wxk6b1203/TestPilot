@@ -12,6 +12,7 @@ import { jsonToSchema, schemaToExample } from '../lib/jsonSchema'
 import type { JsonSchema } from '../lib/jsonSchema'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 import useSaveShortcut from '../hooks/useSaveShortcut'
 
 // 数据模型（结构）编辑页：JSON Schema 形态的结构定义。
@@ -72,7 +73,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
         applySchema(jsonToSchema(parsed))
       } else {
         if (parsed && typeof parsed === 'object' && !parsed.type) {
-          message.error('不是合法的 JSON Schema（缺少 type 字段）')
+          message.error(t('Not a valid JSON Schema (missing "type" field)'))
           return
         }
         applySchema(parsed)
@@ -80,7 +81,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
       setImportModal(undefined)
       setImportText('')
     } catch {
-      message.error('JSON 解析失败，请检查格式')
+      message.error(t('Failed to parse JSON; check the format'))
     }
   }
 
@@ -93,20 +94,20 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
   async function save() {
     try {
       if (!name.trim() && !savedId) {
-        message.warning('请输入结构名称')
+        message.warning(t('Enter a model name'))
         return
       }
       if (savedId) {
         await put<DataModel>(`/api/v1/models/${savedId}`, payload())
         setSavedSnapshot(snapshot())
-        message.success('已保存')
+        message.success(t('Saved'))
         onSaved?.()
       } else {
         const r = await post<DataModel>('/api/v1/models', {
           ...payload(),
           parent_node_id: createParentId || undefined,
         })
-        message.success('已保存')
+        message.success(t('Saved'))
         setSavedSnapshot(snapshot())
         onSaved?.()
         nav(`/models/${r.id}`, { replace: true })
@@ -125,9 +126,9 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
       const parsed = JSON.parse(schemaRaw)
       applySchema(parsed)
       setSchemaRawOpen(false)
-      message.success('已应用')
+      message.success(t('Applied'))
     } catch {
-      message.error('JSON 解析失败，请检查格式')
+      message.error(t('Failed to parse JSON; check the format'))
     }
   }
 
@@ -141,23 +142,23 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
         <Input
           size="small" style={{ width: 260 }} value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="结构名称，如 Response / PageRequest"
+          placeholder={t('Model name, e.g. Response / PageRequest')}
         />
         <Input
           size="small" style={{ flex: 1 }} value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="说明（可空）"
+          placeholder={t('Description (optional)')}
         />
-        {dirty && <Tag style={{ marginInlineEnd: 0 }} color="warning">未保存</Tag>}
+        {dirty && <Tag style={{ marginInlineEnd: 0 }} color="warning">{t('Unsaved')}</Tag>}
         {savedId && (
           <Typography.Text
-            copyable={{ text: savedId, tooltips: ['复制 ID', '已复制'] }}
+            copyable={{ text: savedId, tooltips: [t('Copy ID'), t('Copied')] }}
             style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
           >
             ID {savedId}
           </Typography.Text>
         )}
-        <Button icon={<SaveOutlined />} type="primary" onClick={save}>保存</Button>
+        <Button icon={<SaveOutlined />} type="primary" onClick={save}>{t('Save')}</Button>
       </div>
 
       {/* 工具栏：生成/导入/预览 */}
@@ -168,8 +169,8 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
         <Dropdown
           menu={{
             items: [
-              { key: 'json', label: '通过 JSON 生成' },
-              { key: 'schema', label: '通过 JSON Schema 生成' },
+              { key: 'json', label: t('Generate from JSON') },
+              { key: 'schema', label: t('Generate from JSON Schema') },
             ],
             onClick: ({ key }) => {
               setImportText('')
@@ -177,18 +178,18 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
             },
           }}
         >
-          <Button size="small" icon={<CloudUploadOutlined />}>生成结构</Button>
+          <Button size="small" icon={<CloudUploadOutlined />}>{t('Generate schema')}</Button>
         </Dropdown>
         <Button size="small" icon={<CodeOutlined />} onClick={openSchemaRaw}>JSON Schema</Button>
         <Button
           size="small" icon={<EyeOutlined />}
           onClick={() => setPreviewOpen(true)}
         >
-          预览示例
+          {t('Preview example')}
         </Button>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: 11, color: PALETTE.textTertiary }}>
-          根节点类型：
+          {t('Root type:')}
           <span style={{ color: PALETTE.primary, fontWeight: 600 }}>{schema.type || 'any'}</span>
         </span>
       </div>
@@ -200,11 +201,11 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
 
       {/* 通过 JSON / JSON Schema 生成 */}
       <Modal
-        title={importModal === 'json' ? '通过 JSON 生成结构' : '通过 JSON Schema 生成结构'}
+        title={importModal === 'json' ? t('Generate schema from JSON') : t('Generate schema from JSON Schema')}
         open={!!importModal}
         onCancel={() => setImportModal(undefined)}
         onOk={doImport}
-        okText="生成"
+        okText={t('Generate')}
         width={640}
         destroyOnHidden
       >
@@ -225,7 +226,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
         open={schemaRawOpen}
         onCancel={() => setSchemaRawOpen(false)}
         onOk={applySchemaRaw}
-        okText="应用"
+        okText={t('Apply')}
         width={640}
         destroyOnHidden
       >
@@ -239,7 +240,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
 
       {/* 示例预览 */}
       <Modal
-        title="按结构生成的示例 JSON"
+        title={t('Example JSON generated from the schema')}
         open={previewOpen}
         onCancel={() => setPreviewOpen(false)}
         footer={null}
@@ -256,10 +257,10 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
           style={{ fontSize: 12, marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 4 }}
           onClick={() => {
             navigator.clipboard?.writeText(JSON.stringify(schemaToExample(schema) ?? {}, null, 2))
-            message.success('已复制')
+            message.success(t('Copied'))
           }}
         >
-          <DownloadOutlined /> 复制示例
+          <DownloadOutlined /> {t('Copy example')}
         </Typography.Link>
       </Modal>
     </div>

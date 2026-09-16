@@ -14,10 +14,12 @@ import useSaveShortcut from '../hooks/useSaveShortcut'
 import { useLeaveGuard } from '../hooks/useLeaveGuard'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
+// getter 每次读取求值：语言切换即时生效
 const CASE_TYPE: Record<number, { text: string; color: string }> = {
-  1: { text: '声明式', color: 'blue' },
-  2: { text: '低代码', color: 'purple' },
+  get 1() { return { text: t('Declarative'), color: 'blue' } },
+  get 2() { return { text: t('Low-code'), color: 'purple' } },
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -30,14 +32,14 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
 }
 
 function CaseLine({ c, index }: { c: TestCase | undefined; index?: number }) {
-  const meta = c ? CASE_TYPE[c.type] ?? { text: String(c.type), color: 'default' } : { text: '缺失', color: 'default' }
+  const meta = c ? CASE_TYPE[c.type] ?? { text: String(c.type), color: 'default' } : { text: t('Missing'), color: 'default' }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
       {index !== undefined && (
         <span style={{ color: PALETTE.textTertiary, fontSize: 12, width: 18, textAlign: 'right' }}>{index}</span>
       )}
       <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 13 }}>
-        {c?.name ?? '（用例已删除）'}
+        {c?.name ?? t('(case deleted)')}
       </span>
       <Tag style={{ margin: 0 }} color={meta.color}>{meta.text}</Tag>
     </div>
@@ -73,7 +75,7 @@ function PickCol({ title, extra, rows }: { title: string; extra?: ReactNode; row
           </div>
         ))}
         {rows.length === 0 && (
-          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无</div>
+          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>{t('None')}</div>
         )}
       </div>
     </div>
@@ -161,7 +163,7 @@ export default function Suites() {
 
   const save = async () => {
     if (!name.trim()) {
-      message.error('名称必填')
+      message.error(t('Name is required'))
       return
     }
     if (saving) return
@@ -170,12 +172,12 @@ export default function Suites() {
     try {
       if (id) {
         await put(`/api/v1/suites/${id}`, payload)
-        message.success('已保存')
+        message.success(t('Saved'))
         setSavedSnap(JSON.stringify({ n: name.trim(), d: description, ids: selectedIds }))
         setRefresh((x) => x + 1)
       } else {
         const r = await post<Suite>('/api/v1/suites', payload)
-        message.success('已创建')
+        message.success(t('Created'))
         allowOnce()
         nav(`/suites/${r.id}/edit`)
       }
@@ -190,7 +192,7 @@ export default function Suites() {
 
   const create = async () => {
     if (!createName.trim()) {
-      message.error('请输入套件名称')
+      message.error(t('Enter a suite name'))
       return
     }
     try {
@@ -206,7 +208,7 @@ export default function Suites() {
       setCreateName('')
       setCreateParentId(undefined)
       setRefresh((x) => x + 1)
-      message.success('已创建')
+      message.success(t('Created'))
       allowOnce()
       nav(`/suites/${r.id}/edit`)
     } catch (e: any) {
@@ -220,11 +222,11 @@ export default function Suites() {
     setCreateOpen(true)
   }
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const panel = (
     <EntityTreePanel
-      title="套件"
+      title={t('Suites')}
       kind="suite"
       projectId={projectId}
       activeId={id}
@@ -239,11 +241,11 @@ export default function Suites() {
 
   const toolbar = (
     <Space>
-      <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/suites')}>返回</Button>
-      <Button type="primary" loading={saving} onClick={save}>保存</Button>
+      <Button icon={<ArrowLeftOutlined />} onClick={() => nav('/suites')}>{t('Back')}</Button>
+      <Button type="primary" loading={saving} onClick={save}>{t('Save')}</Button>
       {id && (
         <Typography.Text
-          copyable={{ text: id, tooltips: ['复制 ID', '已复制'] }}
+          copyable={{ text: id, tooltips: [t('Copy ID'), t('Copied')] }}
           style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
         >
           ID {id}
@@ -254,22 +256,22 @@ export default function Suites() {
 
   const editor = (
     <div style={{ padding: 16, maxWidth: 1000 }}>
-      <Field label="名称">
+      <Field label={t('Name')}>
         <Input
           value={name} onChange={(e) => setName(e.target.value)}
-          placeholder="套件名称" style={{ maxWidth: 480 }}
+          placeholder={t('Suite name')} style={{ maxWidth: 480 }}
         />
       </Field>
-      <Field label="描述">
+      <Field label={t('Description')}>
         <Input
           value={description} onChange={(e) => setDescription(e.target.value)}
-          placeholder="套件描述" style={{ maxWidth: 480 }}
+          placeholder={t('Suite description')} style={{ maxWidth: 480 }}
         />
       </Field>
-      <Field label="用例编排（按执行序）">
+      <Field label={t('Case orchestration (execution order)')}>
         <div style={{ display: 'flex', gap: 12, alignItems: 'stretch' }}>
           <PickCol
-            title="全部用例"
+            title={t('All cases')}
             rows={available.map((c) => ({
               id: c.id,
               active: leftSel === c.id,
@@ -278,16 +280,16 @@ export default function Suites() {
             }))}
           />
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 8 }}>
-            <Button icon={<RightOutlined />} disabled={!leftSel} onClick={addSel}>加入</Button>
-            <Button icon={<LeftOutlined />} disabled={!rightSel} onClick={removeSel}>移出</Button>
+            <Button icon={<RightOutlined />} disabled={!leftSel} onClick={addSel}>{t('Add')}</Button>
+            <Button icon={<LeftOutlined />} disabled={!rightSel} onClick={removeSel}>{t('Remove')}</Button>
           </div>
           <PickCol
-            title={`已选（${selectedIds.length}）`}
+            title={t('Selected ({count})', { count: selectedIds.length })}
             extra={(
               <Space size={0}>
                 <Button size="small" type="text" icon={<ArrowUpOutlined />} disabled={!rightSel} onClick={() => move(-1)} />
                 <Button size="small" type="text" icon={<ArrowDownOutlined />} disabled={!rightSel} onClick={() => move(1)} />
-                <Button size="small" type="text" danger disabled={!rightSel} onClick={removeSel}>移除</Button>
+                <Button size="small" type="text" danger disabled={!rightSel} onClick={removeSel}>{t('Remove')}</Button>
               </Space>
             )}
             rows={selectedIds.map((cid, i) => ({
@@ -304,8 +306,8 @@ export default function Suites() {
 
   const placeholder = (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 48, gap: 12 }}>
-      <Empty description="从左侧选择套件，或新建一个套件" />
-      <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新建套件</Button>
+      <Empty description={t('Pick a suite on the left, or create a new one')} />
+      <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>{t('New suite')}</Button>
     </div>
   )
 
@@ -315,9 +317,9 @@ export default function Suites() {
         {editing ? editor : placeholder}
       </IdeLayout>
       <Modal
-        title="新建套件"
+        title={t('New suite')}
         open={createOpen}
-        okText="创建"
+        okText={t('Create')}
         onCancel={() => { setCreateOpen(false); setCreateParentId(undefined) }}
         onOk={create}
         destroyOnHidden
@@ -326,7 +328,7 @@ export default function Suites() {
           value={createName}
           onChange={(e) => setCreateName(e.target.value)}
           onPressEnter={create}
-          placeholder="套件名称"
+          placeholder={t('Suite name')}
         />
       </Modal>
       {guard}

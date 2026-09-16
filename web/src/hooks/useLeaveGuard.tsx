@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Modal } from 'antd'
 import { useBlocker } from 'react-router-dom'
+import { t } from '../i18n'
 
 // 路由离开守卫：dirty 时拦截应用内跳转，确认后放行。
 // - 首次导航（createHashRouter 的初始 POP，非 router 发起）不拦，否则浏览器告警
@@ -8,7 +9,7 @@ import { useBlocker } from 'react-router-dom'
 // - 刷新/关闭窗口走原生 beforeunload 提示（blocker 管不到）。
 // 返回 { guard: 需渲染的确认弹窗（null=未拦截）, allowOnce: 保存成功后跳转前调用，
 // 让下一次导航放行一次（setSavedSnap 的提交晚于同步 nav，否则会被自己拦住） }。
-export function useLeaveGuard(dirty: boolean, text = '当前内容尚未保存，离开将丢失修改。') {
+export function useLeaveGuard(dirty: boolean, text?: string) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => setMounted(true), [])
   const skipRef = useRef(false)
@@ -36,14 +37,14 @@ export function useLeaveGuard(dirty: boolean, text = '当前内容尚未保存�
   const guard = blocker.state !== 'blocked' ? null : (
     <Modal
       open
-      title="未保存的修改"
-      okText="离开"
+      title={t('Unsaved changes')}
+      okText={t('Leave')}
       okButtonProps={{ danger: true }}
-      cancelText="留下"
+      cancelText={t('Stay')}
       onOk={() => blocker.proceed()}
       onCancel={() => blocker.reset()}
     >
-      {text}
+      {text ?? t('Your changes have not been saved; leaving will discard them.')}
     </Modal>
   )
   return { guard, allowOnce: () => { skipRef.current = true } }

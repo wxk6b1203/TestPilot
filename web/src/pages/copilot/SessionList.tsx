@@ -10,6 +10,7 @@ import { del, get, put } from '../../api'
 import type { ListResp } from '../../api'
 import { PALETTE } from '../../theme'
 import { message } from '../../messageBridge'
+import { t } from '../../i18n'
 
 const PAGE_SIZE = 50
 
@@ -64,7 +65,7 @@ export default function SessionList({
   const doDelete = async (s: Session) => {
     try {
       await del(`/api/v1/copilot/sessions/${s.id}`)
-      message.success('已移入回收站')
+      message.success(t('Moved to trash'))
       // 当前页删空则回退一页（与回收站翻页器同策略）
       const left = total - 1
       const maxPage = Math.max(1, Math.ceil(left / PAGE_SIZE))
@@ -78,11 +79,11 @@ export default function SessionList({
 
   const confirmDelete = (s: Session) => {
     modal.confirm({
-      title: `删除会话「${s.title || '新对话'}」？`,
-      content: '删除后会移入回收站，30 天后自动清理',
-      okText: '删除',
+      title: t('Delete session "{name}"?', { name: s.title || t('New chat') }),
+      content: t('Moved to trash; auto-purged after 30 days'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: () => doDelete(s),
     })
   }
@@ -110,7 +111,7 @@ export default function SessionList({
     }
     const title = editingTitle.trim()
     if (!title) {
-      message.warning('标题不能为空')
+      message.warning(t('Title must not be empty'))
       return
     }
     if (title === current.title) {
@@ -121,7 +122,7 @@ export default function SessionList({
     try {
       await put(`/api/v1/copilot/sessions/${sid}`, { title })
       setSessions((prev) => prev.map((x) => (x.id === sid ? { ...x, title } : x)))
-      message.success('已重命名')
+      message.success(t('Renamed'))
       cancelRename()
     } catch (e: any) {
       message.error(e.message)
@@ -133,9 +134,9 @@ export default function SessionList({
   // 卡片菜单：三点按钮（click 触发）与整卡右键（contextMenu 触发）共用
   const sessionMenu = (s: Session): MenuProps => ({
     items: [
-      { key: 'rename', label: '重命名', icon: <EditOutlined /> },
+      { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
       { type: 'divider' },
-      { key: 'del', label: '删除', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'rename') startRename(s)
@@ -149,7 +150,7 @@ export default function SessionList({
       display: 'flex', flexDirection: 'column', padding: 8, background: '#FFFFFF',
     }}>
       <Button block icon={<PlusOutlined />} onClick={onNew} style={{ marginBottom: 8, flexShrink: 0 }}>
-        新会话
+        {t('New chat')}
       </Button>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {sessions.map((s) => (
@@ -180,12 +181,12 @@ export default function SessionList({
               ) : (
                 <>
                   <Typography.Text ellipsis style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
-                    {s.title || '新对话'}
+                    {s.title || t('New chat')}
                   </Typography.Text>
                   <Dropdown trigger={['click']} menu={sessionMenu(s)} placement="bottomRight">
                     <Button
                       size="small" type="text" icon={<MoreOutlined />}
-                      title="更多操作"
+                      title={t('More actions')}
                       style={{ color: PALETTE.textTertiary, flexShrink: 0 }}
                       onClick={(e) => e.stopPropagation()}
                     />
@@ -196,7 +197,7 @@ export default function SessionList({
           </Dropdown>
         ))}
         {sessions.length === 0 && (
-          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>暂无会话</div>
+          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 24, fontSize: 12 }}>{t('No sessions')}</div>
         )}
       </div>
       {total > 0 && (
@@ -215,7 +216,7 @@ export default function SessionList({
           type={trashActive ? 'primary' : 'default'}
           onClick={onOpenTrash}
         >
-          回收站
+          {t('Trash')}
         </Button>
       </div>
     </div>

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react'
 import KvEditor from './KvEditor'
 import type { Kv } from './KvEditor'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 import { message } from '../messageBridge'
 import { uploadArtifact } from '../api'
 
@@ -36,13 +37,13 @@ export default function BodyEditor({
     try {
       onChange({ contentType: value.contentType, raw: JSON.stringify(JSON.parse(raw), null, 2) })
     } catch {
-      message.error('JSON 格式错误，无法格式化')
+      message.error(t('Invalid JSON; cannot format'))
     }
   }
   const jsonTab = (
     <div>
       <Space style={{ marginBottom: 6 }}>
-        <Button size="small" icon={<FormatPainterOutlined />} onClick={fmt}>格式化</Button>
+        <Button size="small" icon={<FormatPainterOutlined />} onClick={fmt}>{t('Format')}</Button>
       </Space>
       <Input.TextArea
         rows={10}
@@ -63,14 +64,14 @@ export default function BodyEditor({
           showUploadList={false}
           beforeUpload={(file) => {
             if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
-              message.error('文件需在 1B..8MiB 之间（binary_ref 内联上限）')
+              message.error(t('File must be between 1B and 8MiB (binary_ref inline limit)'))
               return Upload.LIST_IGNORE
             }
             setUploading(true)
             uploadArtifact(file)
               .then((a) => {
                 onChange({ contentType: 6, binary_ref: `artifact:${a.id}` })
-                message.success(`已上传 → artifact:${a.id}（可在「产物」页查看）`)
+                message.success(t('Uploaded → artifact:{id} (see it on the Artifacts page)', { id: a.id }))
               })
               .catch((e: Error) => message.error(e.message))
               .finally(() => setUploading(false))
@@ -78,7 +79,7 @@ export default function BodyEditor({
           }}
         >
           <Button size="small" icon={<UploadOutlined />} loading={uploading}>
-            上传文件生成引用
+            {t('Upload file to create a reference')}
           </Button>
         </Upload>
         {value.binary_ref?.startsWith('artifact:') && (
@@ -89,11 +90,11 @@ export default function BodyEditor({
         rows={6}
         value={value.binary_ref ?? binaryDraftRef.current}
         onChange={(e) => onChange({ contentType: 6, binary_ref: e.target.value })}
-        placeholder={'artifact:<产物ID> 或 base64:<base64数据>'}
+        placeholder={t('artifact:<artifact ID> or base64:<base64 data>')}
         style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
       />
       <div style={{ fontSize: 12, color: '#8c8c8c', marginTop: 6 }}>
-        binary_ref 支持 artifact:&lt;id&gt;（Scheduler 派发时读取产物，≤8MiB）与 base64:&lt;payload&gt;（直接内联）；也可在「产物」页查看/上传
+        {t('binary_ref accepts artifact:<id> (the artifact is read by the Scheduler at dispatch, ≤8MiB) and base64:<payload> (inlined); you can also browse/upload on the Artifacts page')}
       </div>
     </div>
   )
@@ -101,7 +102,7 @@ export default function BodyEditor({
     <KvEditor
       value={fields}
       onChange={(kv) => onChange({ contentType: ct, form: { fields: kv } })}
-      keyPlaceholder="字段名" valuePlaceholder="字段值"
+      keyPlaceholder={t('Field name')} valuePlaceholder={t('Field value')}
     />
   )
   const tab = (() => {
@@ -125,11 +126,11 @@ export default function BodyEditor({
         else onChange({ contentType: 3, form: { fields: formDraftRef.current } })
       }}
       items={[
-        { key: 'none', label: '无', children: <span style={{ color: PALETTE.textTertiary }}>无请求体</span> },
+        { key: 'none', label: t('None'), children: <span style={{ color: PALETTE.textTertiary }}>{t('No body')}</span> },
         { key: 'json', label: 'JSON', children: jsonTab },
         { key: 'form-data', label: 'form-data', children: formTab(2) },
         { key: 'urlencoded', label: 'x-www-form-urlencoded', children: formTab(3) },
-        { key: 'binary', label: '二进制引用', children: binaryTab },
+        { key: 'binary', label: t('Binary reference'), children: binaryTab },
       ]}
     />
   )

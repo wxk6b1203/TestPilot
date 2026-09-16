@@ -9,6 +9,7 @@ import { jsonToSchema, schemaToExample } from '../lib/jsonSchema'
 import type { JsonSchema } from '../lib/jsonSchema'
 import { PALETTE } from '../theme'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // 接口「设计」页签：对 Params / Body / Headers / Cookies / 响应 做预设——
 // 类型、必填、默认值、说明（存 HttpApi.*_design / request_schema / response_schema）。
@@ -70,7 +71,7 @@ export default function ApiDesignPanel({ design, onChange }: {
       const v = JSON.parse(jsonText.trim())
       applyParsed(jsonModal!, jsonToSchema(v))
     } catch {
-      message.error('JSON 解析失败，请检查格式')
+      message.error(t('Failed to parse JSON; check the format'))
     }
   }
 
@@ -78,19 +79,19 @@ export default function ApiDesignPanel({ design, onChange }: {
     try {
       const v = JSON.parse(schemaText.trim())
       if (!v || typeof v !== 'object' || !v.type) {
-        message.error('不是合法的 JSON Schema（缺少 type 字段）')
+        message.error(t('Not a valid JSON Schema (missing "type" field)'))
         return
       }
       applyParsed(schemaModal!, v)
     } catch {
-      message.error('JSON 解析失败，请检查格式')
+      message.error(t('Failed to parse JSON; check the format'))
     }
   }
 
   const applyFromModel = (which: 'request' | 'response') => {
     const m = (modelPick[which] ?? []).find((x) => x.id === pickedModel)
     if (!m) {
-      message.warning('请选择数据模型')
+      message.warning(t('Pick a data model'))
       return
     }
     applyParsed(which, m.schema ?? { type: 'object', properties: {} })
@@ -107,8 +108,8 @@ export default function ApiDesignPanel({ design, onChange }: {
             <Dropdown
               menu={{
                 items: [
-                  { key: 'json', label: '通过 JSON 生成' },
-                  { key: 'schema', label: '通过 JSON Schema 生成' },
+                  { key: 'json', label: t('Generate from JSON') },
+                  { key: 'schema', label: t('Generate from JSON Schema') },
                 ],
                 onClick: ({ key }) => {
                   setJsonText('')
@@ -118,20 +119,20 @@ export default function ApiDesignPanel({ design, onChange }: {
                 },
               }}
             >
-              <Button size="small" icon={<CloudUploadOutlined />}>生成结构</Button>
+              <Button size="small" icon={<CloudUploadOutlined />}>{t('Generate schema')}</Button>
             </Dropdown>
             <Select
-              size="small" style={{ minWidth: 220 }} placeholder="引用数据模型（结构）"
+              size="small" style={{ minWidth: 220 }} placeholder={t('Reference a data model')}
               value={pickedModel || undefined}
               showSearch optionFilterProp="label"
               onDropdownVisibleChange={(open) => open && !models.length && loadModels(which)}
               options={models.map((m) => ({ value: m.id, label: m.name }))}
               onChange={setPickedModel}
             />
-            <Button size="small" icon={<DatabaseOutlined />} onClick={() => applyFromModel(which)}>应用模型</Button>
+            <Button size="small" icon={<DatabaseOutlined />} onClick={() => applyFromModel(which)}>{t('Apply model')}</Button>
           </Space>
           <span style={{ fontSize: 12, color: PALETTE.textTertiary }}>
-            未设计结构时调试可自由编辑请求体；设计后调试会按结构生成示例并回填默认值。
+            {t('Without a schema the debug body is free-form; once designed, debug generates examples from it and prefills defaults.')}
           </span>
         </div>
       )
@@ -143,13 +144,13 @@ export default function ApiDesignPanel({ design, onChange }: {
             size="small" danger type="text" icon={<StopOutlined />}
             onClick={() => { onChange({ ...design, [key]: null }); bumpEpoch() }}
           >
-            移除结构
+            {t('Remove schema')}
           </Button>
           <Button
             size="small" type="text" icon={<EyeOutlined />}
             onClick={() => {
               Modal.info({
-                title: '按结构生成的示例 JSON',
+                title: t('Example JSON generated from the schema'),
                 width: 640,
                 content: (
                   <Input.TextArea
@@ -158,11 +159,11 @@ export default function ApiDesignPanel({ design, onChange }: {
                     style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: 12, marginTop: 12 }}
                   />
                 ),
-                okText: '关闭',
+                okText: t('Close'),
               })
             }}
           >
-            预览示例
+            {t('Preview example')}
           </Button>
         </Space>
         <SchemaTree
@@ -178,14 +179,14 @@ export default function ApiDesignPanel({ design, onChange }: {
     { key: 'params', label: 'Params', children: (
       <DesignKvTable value={design.params} onChange={(v) => onChange({ ...design, params: v })} />
     ) },
-    { key: 'body', label: 'Body 结构', children: schemaBlock('request') },
+    { key: 'body', label: t('Body schema'), children: schemaBlock('request') },
     { key: 'headers', label: 'Headers', children: (
-      <DesignKvTable value={design.headers} onChange={(v) => onChange({ ...design, headers: v })} nameHeader="Header 名" />
+      <DesignKvTable value={design.headers} onChange={(v) => onChange({ ...design, headers: v })} nameHeader={t('Header name')} />
     ) },
     { key: 'cookies', label: 'Cookies', children: (
-      <DesignKvTable value={design.cookies} onChange={(v) => onChange({ ...design, cookies: v })} nameHeader="Cookie 名" />
+      <DesignKvTable value={design.cookies} onChange={(v) => onChange({ ...design, cookies: v })} nameHeader={t('Cookie name')} />
     ) },
-    { key: 'response', label: '响应结构', children: schemaBlock('response') },
+    { key: 'response', label: t('Response schema'), children: schemaBlock('response') },
   ]
 
   const which = jsonModal ?? schemaModal
@@ -194,11 +195,11 @@ export default function ApiDesignPanel({ design, onChange }: {
       <Tabs size="small" activeKey={tab} onChange={setTab} items={designTabs} />
       {/* 通过 JSON / JSON Schema 生成请求或响应结构 */}
       <Modal
-        title={`通过 ${which && jsonModal ? 'JSON' : 'JSON Schema'} 生成${which === 'request' ? '请求' : '响应'}结构`}
+        title={t('Generate {kind} schema from {source}', { kind: which === 'request' ? t('request') : t('response'), source: which && jsonModal ? 'JSON' : 'JSON Schema' })}
         open={!!which}
         onCancel={() => { setJsonModal(undefined); setSchemaModal(undefined) }}
         onOk={jsonModal ? applyFromJson : applyFromSchema}
-        okText="生成"
+        okText={t('Generate')}
         width={640}
         destroyOnHidden
       >

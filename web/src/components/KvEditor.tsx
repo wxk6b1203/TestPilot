@@ -1,6 +1,7 @@
 import { Button, Checkbox, Input, Tooltip } from 'antd'
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 import { useStableRows } from '../hooks/useStableRows'
 import type { FieldDesign } from '../api'
 
@@ -18,7 +19,7 @@ const kvEq = (a: Kv, b: Kv) => a.key === b.key && a.value === b.value && a.enabl
 // checkable（调试态）：行首勾选框决定该参数是否随请求发送；meta 提供设计态的
 // 类型/必填/说明（只读提示，编辑设计请到「设计」页签）。
 export default function KvEditor({
-  value, onChange, keyPlaceholder = '参数名', valuePlaceholder = '参数值（支持 {{var}}）',
+  value, onChange, keyPlaceholder = t('Param name'), valuePlaceholder = t('Value (supports {{var}})'),
   checkable = false, meta = {},
 }: {
   value: Kv[]
@@ -53,7 +54,7 @@ export default function KvEditor({
               />
             </Tooltip>
             {d && (
-              <Tooltip title={`${d.required ? '必填 · ' : ''}${d.description || d.type || ''}`}>
+              <Tooltip title={`${d.required ? t('Required') + ' · ' : ''}${d.description || d.type || ''}`}>
                 <span style={{ fontSize: 11, color: TYPE_COLORS[d.type ?? ''] ?? PALETTE.textTertiary, flexShrink: 0 }}>
                   {d.type || ''}
                   {d.required && <span style={{ color: '#ff4d4f', marginLeft: 2 }}>*</span>}
@@ -64,7 +65,7 @@ export default function KvEditor({
             <span style={{ color: PALETTE.textTertiary }}>=</span>
             <Input
               size="small" style={{ flex: 1 }} value={r.item.value}
-              placeholder={d?.example ? `示例 ${d.example}` : valuePlaceholder}
+              placeholder={d?.example ? t('e.g. {v}', { v: d.example }) : valuePlaceholder}
               onChange={(e) => set(i, { value: e.target.value })}
             />
             <Button
@@ -81,7 +82,7 @@ export default function KvEditor({
         style={{ width: '100%', color: PALETTE.textTertiary }}
         onClick={() => onChange(update([...value, { key: '', value: '', ...(checkable ? { enabled: true } : {}) }]))}
       >
-        添加
+        {t('Add')}
       </Button>
     </div>
   )

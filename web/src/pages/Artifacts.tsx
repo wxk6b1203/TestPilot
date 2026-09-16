@@ -7,6 +7,7 @@ import {
 } from '../api'
 import type { Artifact, ListResp } from '../api'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 function fmtSize(n: number): string {
   if (n >= 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`
@@ -42,7 +43,7 @@ export default function Artifacts() {
     <div style={{ padding: 16 }}>
       <Space style={{ marginBottom: 12 }}>
         <Select
-          allowClear placeholder="全部类型" style={{ width: 140 }} value={kind}
+          allowClear placeholder={t('All types')} style={{ width: 140 }} value={kind}
           onChange={(v) => { setKind(v); setPage(1) }}
           options={Object.entries(ARTIFACT_KINDS).map(([v, label]) => ({ value: Number(v), label }))}
         />
@@ -50,23 +51,23 @@ export default function Artifacts() {
           showUploadList={false}
           beforeUpload={(file) => {
             if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
-              message.error('文件需在 1B..8MiB 之间（binary_ref 内联上限）')
+              message.error(t('File must be between 1B and 8MiB (binary_ref inline limit)'))
               return Upload.LIST_IGNORE
             }
             setUploading(true)
             uploadArtifact(file)
-              .then(() => { message.success('已上传'); load() })
+              .then(() => { message.success(t('Uploaded')); load() })
               .catch((e: Error) => message.error(e.message))
               .finally(() => setUploading(false))
             return false
           }}
         >
           <Button type="primary" icon={<UploadOutlined />} loading={uploading}>
-            上传产物
+            {t('Upload artifact')}
           </Button>
         </Upload>
         <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          上传的二进制可在接口 body 的 binary_ref 中以 artifact:&lt;id&gt; 引用（≤8MiB）
+          {t('Uploaded binaries can be referenced from an API body binary_ref as {code} (≤8MiB)', { code: 'artifact:<id>' })}
         </Typography.Text>
       </Space>
       <Table<Artifact>
@@ -78,19 +79,19 @@ export default function Artifacts() {
         }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 200, render: (v: string) => <Typography.Text copyable style={{ fontSize: 12 }}>{v}</Typography.Text> },
-          { title: '类型', dataIndex: 'kind', width: 80, render: (v: number) => <Tag>{ARTIFACT_KINDS[v] ?? v}</Tag> },
-          { title: '文件名', dataIndex: 'uri', render: (v: string) => fileName(v) },
-          { title: '大小', dataIndex: 'size', width: 90, render: fmtSize },
+          { title: t('Type'), dataIndex: 'kind', width: 80, render: (v: number) => <Tag>{ARTIFACT_KINDS[v] ?? v}</Tag> },
+          { title: t('File name'), dataIndex: 'uri', render: (v: string) => fileName(v) },
+          { title: t('Size'), dataIndex: 'size', width: 90, render: fmtSize },
           {
-            title: '来源', dataIndex: 'run_id', width: 110,
-            render: (v: string) => (v && v !== '0' ? <Tag>运行 {v.slice(-6)}</Tag> : <Tag>上传</Tag>),
+            title: t('Source'), dataIndex: 'run_id', width: 110,
+            render: (v: string) => (v && v !== '0' ? <Tag>{t('run {id}', { id: v.slice(-6) })}</Tag> : <Tag>{t('Upload')}</Tag>),
           },
           {
-            title: '时间', dataIndex: 'created_at', width: 160,
+            title: t('Time'), dataIndex: 'created_at', width: 160,
             render: (v: number) => (v ? new Date(v).toLocaleString() : '—'),
           },
           {
-            title: '操作', width: 90,
+            title: t('Actions'), width: 90,
             render: (_, row) => (
               <Button size="small" icon={<DownloadOutlined />}
                 onClick={() => download(`/api/v1/artifacts/${row.id}/content`, fileName(row.uri))} />

@@ -4,6 +4,7 @@ import { del, get, post, put } from '../api'
 import type { Environment, ListResp, Variable } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 export default function Environments() {
   const { projectId, refreshEnvs } = useLayout()
@@ -56,27 +57,27 @@ export default function Environments() {
     loadVars().catch((e) => message.error(e.message))
   }, [projectId, loadEnvs, loadVars])
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   return (
     <Row gutter={16}>
       <Col span={10}>
-        <Card title="环境" extra={<Button type="primary" size="small" onClick={() => setEnvOpen(true)}>新建</Button>}>
+        <Card title={t('Environments')} extra={<Button type="primary" size="small" onClick={() => setEnvOpen(true)}>{t('New')}</Button>}>
           <Table
             rowKey="id"
             size="small"
             dataSource={envs}
             pagination={false}
             columns={[
-              { title: '名称', dataIndex: 'name' },
+              { title: t('Name'), dataIndex: 'name' },
               { title: 'Base URL', dataIndex: 'base_url' },
               {
-                title: '操作',
+                title: t('Actions'),
                 width: 150,
                 render: (_, r) => (
                   <Space size={4}>
-                    <Button size="small" onClick={() => openEnvEdit(r)}>编辑</Button>
-                    <Popconfirm title="删除环境？" onConfirm={async () => {
+                    <Button size="small" onClick={() => openEnvEdit(r)}>{t('Edit')}</Button>
+                    <Popconfirm title={t('Delete this environment?')} onConfirm={async () => {
                       try {
                         await del(`/api/v1/environments/${r.id}`)
                         await Promise.all([loadEnvs(), refreshEnvs()])
@@ -84,7 +85,7 @@ export default function Environments() {
                         message.error(e.message)
                       }
                     }}>
-                      <Button danger size="small">删除</Button>
+                      <Button danger size="small">{t('Delete')}</Button>
                     </Popconfirm>
                   </Space>
                 ),
@@ -94,7 +95,7 @@ export default function Environments() {
         </Card>
       </Col>
       <Col span={14}>
-        <Card title="变量" extra={<Button type="primary" size="small" onClick={() => setVarOpen(true)}>新建</Button>}>
+        <Card title={t('Variables')} extra={<Button type="primary" size="small" onClick={() => setVarOpen(true)}>{t('New')}</Button>}>
           <Table
             rowKey="id"
             size="small"
@@ -104,17 +105,17 @@ export default function Environments() {
               { title: 'Key', dataIndex: 'key' },
               { title: 'Value', dataIndex: 'value', render: (v: string, r) => (r.sensitive ? '••••••' : v) },
               {
-                title: '环境',
+                title: t('Environment'),
                 dataIndex: 'environment_id',
-                render: (v: string) => (v === '0' || !v ? '项目级' : envs.find((e) => e.id === v)?.name || v),
+                render: (v: string) => (v === '0' || !v ? t('Project-level') : envs.find((e) => e.id === v)?.name || v),
               },
               {
-                title: '操作',
+                title: t('Actions'),
                 width: 150,
                 render: (_, r) => (
                   <Space size={4}>
-                    <Button size="small" onClick={() => openVarEdit(r)}>编辑</Button>
-                    <Popconfirm title="删除变量？" onConfirm={async () => {
+                    <Button size="small" onClick={() => openVarEdit(r)}>{t('Edit')}</Button>
+                    <Popconfirm title={t('Delete this variable?')} onConfirm={async () => {
                       try {
                         await del(`/api/v1/variables/${r.id}`)
                         loadVars()
@@ -122,7 +123,7 @@ export default function Environments() {
                         message.error(e.message)
                       }
                     }}>
-                      <Button danger size="small">删除</Button>
+                      <Button danger size="small">{t('Delete')}</Button>
                     </Popconfirm>
                   </Space>
                 ),
@@ -133,7 +134,7 @@ export default function Environments() {
       </Col>
 
       <Modal
-        title={editingEnv ? '编辑环境' : '新建环境'}
+        title={editingEnv ? t('Edit environment') : t('New environment')}
         open={envOpen}
         onCancel={() => { setEnvOpen(false); setEditingEnv(null) }}
         onOk={() => envForm.submit()}
@@ -143,10 +144,10 @@ export default function Environments() {
           try {
             if (editingEnv) {
               await put(`/api/v1/environments/${editingEnv.id}`, v)
-              message.success('已保存')
+              message.success(t('Saved'))
             } else {
               await post('/api/v1/environments', { ...v, project_id: projectId })
-              message.success('已创建')
+              message.success(t('Created'))
             }
             setEnvOpen(false)
             setEditingEnv(null)
@@ -156,7 +157,7 @@ export default function Environments() {
             message.error(e.message)
           }
         }}>
-          <Form.Item name="name" label="名称" rules={[{ required: true }]}>
+          <Form.Item name="name" label={t('Name')} rules={[{ required: true }]}>
             <Input placeholder="local / staging / prod" />
           </Form.Item>
           <Form.Item name="base_url" label="Base URL" rules={[{ required: true }]}>
@@ -166,7 +167,7 @@ export default function Environments() {
       </Modal>
 
       <Modal
-        title={editingVar ? '编辑变量' : '新建变量'}
+        title={editingVar ? t('Edit variable') : t('New variable')}
         open={varOpen}
         onCancel={() => { setVarOpen(false); setEditingVar(null) }}
         onOk={() => varForm.submit()}
@@ -177,10 +178,10 @@ export default function Environments() {
             try {
               if (editingVar) {
                 await put(`/api/v1/variables/${editingVar.id}`, v)
-                message.success('已保存')
+                message.success(t('Saved'))
               } else {
                 await post('/api/v1/variables', { ...v, project_id: projectId })
-                message.success('已创建')
+                message.success(t('Created'))
               }
               setVarOpen(false)
               setEditingVar(null)
@@ -196,15 +197,15 @@ export default function Environments() {
           <Form.Item name="value" label="Value" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="environment_id" label="作用环境">
+          <Form.Item name="environment_id" label={t('Scoped environment')}>
             <Select
               options={[
-                { value: '0', label: '项目级（所有环境）' },
+                { value: '0', label: t('Project-level (all environments)') },
                 ...envs.map((e) => ({ value: e.id, label: e.name })),
               ]}
             />
           </Form.Item>
-          <Form.Item name="sensitive" label="敏感（secret_ref，不明文下发）" valuePropName="checked">
+          <Form.Item name="sensitive" label={t('Sensitive (secret_ref; never sent in plain text)')} valuePropName="checked">
             <Switch />
           </Form.Item>
         </Form>

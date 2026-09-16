@@ -25,6 +25,7 @@ import { PALETTE } from '../theme'
 import MethodTag from './MethodTag'
 import PanelList from './PanelList'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // 接口目录树面板（Apis 页左侧栏）：
 // - 树 = 根目录 + 目录嵌套 + 已挂载接口 + 遗留未挂载接口（堆在根末尾）
@@ -182,7 +183,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const remove = async (a: HttpApi) => {
     try {
       await del(`/api/v1/apis/${a.id}`)
-      message.success('已删除')
+      message.success(t('Deleted'))
       onDeleted?.(a.id)
       void reload()
     } catch (e: any) {
@@ -193,11 +194,11 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   // 危险操作二次确认（目录删除会级联删除子目录）
   const confirmRemoveApi = (a: HttpApi) => {
     modal.confirm({
-      title: `删除接口「${a.name || a.uri}」？`,
-      content: '删除后不可恢复，相关目录挂载会一并移除。',
-      okText: '删除',
+      title: t('Delete API "{name}"?', { name: a.name || a.uri }),
+      content: t('This cannot be undone; its tree mounts will be removed as well.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: () => remove(a),
     })
   }
@@ -230,7 +231,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       await post('/api/v1/import/curl', { project_id: projectId, command: curlText })
       setCurlOpen(false)
       setCurlText('')
-      return '已导入'
+      return t('Imported')
     })
 
   const importOas = () =>
@@ -241,7 +242,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       })
       setOasOpen(false)
       setOasText('')
-      return `已导入 ${r.created} 个接口，跳过 ${r.skipped} 个`
+      return t('Imported {created} APIs, skipped {skipped}', { created: r.created, skipped: r.skipped })
     })
 
   const importPm = () => {
@@ -249,14 +250,14 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     try {
       doc = JSON.parse(pmText)
     } catch {
-      message.error('Postman Collection 不是合法 JSON')
+      message.error(t('Postman Collection is not valid JSON'))
       return
     }
     void runImport('postman', async () => {
       await post('/api/v1/import/postman', { project_id: projectId, document: doc })
       setPmOpen(false)
       setPmText('')
-      return '已导入'
+      return t('Imported')
     })
   }
 
@@ -275,7 +276,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
 
   const submitFolder = async () => {
     if (!folderName.trim()) {
-      message.warning('请输入目录名')
+      message.warning(t('Enter a folder name'))
       return
     }
     try {
@@ -288,7 +289,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       } else if (folderModal?.node) {
         await put(`/api/v1/tree/folders/${folderModal.node.id}`, { name: folderName.trim() })
       }
-      message.success('已保存')
+      message.success(t('Saved'))
       setFolderModal(undefined)
       setFolderName('')
       void reload()
@@ -300,7 +301,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const removeFolder = async (n: TreeNode) => {
     try {
       await del(`/api/v1/tree/folders/${n.id}`)
-      message.success('目录及子目录已删除（接口仅摘挂）')
+      message.success(t('Folder and subfolders deleted (APIs inside are only unmounted)'))
       void reload()
     } catch (e: any) {
       message.error(e.message)
@@ -309,11 +310,11 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
 
   const confirmRemoveFolder = (n: TreeNode) => {
     modal.confirm({
-      title: `删除目录「${n.name}」？`,
-      content: '目录及所有子目录会被删除；目录中的接口仅摘挂，接口本身不会被删除。',
-      okText: '删除',
+      title: t('Delete folder "{name}"?', { name: n.name }),
+      content: t('The folder and all subfolders will be deleted; APIs inside are only unmounted and will not be deleted.'),
+      okText: t('Delete'),
       okButtonProps: { danger: true },
-      cancelText: '取消',
+      cancelText: t('Cancel'),
       onOk: () => removeFolder(n),
     })
   }
@@ -321,7 +322,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   // 从目录摘挂（不删除接口）
   const unmountApi = (node: TreeNode) => {
     del(`/api/v1/tree/nodes/${node.id}`)
-      .then(() => { message.success('已从目录移除'); void reload() })
+      .then(() => { message.success(t('Removed from folder')); void reload() })
       .catch((e: any) => message.error(e.message))
   }
 
@@ -334,14 +335,14 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   const submitMove = async () => {
     if (!moveApi) return
     if (!moveTarget) {
-      message.warning('请选择目标目录')
+      message.warning(t('Select a target folder'))
       return
     }
     const nodeId = nodeMeta.byRef[moveApi.id]
     try {
       if (moveTarget === '__unmount__') {
         if (!nodeId) {
-          message.info('该接口已在未分类中')
+          message.info(t('This API is already uncategorized'))
           setMoveTarget('')
           setMoveApi(null)
           return
@@ -350,7 +351,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       } else {
         const targetParentId = moveTarget === '__root__' ? '' : moveTarget
         if (nodeId && (nodeMeta.parent[nodeId] ?? '') === targetParentId) {
-          message.info('接口已在该目录中，无需移动')
+          message.info(t('The API is already in this folder'))
           setMoveTarget('')
           setMoveApi(null)
           return
@@ -362,7 +363,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           await post('/api/v1/tree/nodes', { project_id: projectId, api_id: moveApi.id, parent_id: parentId })
         }
       }
-      message.success('已移动')
+      message.success(t('Moved'))
       setMoveTarget('')
       setMoveApi(null)
       void reload()
@@ -374,12 +375,12 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
   // ---- 右键菜单（VSCode 式：节点处 Dropdown trigger=contextMenu，菜单出现在光标处）----
   const folderMenu = (n: TreeNode): MenuProps => ({
     items: [
-      { key: 'new-api', label: '新建接口', icon: <PlusOutlined /> },
-      { key: 'new-folder', label: '新建子目录', icon: <FolderAddOutlined /> },
+      { key: 'new-api', label: t('New API'), icon: <PlusOutlined /> },
+      { key: 'new-folder', label: t('New subfolder'), icon: <FolderAddOutlined /> },
       { type: 'divider' },
-      { key: 'rename', label: '重命名', icon: <EditOutlined /> },
+      { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
       { type: 'divider' },
-      { key: 'del', label: '删除目录', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete folder'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'new-api') {
@@ -393,10 +394,10 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
 
   const apiMenu = (a: HttpApi, node?: TreeNode): MenuProps => ({
     items: [
-      { key: 'move', label: '移动到目录…' },
-      ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
+      { key: 'move', label: t('Move to folder…') },
+      ...(node ? [{ key: 'unmount', label: t('Remove from folder') }] : []),
       { type: 'divider' },
-      { key: 'del', label: '删除接口', icon: <DeleteOutlined />, danger: true },
+      { key: 'del', label: t('Delete API'), icon: <DeleteOutlined />, danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'move') openMove(a)
@@ -413,8 +414,8 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
 
   // 根即普通目录：根/空白区菜单同构
   const rootMenuItems: MenuProps['items'] = [
-    { key: 'new-api', label: '新建接口', icon: <PlusOutlined /> },
-    { key: 'new-folder', label: '新建目录', icon: <FolderAddOutlined /> },
+    { key: 'new-api', label: t('New API'), icon: <PlusOutlined /> },
+    { key: 'new-folder', label: t('New folder'), icon: <FolderAddOutlined /> },
   ]
   const rootMenuClick = ({ key }: { key: string }) => {
     if (key === 'new-api') openNewApiAtRoot()
@@ -429,7 +430,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
 
   const handleDrop = async (dragKey: string, dropKey: string, dropPos: number) => {
     const d = parseKey(dragKey)
-    const t = parseKey(dropKey)
+    const tgt = parseKey(dropKey)
     // TODO(拖拽隐患): 插入点解析依赖 nodeMeta.byRef / nodeMeta.parent 的时效性。
     // 若上一次拖拽后 reload 尚未完成就连续拖拽，第二次可能查不到 byRef 而
     // 被误判为「未挂载」走 mount 分支，产生重复树节点。后续应加防护：
@@ -448,18 +449,18 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     // 目标：父目录 + 插入位置（null = 追加末尾）
     let parentId = ''
     let index: number | null = null
-    if (t.kind === 'root') {
+    if (tgt.kind === 'root') {
       parentId = ''
-    } else if (t.kind === 'folder') {
+    } else if (tgt.kind === 'folder') {
       if (dropPos === 0) {
-        parentId = t.id // 拖入目录 → 末尾
+        parentId = tgt.id // 拖入目录 → 末尾
       } else {
-        parentId = nodeMeta.parent[t.id] ?? ''
-        index = insertIndex(parentId, t.id, dropPos > 0)
+        parentId = nodeMeta.parent[tgt.id] ?? ''
+        index = insertIndex(parentId, tgt.id, dropPos > 0)
       }
     } else {
       // 接口行：0 视为放其下方
-      const nodeId = nodeMeta.byRef[t.id]
+      const nodeId = nodeMeta.byRef[tgt.id]
       if (nodeId) {
         parentId = nodeMeta.parent[nodeId] ?? ''
         index = insertIndex(parentId, nodeId, dropPos >= 0)
@@ -511,8 +512,8 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
     const currentParentId = moveNodeId ? nodeMeta.parent[moveNodeId] ?? '' : null
     const isCurrent = (value: string) => currentParentId !== null && (value === '__root__' ? '' : value) === currentParentId
     const out: { value: string; label: string; disabled?: boolean }[] = [
-      { value: '__root__', label: '（根目录）', disabled: isCurrent('__root__') },
-      { value: '__unmount__', label: '（未分类）', disabled: !!moveApi && !moveNodeId },
+      { value: '__root__', label: t('(Root)'), disabled: isCurrent('__root__') },
+      { value: '__unmount__', label: t('(Uncategorized)'), disabled: !!moveApi && !moveNodeId },
     ]
     const walk = (nodes: TreeNode[], depth: number) => {
       for (const n of nodes) {
@@ -534,7 +535,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           fontSize: 13, color: PALETTE.text,
         }}>
-          {subtitle ? (a.name || '未命名') : (a.name || a.uri)}
+          {subtitle ? (a.name || t('Untitled')) : (a.name || a.uri)}
         </div>
         {subtitle && (
           <div style={{ fontSize: 11, color: PALETTE.textTertiary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -546,9 +547,9 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         trigger={['click']}
         menu={{
           items: [
-            { key: 'move', label: '移动到目录…' },
-            ...(node ? [{ key: 'unmount', label: '从目录移除' }] : []),
-            { key: 'del', label: '删除接口', danger: true },
+            { key: 'move', label: t('Move to folder…') },
+            ...(node ? [{ key: 'unmount', label: t('Remove from folder') }] : []),
+            { key: 'del', label: t('Delete API'), danger: true },
           ],
           onClick: ({ key }) => {
             if (key === 'move') openMove(a)
@@ -595,9 +596,9 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
                     trigger={['click']}
                     menu={{
                       items: [
-                        { key: 'sub', label: '新建子目录', icon: <FolderAddOutlined /> },
-                        { key: 'rename', label: '重命名', icon: <EditOutlined /> },
-                        { key: 'del', label: '删除目录', danger: true },
+                        { key: 'sub', label: t('New subfolder'), icon: <FolderAddOutlined /> },
+                        { key: 'rename', label: t('Rename'), icon: <EditOutlined /> },
+                        { key: 'del', label: t('Delete folder'), danger: true },
                       ],
                       onClick: ({ key }) => {
                         if (key === 'sub') openFolderCreate(n.id)
@@ -645,7 +646,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         ),
       })))
     }
-    const rootName = projects.find((p) => p.id === projectId)?.name || '根目录'
+    const rootName = projects.find((p) => p.id === projectId)?.name || t('Root')
     return [{
       key: '__root__',
       title: (
@@ -675,29 +676,29 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       <div style={{ padding: '10px 12px', borderBottom: `1px solid ${PALETTE.border}` }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
           <Space size={8}>
-            <span style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>接口</span>
+            <span style={{ fontSize: 15, fontWeight: 600, color: PALETTE.text }}>{t('APIs')}</span>
             <Switch
               size="small"
               checked={showDetail}
               onChange={setShowDetail}
-              checkedChildren="详细"
-              unCheckedChildren="简略"
+              checkedChildren={t('Detail view')}
+              unCheckedChildren={t('Brief view')}
             />
-             <Tooltip title="往右拖一点可以拖入空目录"><QuestionCircleOutlined /></Tooltip>
+             <Tooltip title={t('Drag a bit further right to drop into an empty folder')}><QuestionCircleOutlined /></Tooltip>
           </Space>
           <Space size={4}>
-            <Tooltip title="全部展开/缩起">
+            <Tooltip title={t('Expand/collapse all')}>
               <Button size="small" icon={<MenuFoldOutlined />}
                 onClick={() => (expandedKeys.includes('__root__') ? setExpandedKeys([]) : setExpandedKeys(['__root__']))}
               />
             </Tooltip>
-            <Tooltip title="查看接口封装">
+            <Tooltip title={t('View API wrappers')}>
               <Button
                 size="small" icon={<CodeOutlined />}
                 onClick={() => onPreviewWrappers?.()}
               />
             </Tooltip>
-            <Tooltip title="添加目录">
+            <Tooltip title={t('Add folder')}>
               <Button
                 size="small" icon={<FolderAddOutlined />}
                 onClick={() => openFolderCreate()}
@@ -708,13 +709,13 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
               size="small" icon={<PlusOutlined />}
               onClick={openNewApiAtRoot /* 顶部新建 = 挂根 */}
             >
-              新建
+              {t('New')}
             </Button>
           </Space>
         </div>
         <Input
           size="small" allowClear
-          placeholder="搜索（名称 / uri）"
+          placeholder={t('Search (name / uri)')}
           value={search} onChange={(e) => setSearch(e.target.value)}
         />
       </div>
@@ -733,7 +734,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       >
         {search.trim() ? (
           <PanelList
-            title="搜索结果"
+            title={t('Search results')}
             hideSearch
             data={filtered}
             activeId={activeId}
@@ -770,12 +771,12 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
         padding: '6px 10px', borderTop: `1px solid ${PALETTE.border}`,
         display: 'flex', flexWrap: 'wrap', gap: 2, flexShrink: 0,
       }}>
-        <Button size="small" onClick={() => setCurlOpen(true)}>导入 curl</Button>
-        <Button size="small" onClick={() => setOasOpen(true)}>导入 OpenAPI</Button>
-        <Button size="small" onClick={() => setPmOpen(true)}>导入 Postman</Button>
-        <Button size="small" onClick={() => exportAs('openapi')}>导出 OpenAPI</Button>
-        <Button size="small" onClick={() => exportAs('postman')}>导出 Postman</Button>
-        <Button size="small" onClick={() => exportAs('curl')}>导出 curl</Button>
+        <Button size="small" onClick={() => setCurlOpen(true)}>{t('Import curl')}</Button>
+        <Button size="small" onClick={() => setOasOpen(true)}>{t('Import OpenAPI')}</Button>
+        <Button size="small" onClick={() => setPmOpen(true)}>{t('Import Postman')}</Button>
+        <Button size="small" onClick={() => exportAs('openapi')}>{t('Export OpenAPI')}</Button>
+        <Button size="small" onClick={() => exportAs('postman')}>{t('Export Postman')}</Button>
+        <Button size="small" onClick={() => exportAs('curl')}>{t('Export curl')}</Button>
       </div>
 
       {/* 树空白区右键菜单：手工定位（节点处菜单由各自 Dropdown 承载） */}
@@ -798,11 +799,11 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       )}
 
       <Modal
-        title="导入 curl"
+        title={t('Import curl')}
         open={curlOpen}
         onCancel={() => setCurlOpen(false)}
         onOk={importCurl}
-        okText="导入"
+        okText={t('Import')}
         confirmLoading={busy === 'curl'}
         destroyOnHidden
       >
@@ -816,11 +817,11 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       </Modal>
 
       <Modal
-        title="导入 OpenAPI（JSON / YAML）"
+        title={t('Import OpenAPI (JSON / YAML)')}
         open={oasOpen}
         onCancel={() => setOasOpen(false)}
         onOk={importOas}
-        okText="导入"
+        okText={t('Import')}
         confirmLoading={busy === 'openapi'}
         destroyOnHidden
         width={640}
@@ -835,11 +836,11 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       </Modal>
 
       <Modal
-        title="导入 Postman（Collection v2.1 JSON）"
+        title={t('Import Postman (Collection v2.1 JSON)')}
         open={pmOpen}
         onCancel={() => setPmOpen(false)}
         onOk={importPm}
-        okText="导入"
+        okText={t('Import')}
         confirmLoading={busy === 'postman'}
         destroyOnHidden
         width={640}
@@ -854,27 +855,27 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
       </Modal>
 
       <Modal
-        title={folderModal?.mode === 'rename' ? '重命名目录' : '新建目录'}
+        title={folderModal?.mode === 'rename' ? t('Rename folder') : t('New folder')}
         open={!!folderModal}
         onCancel={() => { setFolderModal(undefined); setFolderName('') }}
         onOk={submitFolder}
-        okText="保存"
+        okText={t('Save')}
         destroyOnHidden
       >
         <Input
           value={folderName}
           onChange={(e) => setFolderName(e.target.value)}
-          placeholder="目录名"
+          placeholder={t('Folder name')}
           onPressEnter={submitFolder}
         />
       </Modal>
 
       <Modal
-        title={moveApi ? `移动「${moveApi.name || moveApi.uri}」` : ''}
+        title={moveApi ? t('Move "{name}"', { name: moveApi.name || moveApi.uri }) : ''}
         open={!!moveApi}
         onCancel={() => { setMoveApi(null); setMoveTarget('') }}
         onOk={submitMove}
-        okText="移动"
+        okText={t('Move')}
         destroyOnHidden
       >
         <Select
@@ -882,7 +883,7 @@ export default function ApiTreePanel({ projectId, projects, activeId, refresh, o
           value={moveTarget}
           onChange={setMoveTarget}
           options={folderOptions}
-          placeholder="选择目标目录"
+          placeholder={t('Select target folder')}
           showSearch
           optionFilterProp="label"
         />

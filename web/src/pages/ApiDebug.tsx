@@ -21,6 +21,7 @@ import { METHOD_COLORS, PALETTE } from '../theme'
 import { useLayout } from '../hooks/useLayout'
 import { message } from '../messageBridge'
 import { schemaToExample } from '../lib/jsonSchema'
+import { t } from '../i18n'
 
 // HttpApi 的脚本列（api.ts 类型未含，本地扩展：后端 JSON 列为 [{"lang","source"}]）
 interface ScriptRow { lang: string; source: string }
@@ -86,14 +87,14 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   // 当前接口封装预览（只导出当前接口；保存后可用）
   const previewWrapper = async () => {
     if (!projectId || !apiId) {
-      message.warning('当前接口保存后即可查看封装')
+      message.warning(t('Save the API first to view its wrapper'))
       return
     }
     setWrapperLoading(true)
     try {
       const r = await get<{ source: string }>(
         `/api/v1/projects/${projectId}/api-wrappers?http_ids=${apiId}`)
-      setWrapperSource(r.source || '# （当前接口暂未生成封装）')
+      setWrapperSource(r.source || '# (no wrapper generated for this API yet)')
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -143,7 +144,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const send = async () => {
     if (!projectId || sendingRef.current) return
     if (!uri.trim()) {
-      message.warning('请输入请求 URL')
+      message.warning(t('Enter the request URL'))
       return
     }
     sendingRef.current = true
@@ -207,7 +208,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     try {
       await put<HttpApi>(`/api/v1/apis/${savedId}`, payload())
       setSavedSnapshot(currentSnapshot)
-      message.success('已保存')
+      message.success(t('Saved'))
       onSaved?.()
     } catch (e: any) {
       message.error(e.message)
@@ -217,7 +218,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
   const doCreate = async (finalName?: string) => {
     const saveName = (finalName ?? defaultName()).trim()
     if (!saveName) {
-      message.warning('请输入接口名称')
+      message.warning(t('Enter an API name'))
       return
     }
     try {
@@ -226,7 +227,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         name: saveName, // 直接使用默认/当前名称
         parent_id: createParentId || undefined, // 右键目录新建：落到目标目录（0 省略 = 挂根）
       })
-      message.success('已保存')
+      message.success(t('Saved'))
       setName(saveName)
       setSavedSnapshot(formOf(saveName, method, uri, params, headers, cookies, body, preScript, postScript, settings, design))
       allowOnce() // 新建成功后直接放行跳转，避免触发未保存确认
@@ -263,9 +264,9 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
     setCookies(nextCookies)
     setBody(nextBody)
     if (nextParams === params && nextHeaders === headers && nextCookies === cookies && nextBody === body) {
-      message.info('调试参数已与设计一致')
+      message.info(t('Debug parameters already match the design'))
     } else {
-      message.success('已按设计回填')
+      message.success(t('Prefilled from design'))
     }
   }
 
@@ -275,7 +276,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center',
         background: '#FFFFFF', color: PALETTE.textTertiary,
       }}>
-        请先在顶部选择项目
+        {t('Select a project at the top first')}
       </div>
     )
 
@@ -296,18 +297,18 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
         borderBottom: `1px solid ${PALETTE.border}`, flexShrink: 0,
       }}>
-        <span style={{ fontSize: 12, color: PALETTE.textSecondary, flexShrink: 0 }}>名称</span>
+        <span style={{ fontSize: 12, color: PALETTE.textSecondary, flexShrink: 0 }}>{t('Name')}</span>
         <Input
           size="small"
           style={{ width: 320 }}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="接口名称（可空，树/列表展示兜底 METHOD uri）"
+          placeholder={t('API name (optional; falls back to METHOD uri in trees/lists)')}
         />
         <span style={{ flex: 1 }} />
         {savedId && (
           <Typography.Text
-            copyable={{ text: savedId, tooltips: ['复制 ID', '已复制'] }}
+            copyable={{ text: savedId, tooltips: [t('Copy ID'), t('Copied')] }}
             style={{ fontSize: 11, color: PALETTE.textTertiary, whiteSpace: 'nowrap' }}
           >
             ID {savedId}
@@ -326,21 +327,21 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
           value={uri}
           onChange={(e) => setUri(e.target.value)}
           onPressEnter={mode === 'debug' ? send : undefined}
-          placeholder="输入请求 URL，如 /users/{id} 或 https://api.example.com/users"
+          placeholder={t('Request URL, e.g. /users/{id} or https://api.example.com/users')}
         />
         <Select
           style={{ width: 150 }}
           value={env || undefined}
-          placeholder="环境"
+          placeholder={t('Environment')}
           allowClear
           options={envs.map((e) => ({ value: e.id, label: e.name }))}
           onChange={(v) => setEnv(v ?? '')}
         />
         {mode === 'debug' && (
-          <Button type="primary" icon={<SendOutlined />} loading={loading} onClick={send}>发送</Button>
+          <Button type="primary" icon={<SendOutlined />} loading={loading} onClick={send}>{t('Send')}</Button>
         )}
-        <Button icon={<SaveOutlined />} onClick={save}>保存</Button>
-        {dirty && <Tag color="warning" style={{ marginInlineEnd: 0 }}>未保存</Tag>}
+        <Button icon={<SaveOutlined />} onClick={save}>{t('Save')}</Button>
+        {dirty && <Tag color="warning" style={{ marginInlineEnd: 0 }}>{t('Unsaved')}</Tag>}
       </div>
 
       {/* 设计/调试 主页签 */}
@@ -350,8 +351,8 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         onChange={(k) => setMode(k as 'design' | 'debug')}
         style={{ padding: '0 12px', flexShrink: 0 }}
         items={[
-          { key: 'debug', label: '调试' },
-          { key: 'design', label: '设计' },
+          { key: 'debug', label: t('Debug') },
+          { key: 'design', label: t('Design') },
         ]}
       />
 
@@ -368,7 +369,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
               size="small"
               tabBarExtraContent={
                 <span style={{ display: 'inline-flex', gap: 4 }}>
-                  <Tooltip title="按设计回填：补齐设计里定义的参数/头/Cookie（默认值），请求体按结构生成示例">
+                  <Tooltip title={t('Prefill from design: add defined params/headers/cookies with defaults; body example generated from schema')}>
                     <Button
                       size="small"
                       type="text"
@@ -376,10 +377,10 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
                       disabled={design.params.length + design.headers.length + design.cookies.length === 0 && !design.requestSchema}
                       onClick={syncFromDesign}
                     >
-                      按设计回填
+                      {t('Prefill from design')}
                     </Button>
                   </Tooltip>
-                  <Tooltip title="查看当前接口封装">
+                  <Tooltip title={t('View this API\'s wrapper')}>
                     <Button
                       size="small"
                       type="text"
@@ -394,7 +395,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
               items={[
                 {
                   key: 'params',
-                  label: '参数',
+                  label: t('Params'),
                   children: (
                     <KvEditor
                       value={params} onChange={setParams} checkable
@@ -404,13 +405,13 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
                 },
                 {
                   key: 'headers',
-                  label: '请求头',
+                  label: t('Headers'),
                   children: (
                     <KvEditor
                       value={headers} onChange={setHeaders} checkable
                       meta={designMeta(design.headers)}
-                      keyPlaceholder="Header 名"
-                      valuePlaceholder="Header 值（支持 {{var}}）"
+                      keyPlaceholder={t('Header name')}
+                      valuePlaceholder={t('Header value (supports {{var}})')}
                     />
                   ),
                 },
@@ -421,51 +422,51 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
                     <KvEditor
                       value={cookies} onChange={setCookies} checkable
                       meta={designMeta(design.cookies)}
-                      keyPlaceholder="Cookie 名"
-                      valuePlaceholder="Cookie 值（支持 {{var}}）"
+                      keyPlaceholder={t('Cookie name')}
+                      valuePlaceholder={t('Cookie value (supports {{var}})')}
                     />
                   ),
                 },
                 {
                   key: 'body',
-                  label: '请求体',
+                  label: t('Body'),
                   children: <BodyEditor value={body} onChange={setBody} />,
                 },
                 {
                   key: 'settings',
-                  label: '设置',
+                  label: t('Settings'),
                   children: (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 420 }}>
                       <Checkbox
                         checked={settings.tls_verify}
                         onChange={(e) => setSettings({ ...settings, tls_verify: e.target.checked })}
                       >
-                        校验 TLS 证书（关闭仅用于自签名测试环境）
+                        {t('Verify TLS certificate (disable only for self-signed test environments)')}
                       </Checkbox>
                       <Checkbox
                         checked={settings.follow_redirects}
                         onChange={(e) => setSettings({ ...settings, follow_redirects: e.target.checked })}
                       >
-                        跟随重定向
+                        {t('Follow redirects')}
                       </Checkbox>
                       <Checkbox
                         checked={settings.comment_tolerant_json}
                         onChange={(e) => setSettings({ ...settings, comment_tolerant_json: e.target.checked })}
                       >
-                        兼容带注释 JSON（请求体）
+                        {t('Allow JSON with comments (request body)')}
                       </Checkbox>
                     </div>
                   ),
                 },
                 {
                   key: 'pre',
-                  label: '前置脚本',
-                  children: scriptArea(preScript, setPreScript, '# 请求发送前执行（Python）\n# 示例：ctx.set_var("now", ...)'),
+                  label: t('Pre-script'),
+                  children: scriptArea(preScript, setPreScript, t('# Runs before the request is sent (Python)\n# e.g. ctx.set_var("now", ...)')),
                 },
                 {
                   key: 'post',
-                  label: '后置脚本',
-                  children: scriptArea(postScript, setPostScript, '# 响应返回后执行（Python）\n# 示例：resp = ctx.response'),
+                  label: t('Post-script'),
+                  children: scriptArea(postScript, setPostScript, t('# Runs after the response arrives (Python)\n# e.g. resp = ctx.response')),
                 },
               ]}
             />
@@ -484,7 +485,7 @@ export default function ApiDebug({ newMode, createParentId, onSaved }: { newMode
         open={!!wrapperSource}
         source={wrapperSource}
         baseUrl={`/api/v1/projects/${projectId}/api-wrappers?http_ids=${apiId}`}
-        title={`当前接口封装 · ${name || apiId}`}
+        title={t('Wrapper for this API · {name}', { name: name || (apiId ?? '') })}
         onClose={() => setWrapperSource('')}
       />
       {guard}

@@ -3,6 +3,7 @@ import { Button, Modal, Space, Typography } from 'antd'
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons'
 import { get } from '../api'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 const MONO = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace'
 
@@ -45,10 +46,10 @@ export default function WrapperPreviewModal({
       } else {
         fallbackCopy(source)
       }
-      message.success('已复制到剪贴板')
+      message.success(t('Copied to clipboard'))
     } catch {
       fallbackCopy(source)
-      message.success('已复制到剪贴板')
+      message.success(t('Copied to clipboard'))
     }
   }
 
@@ -57,7 +58,7 @@ export default function WrapperPreviewModal({
     try {
       const sep = baseUrl.includes('?') ? '&' : '?'
       const r = await get<{ source: string }>(`${baseUrl}${sep}format=stub`)
-      downloadText('tp_api_wrappers.pyi', r.source || '# （项目内暂无接口）')
+      downloadText('tp_api_wrappers.pyi', r.source || '# (no APIs in this project yet)')
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -70,23 +71,21 @@ export default function WrapperPreviewModal({
       open={open}
       onCancel={onClose}
       width={760}
-      title={title ?? 'tp_api_wrappers.py（派发时自动生成）'}
+      title={title ?? t('tp_api_wrappers.py (auto-generated at dispatch time)')}
       footer={
         <Space>
-          <Button icon={<CopyOutlined />} onClick={copy}>复制</Button>
+          <Button icon={<CopyOutlined />} onClick={copy}>{t('Copy')}</Button>
           <Button icon={<DownloadOutlined />} onClick={() => downloadText('tp_api_wrappers.py', source)}>
-            下载 .py
+            {t('Download .py')}
           </Button>
           <Button icon={<DownloadOutlined />} loading={stubLoading} onClick={downloadStub}>
-            下载 .pyi 补全
+            {t('Download .pyi stub')}
           </Button>
         </Space>
       }
     >
       <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 8 }}>
-        `.py` 为平台实际执行格式；`.pyi` 为自包含补全 stub——放到本地项目后
-        Pylance/Pyright 可直接提示 <Typography.Text code>Api&lt;ID&gt;</Typography.Text> 的
-        <Typography.Text code>run()</Typography.Text> 签名与响应字段，无需安装 testpilot-sdk。
+        {t('`.py` is the format the platform executes; `.pyi` is a self-contained completion stub — drop it into your local project and Pylance/Pyright resolves the {code1} types and the {code2} signature without installing testpilot-sdk.', { code1: 'Api<ID>', code2: 'run()' })}
       </Typography.Paragraph>
       <pre style={{
         fontFamily: MONO, fontSize: 12, maxHeight: 460, overflow: 'auto',

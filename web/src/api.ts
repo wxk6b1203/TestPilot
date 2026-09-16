@@ -1,5 +1,6 @@
 // REST 客户端：token 注入、错误规整、401 跳登录。
 import { message } from './messageBridge'
+import { t } from './i18n'
 
 const TOKEN_KEY = 'tp_token'
 const PROJECT_KEY = 'tp_project'
@@ -30,7 +31,7 @@ export async function download(path: string, filename: string) {
   const res = await fetch(path, {
     headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
   })
-  if (!res.ok) throw new Error(`下载失败 HTTP ${res.status}`)
+  if (!res.ok) throw new Error(t('Download failed (HTTP {status})', { status: res.status }))
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -43,7 +44,7 @@ export async function download(path: string, filename: string) {
 // uploadArtifact 用户上传二进制（multipart；binary_ref 供体）。上限 8MiB（派发内联上限）。
 export async function uploadArtifact(file: File): Promise<Artifact> {
   if (file.size <= 0 || file.size > 8 * 1024 * 1024) {
-    throw new Error('文件需在 1B..8MiB 之间（binary_ref 内联上限）')
+    throw new Error(t('File must be between 1B and 8MiB (binary_ref inline limit)'))
   }
   const fd = new FormData()
   fd.append('file', file)
@@ -53,8 +54,8 @@ export async function uploadArtifact(file: File): Promise<Artifact> {
     body: fd, // 浏览器自设 multipart boundary，勿手动设 Content-Type
   })
   if (!res.ok) {
-    const t = await res.text().catch(() => '')
-    throw new Error(`上传失败 HTTP ${res.status} ${t}`)
+    const txt = await res.text().catch(() => '')
+    throw new Error(t('Upload failed (HTTP {status}) {detail}', { status: res.status, detail: txt }))
   }
   return res.json()
 }
@@ -83,11 +84,11 @@ export async function api<T = any>(path: string, opts: RequestInit = {}): Promis
     // 登录接口的凭证错误（AUTH_INVALID_CREDENTIALS）≠ 会话过期：
     // 不清 token 不跳转，按业务错误提示；中间件的会话过期 401 是 UNAUTHORIZED 码
     if ((data as any).error?.code === 'AUTH_INVALID_CREDENTIALS') {
-      throw new Error('用户名或密码错误')
+      throw new Error(t('Incorrect username or password'))
     }
     setToken(null)
     if (!location.hash.includes('/login')) location.hash = '#/login'
-    throw new Error('登录已过期')
+    throw new Error(t('Session expired'))
   }
   if (!res.ok) {
     const err = (data as any).error
@@ -116,7 +117,8 @@ const truncatedShown = new Set<string>()
 export function warnTruncated<T>(r: ListResp<T>, label: string) {
   if (r.total > r.items.length && !truncatedShown.has(label)) {
     truncatedShown.add(label)
-    message.warning(`${label}共 ${r.total} 条，仅显示前 ${r.items.length} 条`)
+    message.warning(t('{label}: {total} items in total, showing first {count}',
+      { label, total: r.total, count: r.items.length }))
   }
 }
 
@@ -377,9 +379,11 @@ export interface Artifact {
   size: number
   created_at: number
 }
+// 词典值经 getter 每次读取时求值（t()）：切换语言后无需刷新即生效
 export const ARTIFACT_KINDS: Record<number, string> = {
-  1: '截图', 2: '视频', 3: 'Trace', 4: 'HAR', 5: '下载',
-  6: '日志', 7: 'Proto', 8: '证书', 9: '上传',
+  get 1() { return t('Screenshot') }, get 2() { return t('Video') }, get 3() { return 'Trace' },
+  get 4() { return 'HAR' }, get 5() { return t('Download') }, get 6() { return t('Log') },
+  get 7() { return 'Proto' }, get 8() { return t('Certificate') }, get 9() { return t('Upload') },
 }
 export interface StepResult {
   step_path: string
@@ -434,17 +438,29 @@ export const HTTP_METHODS: Record<number, { text: string; color: string }> = {
 }
 
 export const STATUS: Record<number, { text: string; color: string }> = {
-  0: { text: '未知', color: 'default' },
-  1: { text: '运行中', color: 'processing' },
-  2: { text: '通过', color: 'success' },
-  3: { text: '失败', color: 'error' },
-  4: { text: '跳过', color: 'warning' },
-  5: { text: '超时', color: 'error' },
+  get 0() { return { text: t('Unknown'), color: 'default' } },
+  get 1() { return { text: t('Running'), color: 'processing' } },
+  get 2() { return { text: t('Passed'), color: 'success' } },
+  get 3() { return { text: t('Failed'), color: 'error' } },
+  get 4() { return { text: t('Skipped'), color: 'warning' } },
+  get 5() { return { text: t('Timeout'), color: 'error' } },
 }
 
 export const CAPS: Record<number, string> = {
-  1: '功能测试',
-  2: '低代码',
-  3: 'Playwright',
-  4: '压测',
+  get 1() { return t('Functional') },
+  get 2() { return t('Low-code') },
+  get 3() { return 'Playwright' },
+  get 4() { return t('Stress') },
+}
+
+// i18n：后端消息语言声明（scheduler GET /api/v1/meta/locale，恒为 en-US）。
+// 后端消息以英文为主、前端不翻译后端 message；此接口让前端「感知」而非硬编码假设。
+export async function fetchBackendLocale(): Promise<string> {
+  try {
+    const r = await fetch('/api/v1/meta/locale')
+    const d = await r.json()
+    return d?.language ?? 'en-US'
+  } catch {
+    return 'en-US'
+  }
 }

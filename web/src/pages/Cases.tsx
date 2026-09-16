@@ -6,6 +6,7 @@ import IdeLayout from '../components/IdeLayout'
 import EntityTreePanel from '../components/EntityTreePanel'
 import { useLayout } from '../hooks/useLayout'
 import CaseEditor from './CaseEditor'
+import { t } from '../i18n'
 
 // 用例列表：左侧目录树（EntityTreePanel），右侧为编辑器（/cases/:id/edit 或 /cases/new）。
 export default function Cases() {
@@ -17,7 +18,7 @@ export default function Cases() {
   const locationState = loc.state as { parentId?: string } | null
   const createParentId = locationState?.parentId
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const openNewCase = (parentId?: string) => {
     nav('/cases/new', { state: parentId ? { parentId } : undefined })
@@ -41,7 +42,7 @@ export default function Cases() {
       panelWidth={360}
       panel={
         <EntityTreePanel
-          title="用例"
+          title={t('Cases')}
           kind="case"
           projectId={projectId}
           activeId={id}
@@ -64,10 +65,10 @@ export default function Cases() {
           }}
         >
           <span style={{ fontSize: 14, color: '#646A73' }}>
-            从左侧选择用例，或点击「+ 新建」创建
+            {t('Pick a case on the left, or click "+ New" to create one')}
           </span>
           <span style={{ fontSize: 12, color: '#BBBFC4' }}>
-            声明式用例使用步骤树编辑器；低代码用例直接编写 Python
+            {t('Declarative cases use the step-tree editor; low-code cases are plain Python')}
           </span>
         </div>
       )}

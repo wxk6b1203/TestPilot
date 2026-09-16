@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { Input, Space } from 'antd'
 import { SearchOutlined } from '@ant-design/icons'
 import { PALETTE } from '../theme'
+import { t } from '../i18n'
 
 // 二级面板通用列表：搜索 + 工具区 + 高亮选中行。
 // （antd List 已废弃，这里直接 div 渲染——仅用到布局，无需 List 能力）
@@ -29,7 +30,7 @@ export default function PanelList<T extends { id: string }>({
         {!hideSearch && (
           <Input
             size="small" allowClear prefix={<SearchOutlined style={{ color: PALETTE.textTertiary }} />}
-            placeholder="搜索…" value={search ?? ''} onChange={(e) => onSearch?.(e.target.value)}
+            placeholder={t('Search…')} value={search ?? ''} onChange={(e) => onSearch?.(e.target.value)}
           />
         )}
       </div>
@@ -47,7 +48,7 @@ export default function PanelList<T extends { id: string }>({
           </div>
         ))}
         {data.length === 0 && (empty ?? (
-          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 32 }}>暂无数据</div>
+          <div style={{ textAlign: 'center', color: PALETTE.textTertiary, padding: 32 }}>{t('No data')}</div>
         ))}
       </div>
     </div>

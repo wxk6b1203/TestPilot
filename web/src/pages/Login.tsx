@@ -3,6 +3,8 @@ import { Button, Card, Divider, Form, Input, Space, Tabs } from 'antd'
 import { GithubOutlined, LoginOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { get, post, setToken } from '../api'
+import { t } from '../i18n'
+import LangToggle from '../components/LangToggle'
 import { PALETTE } from '../theme'
 import { App as AntdApp } from 'antd'
 
@@ -25,7 +27,7 @@ export default function Login() {
       setToken(r.token)
       nav('/apis', { replace: true })
     } catch (e: any) {
-      msg.error(e.message || '登录失败')
+      msg.error(e.message || t('Login failed'))
     }
   }
 
@@ -35,10 +37,10 @@ export default function Login() {
     try {
       const r = await post<{ token: string }>('/api/v1/auth/register', v)
       setToken(r.token)
-      msg.success('注册成功，已登录')
+      msg.success(t('Registered successfully; you are signed in'))
       nav('/apis', { replace: true })
     } catch (e: any) {
-      msg.error(e.message || '注册失败') // REGISTRATION_DISABLED 等错误原样展示
+      msg.error(e.message || t('Registration failed')) // REGISTRATION_DISABLED 等错误原样展示
     }
   }
 
@@ -52,56 +54,60 @@ export default function Login() {
   return (
     <div style={{
       minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
-      background: PALETTE.bgLayout,
+      background: PALETTE.bgLayout, position: 'relative',
     }}>
+      {/* 登录页没有顶栏：语言切换固定在页面右上角 */}
+      <div style={{ position: 'absolute', top: 16, right: 20 }}>
+        <LangToggle />
+      </div>
       <Card style={{ width: 400, boxShadow: '0 1px 4px rgba(0,0,0,.06)' }}>
         <div style={{ textAlign: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 20, fontWeight: 700, color: PALETTE.text }}>TestPilot</span>
-          <div style={{ color: PALETTE.textSecondary, fontSize: 12 }}>LLM 驱动的自动化集成测试平台</div>
+          <div style={{ color: PALETTE.textSecondary, fontSize: 12 }}>{t('LLM-powered automated integration testing platform')}</div>
         </div>
         <Tabs
           centered
           items={[
             {
               key: 'login',
-              label: '登录',
+              label: t('Sign in'),
               children: (
                 <Form layout="vertical" onFinish={onLogin}>
-                  <Form.Item name="username" label="用户名" rules={[{ required: true }]}>
-                    <Input autoFocus placeholder="用户名" />
+                  <Form.Item name="username" label={t('Username')} rules={[{ required: true }]}>
+                    <Input autoFocus placeholder={t('Username')} />
                   </Form.Item>
-                  <Form.Item name="password" label="密码" rules={[{ required: true }]}>
-                    <Input.Password placeholder="密码" />
+                  <Form.Item name="password" label={t('Password')} rules={[{ required: true }]}>
+                    <Input.Password placeholder={t('Password')} />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" block icon={<LoginOutlined />}>
-                    登录
+                    {t('Sign in')}
                   </Button>
                 </Form>
               ),
             },
             {
               key: 'register',
-              label: '注册',
+              label: t('Register'),
               children: (
                 <Form layout="vertical" onFinish={onRegister}>
                   <Form.Item
-                    name="username" label="用户名" rules={[{ required: true }, { min: 3, max: 64 }]}
+                    name="username" label={t('Username')} rules={[{ required: true }, { min: 3, max: 64 }]}
                   >
-                    <Input placeholder="3-64 字符" />
+                    <Input placeholder={t('3-64 characters')} />
                   </Form.Item>
                   <Form.Item
-                    name="password" label="密码" rules={[{ required: true }, { min: 8, max: 128 }]}
+                    name="password" label={t('Password')} rules={[{ required: true }, { min: 8, max: 128 }]}
                   >
-                    <Input.Password placeholder="至少 8 位" />
+                    <Input.Password placeholder={t('At least 8 characters')} />
                   </Form.Item>
-                  <Form.Item name="display_name" label="昵称（可选）">
+                  <Form.Item name="display_name" label={t('Display name (optional)')}>
                     <Input />
                   </Form.Item>
-                  <Form.Item name="tenant_name" label="租户名（可选，默认=用户名）">
-                    <Input placeholder="注册即自建租户并成为 owner" />
+                  <Form.Item name="tenant_name" label={t('Tenant name (optional, defaults to username)')}>
+                    <Input placeholder={t('A tenant is created for you on registration (you become its owner)')} />
                   </Form.Item>
                   <Button type="primary" htmlType="submit" block>
-                    注册并登录
+                    {t('Register & sign in')}
                   </Button>
                 </Form>
               ),
@@ -111,14 +117,14 @@ export default function Login() {
         {providers.length > 0 && (
           <>
             <Divider style={{ margin: '12px 0' }}>
-              <span style={{ color: PALETTE.textTertiary, fontSize: 12 }}>第三方登录</span>
+              <span style={{ color: PALETTE.textTertiary, fontSize: 12 }}>{t('Single sign-on')}</span>
             </Divider>
             <Space orientation="vertical" style={{ width: '100%' }}>
               {providers.map((p) => (
                 <Button
                   key={p.id} block icon={<GithubOutlined />} onClick={() => sso(p)}
                 >
-                  使用 {p.name} 登录{p.type === 'oauth2' ? '（OAuth2）' : ''}
+                  {t('Sign in with {name}{oauth}', { name: p.name, oauth: p.type === 'oauth2' ? ' (OAuth2)' : '' })}
                 </Button>
               ))}
             </Space>

@@ -11,6 +11,7 @@ import { useChat } from '@ai-sdk/react'
 import { DefaultChatTransport, lastAssistantMessageIsCompleteWithApprovalResponses } from 'ai'
 import type { UIMessage } from 'ai'
 import { get, getToken } from '../api'
+import { getLang, t } from '../i18n'
 import type { ListResp } from '../api'
 import { useLayout } from '../hooks/useLayout'
 import { PALETTE } from '../theme'
@@ -19,16 +20,17 @@ import SessionList from './copilot/SessionList'
 import TrashView from './copilot/TrashView'
 import { BusyIndicator, PartView } from './copilot/MessageParts'
 
+// 建议词存英文 key，渲染时 t() 翻译（语言切换后跟随）
 const SUGGESTIONS = [
-  '当前项目有哪些接口',
-  '帮我分析最近一次失败的运行',
-  '生成一个打开当前环境首页并断言欢迎语的 Playwright UI 用例',
+  'What APIs does the current project have?',
+  'Help me analyze the most recent failed run',
+  'Create a Playwright UI case that opens the environment home page and asserts the welcome text',
 ]
 
 // 前端流空闲看门狗：SSE 长时间无任何增量（首 token 慢 / 供应商卡住）时
 // 主动 abort，避免 busy 状态永久占用页面。HITL 等待审批期间不启动该计时。
 const STREAM_IDLE_TIMEOUT_MS = 120_000
-const STREAM_IDLE_TIMEOUT_LABEL = '2 分钟'
+const STREAM_IDLE_TIMEOUT_LABEL_KEY = '2 minutes'
 // 流式 UI 更新节流：长回复按 100ms 批量渲染，降低 Markdown 反复解析的卡顿
 const STREAM_UI_THROTTLE_MS = 100
 // 与 Copilot 后端 _MAX_CHAT_BODY 对齐：发送前按 UTF-8 字节数预检，避免
@@ -78,7 +80,7 @@ const sanitizeMessages = (msgs: any[]) =>
 function describeChatError(e: unknown): string {
   const raw = e instanceof Error ? e.message : String(e)
   if (raw.includes('body too large') || raw.includes('> 1048576')) {
-    return '对话历史过长，已超过 Copilot 请求上限（1MB），请点击「新会话」开始新的对话'
+    return t('Chat history too long for the Copilot request limit (1MB). Start a new session to continue.')
   }
   try {
     const obj = JSON.parse(raw)
@@ -169,6 +171,8 @@ export default function Copilot() {
           ...(sessionIdRef.current ? { 'X-Session-Id': sessionIdRef.current } : {}),
           ...(projectIdRef.current ? { 'X-TP-Project-Id': projectIdRef.current } : {}),
           ...(envIdRef.current ? { 'X-TP-Env-Id': envIdRef.current } : {}),
+          // 回复语言跟随界面语言（copilot 侧解析为动态回复语言指令）
+          'X-TP-Lang': getLang(),
         }),
         body: () => ({ trigger: 'submit-message' }), // 后端要求 trigger=submit-message
         // 裁剪 parts 为后端 schema 允许的字段（SDK 序列化多出的 id 等会被 extra=forbid 拒绝）
@@ -177,9 +181,9 @@ export default function Copilot() {
           // 与后端 1MB 限制对齐：超限直接本地报错，不走网络/不扣 AI 配额
           const bytes = new TextEncoder().encode(JSON.stringify(nextBody)).length
           if (bytes > MAX_CHAT_BODY_BYTES) {
-            throw new Error(
-              `对话历史过长（${Math.ceil(bytes / 1024)}KB > 1MB），无法继续发送。请点击「新会话」开始新的对话`,
-            )
+            throw new Error(t(
+              'Chat history too large ({kb}KB > 1MB); cannot send. Start a new session to continue.',
+              { kb: Math.ceil(bytes / 1024) }))
           }
           return { headers, body: nextBody }
         },
@@ -239,7 +243,7 @@ export default function Copilot() {
         watchdogFiredRef.current = true
         stop()
         message.error(
-          `Copilot 超过 ${STREAM_IDLE_TIMEOUT_LABEL}没有新输出，已自动停止，请缩短请求或重试`,
+          t('Copilot had no new output for {label}; it stopped automatically. Shorten the request or retry.', { label: t(STREAM_IDLE_TIMEOUT_LABEL_KEY) }),
         )
       }
     }, 1000)
@@ -412,9 +416,9 @@ export default function Copilot() {
   const handleCopy = async (text: string) => {
     try {
       await copyText(text)
-      message.success('已复制')
+      message.success(t('Copied'))
     } catch {
-      message.error('复制失败，请手动选择文本')
+      message.error(t('Copy failed; select the text manually'))
     }
   }
 
@@ -441,27 +445,27 @@ export default function Copilot() {
             display: 'flex', alignItems: 'center', gap: 8,
           }}>
             <Tag color={projectId ? 'blue' : 'default'} style={{ margin: 0 }}>
-              <ProjectOutlined /> {projectName || '未选择项目'}
+              <ProjectOutlined /> {projectName || t('No project selected')}
             </Tag>
             <Tag color={envId ? 'green' : 'default'} style={{ margin: 0 }}>
-              <EnvironmentOutlined /> {envName || '未选择环境'}
+              <EnvironmentOutlined /> {envName || t('No environment selected')}
             </Tag>
             <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-              Copilot 把以上选择作为「当前项目/环境」，相关工具缺省参数自动生效
+              {t('Copilot uses the selections above as the current project/environment; related tools default to them automatically')}
             </Typography.Text>
           </div>
           <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '12px 16px' }}>
             {messages.length === 0 && (
               <div style={{ textAlign: 'center', color: PALETTE.textTertiary, marginTop: 40 }}>
                 <RobotOutlined style={{ fontSize: 28 }} />
-                <div style={{ marginTop: 8 }}>向 Copilot 描述任务，例如「当前项目有哪些接口」「创建一个接口 GET /ping」</div>
+                <div style={{ marginTop: 8 }}>{t('Describe a task to Copilot, e.g. "What APIs does the current project have?" or "Create an API GET /ping"')}</div>
                   <div style={{
                     marginTop: 16, display: 'flex', flexWrap: 'wrap', gap: 8,
                     justifyContent: 'center', padding: '0 24px',
                   }}>
-                    {SUGGESTIONS.map((s) => (
-                      <Button key={s} size="small" onClick={() => submitText(s)}>
-                        {s}
+                    {SUGGESTIONS.map((sk) => (
+                      <Button key={sk} size="small" onClick={() => submitText(sk)}>
+                        {t(sk)}
                       </Button>
                     ))}
                   </div>
@@ -501,8 +505,8 @@ export default function Copilot() {
                         type="text"
                         size="small"
                         icon={<CopyOutlined />}
-                        aria-label="复制消息"
-                        title="复制消息"
+                        aria-label={t('Copy message')}
+                        title={t('Copy message')}
                         onClick={() => void handleCopy(copyableText)}
                         style={{
                           marginTop: 4, height: 22, width: 22, padding: 0,
@@ -517,7 +521,7 @@ export default function Copilot() {
             <div ref={bottomRef} />
           </div>
           <div style={{ padding: '8px 12px', borderTop: `1px solid ${PALETTE.border}`, flexShrink: 0 }}>
-            {busy && <BusyIndicator idleTimeoutLabel={STREAM_IDLE_TIMEOUT_LABEL} />}
+            {busy && <BusyIndicator idleTimeoutLabel={t(STREAM_IDLE_TIMEOUT_LABEL_KEY)} />}
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8 }}>
               <Input.TextArea
                 ref={inputRef}
@@ -525,11 +529,11 @@ export default function Copilot() {
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={handleChatKeyDown}
                 autoSize={{ minRows: 1, maxRows: 8 }}
-                placeholder="输入消息，Enter 发送；Shift/Cmd/Ctrl + Enter 换行"
+                placeholder={t('Type a message; Enter to send, Shift/Cmd/Ctrl + Enter for a new line')}
                 style={{ flex: 1, resize: 'none' }}
               />
               {busy ? (
-                <Button danger icon={<StopOutlined />} onClick={stop} title="停止生成" style={{ flexShrink: 0 }} />
+                <Button danger icon={<StopOutlined />} onClick={stop} title={t('Stop generating')} style={{ flexShrink: 0 }} />
               ) : (
                 <Button type="primary" icon={<SendOutlined />} onClick={submit}
                   disabled={!input.trim()} style={{ flexShrink: 0 }} />

@@ -6,6 +6,7 @@ import RunDetailDrawer, { StatusTag } from '../components/RunDetailDrawer'
 import { useLayout } from '../hooks/useLayout'
 import { useEventStream } from '../hooks/useEventStream'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 export default function Runs() {
   const { projectId } = useLayout()
@@ -65,12 +66,12 @@ export default function Runs() {
     if (detailTimer.current) clearTimeout(detailTimer.current)
   }, [])
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   return (
-    <Card title="运行记录" extra={
+    <Card title={t('Run history')} extra={
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        共 {total} 条{total > rows.length ? `（已加载前 ${rows.length} 条）` : ''}
+        {t('{total} in total', { total })}{total > rows.length ? t(' (loaded first {count})', { count: rows.length }) : ''}
       </Typography.Text>
     }>
       <Table
@@ -79,25 +80,25 @@ export default function Runs() {
         pagination={{ defaultPageSize: 10, showSizeChanger: true, pageSizeOptions: [10, 20, 50, 100] }}
         columns={[
           { title: 'ID', dataIndex: 'id', width: 190, render: (v: string) => <Typography.Text copyable={{ text: v }}>{v.slice(-8)}</Typography.Text> },
-          { title: '状态', dataIndex: 'status', width: 100, render: (v: number) => <StatusTag v={v} /> },
+          { title: t('Status'), dataIndex: 'status', width: 100, render: (v: number) => <StatusTag v={v} /> },
           {
-            title: '结果',
+            title: t('Result'),
             width: 160,
             render: (_, r) =>
               r.summary ? (
                 <Space size={4}>
-                  <Tag>总 {r.summary.total}</Tag>
-                  <Tag color="success">过 {r.summary.passed}</Tag>
-                  <Tag color="error">败 {r.summary.failed}</Tag>
+                  <Tag>{t('total {n}', { n: r.summary.total })}</Tag>
+                  <Tag color="success">{t('pass {n}', { n: r.summary.passed })}</Tag>
+                  <Tag color="error">{t('fail {n}', { n: r.summary.failed })}</Tag>
                 </Space>
               ) : (
                 '-'
               ),
           },
-          { title: '开始时间', dataIndex: 'started_at', width: 170, render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
-          { title: '结束时间', dataIndex: 'finished_at', width: 170, render: (v?: string) => v?.slice(0, 19).replace('T', ' ') || '-' },
+          { title: t('Started at'), dataIndex: 'started_at', width: 170, render: (v: string) => v?.slice(0, 19).replace('T', ' ') },
+          { title: t('Finished at'), dataIndex: 'finished_at', width: 170, render: (v?: string) => v?.slice(0, 19).replace('T', ' ') || '-' },
           {
-            title: '操作',
+            title: t('Actions'),
             width: 190,
               render: (_, r) => (
                 <Space>
@@ -107,22 +108,22 @@ export default function Runs() {
                     } catch (e: any) {
                       message.error(e.message)
                     }
-                  }}>详情</Typography.Link>
+                  }}>{t('Detail')}</Typography.Link>
                 <Typography.Link
                   onClick={() => {
                     download(`/api/v1/runs/${r.id}/junit`, `testpilot-run-${r.id}.xml`)
                       .catch((e) => message.error(e.message))
                   }}
                 >
-                  导出 JUnit
+                  {t('Export JUnit')}
                 </Typography.Link>
                 {(r.status === 0 || r.status === 1) && (
                   <Popconfirm
-                    title="取消该运行？未完成用例将标记为跳过"
+                    title={t('Cancel this run? Unfinished cases will be marked as skipped')}
                     onConfirm={async () => {
                       try {
                         await post(`/api/v1/runs/${r.id}/cancel`)
-                        message.success('已取消')
+                        message.success(t('Cancelled'))
                         void load()
                         if (detail?.id === r.id) setDetail(await get(`/api/v1/runs/${r.id}`))
                       } catch (e: any) {
@@ -130,7 +131,7 @@ export default function Runs() {
                       }
                     }}
                   >
-                    <Button size="small" danger type="link" style={{ padding: 0 }}>取消</Button>
+                    <Button size="small" danger type="link" style={{ padding: 0 }}>{t('Cancel')}</Button>
                   </Popconfirm>
                 )}
               </Space>

@@ -10,6 +10,7 @@ import { PALETTE } from '../theme'
 import { useLayout } from '../hooks/useLayout'
 import PlanEditor from './PlanEditor'
 import { message } from '../messageBridge'
+import { t } from '../i18n'
 
 // 测试计划列表：左侧面板为计划列表（运行/删除/新建），右侧为编辑器（/plans/:id/edit）。
 export default function Plans() {
@@ -35,7 +36,7 @@ export default function Plans() {
     load().catch((e) => message.error(e.message))
   }, [projectId])
 
-  if (!projectId) return <Card>请先在顶部选择项目</Card>
+  if (!projectId) return <Card>{t('Select a project at the top first')}</Card>
 
   const filtered = rows.filter((p) => p.name.toLowerCase().includes(search.trim().toLowerCase()))
 
@@ -43,7 +44,7 @@ export default function Plans() {
     setRunning(id)
     try {
       const r = await post<{ run_id: string }>(`/api/v1/plans/${id}/run`, {})
-      message.success(`已触发运行 ${r.run_id}`)
+      message.success(t('Run triggered: {id}', { id: r.run_id }))
     } catch (e: any) {
       message.error(e.message)
     } finally {
@@ -55,12 +56,12 @@ export default function Plans() {
     <IdeLayout
       panel={
         <PanelList
-          title="测试计划"
+          title={t('Test plans')}
           search={search}
           onSearch={setSearch}
           extra={
             <Button size="small" type="primary" icon={<PlusOutlined />} onClick={() => setOpen(true)}>
-              新建
+              {t('New')}
             </Button>
           }
           data={filtered}
@@ -77,20 +78,20 @@ export default function Plans() {
                   {p.name}
                 </div>
                 <div style={{ fontSize: 12, color: PALETTE.textSecondary, marginTop: 2 }}>
-                  {envs.find((e) => e.id === p.env_id)?.name || '未设置环境'}
+                  {envs.find((e) => e.id === p.env_id)?.name || t('No environment set')}
                 </div>
               </div>
               <Space size={4} onClick={(e) => e.stopPropagation()}>
                 <Button size="small" type="primary" loading={running === p.id} onClick={() => runPlan(p.id)}>
-                  运行
+                  {t('Run')}
                 </Button>
                 <Popconfirm
-                  title="删除计划？"
-                  description="删除后不可恢复"
+                  title={t('Delete this plan?')}
+                  description={t('This cannot be undone')}
                   onConfirm={async () => {
                     try {
                       await del(`/api/v1/plans/${p.id}`)
-                      message.success('已删除')
+                      message.success(t('Deleted'))
                       load()
                     } catch (e: any) {
                       message.error(e.message)
@@ -116,16 +117,16 @@ export default function Plans() {
         >
           <PlayCircleOutlined style={{ fontSize: 40, color: PALETTE.textTertiary }} />
           <div style={{ fontSize: 13, color: PALETTE.textTertiary }}>
-            在左侧选择计划进行编辑，或点击「+ 新建」创建测试计划
+            {t('Pick a plan on the left to edit, or click "+ New" to create one')}
           </div>
         </div>
       )}
 
       <Modal
-        title="新建测试计划"
+        title={t('New test plan')}
         open={open}
         width={480}
-        okText="创建"
+        okText={t('Create')}
         confirmLoading={creating}
         onCancel={() => setOpen(false)}
         onOk={() => form.submit()}
@@ -146,7 +147,7 @@ export default function Plans() {
                 timeout_ms: 300000,
                 items: [],
               })
-              message.success('已创建')
+              message.success(t('Created'))
               setOpen(false)
               form.resetFields()
               nav(`/plans/${r.id}/edit`)
@@ -157,12 +158,12 @@ export default function Plans() {
             }
           }}
         >
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入计划名称' }]}>
-            <Input placeholder="计划名称" />
+          <Form.Item name="name" label={t('Name')} rules={[{ required: true, message: t('Enter a plan name') }]}>
+            <Input placeholder={t('Plan name')} />
           </Form.Item>
-          <Form.Item name="env_id" label="环境" rules={[{ required: true, message: '请选择环境' }]}>
+          <Form.Item name="env_id" label={t('Environment')} rules={[{ required: true, message: t('Select an environment') }]}>
             <Select
-              placeholder="选择环境"
+              placeholder={t('Select environment')}
               options={envs.map((e) => ({ value: e.id, label: `${e.name} (${e.base_url})` }))}
             />
           </Form.Item>
