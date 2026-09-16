@@ -650,6 +650,7 @@ Copilot 不止生成接口与脚本，其能力覆盖**生成、分析、调试�
 - 鉴权复用前端会话 token，工具调用带 tenant 上下文以应用 RBAC
 - **会话持久化**：对话按用户/租户落库，支持历史回放与上下文续接
 - **模型配置**：LLM Provider/模型可配置（pydantic-ai 模型无关）；API Key 经 Vault 管理；按租户配置 AI 调用配额（见 13.3）
+- **回复语言**：前端每次 chat 请求带 `X-TP-Lang` 头（zh/en，反代透传），main.py 解析进 `CopilotDeps.language`，经 pydantic-ai 动态 instructions 注入"按该语言回复"指令（覆盖模板默认）；`default_language` 配置（`TP_COPILOT_DEFAULT_LANGUAGE`，默认 zh）决定 system prompt `{{language_directive}}` 占位符的默认值。工具校验错误消息恒为英文，由模型按目标语言转述
 
 ---
 
@@ -799,6 +800,16 @@ StressTestPlan
 
 ### 11.3 托管
 - 前端构建产物经 Go `embed` 嵌入 Scheduler 二进制，由 Scheduler 统一托管（已确认）；也可独立部署（可选）
+
+### 11.4 国际化（i18n）
+- **策略**：后端（scheduler/worker/copilot 工具面）消息恒为英文、带稳定错误码，不做运行时多语言；
+  所有面向展示的本地化在前端完成。`GET /api/v1/meta/locale`（公开）声明后端消息语言（`en-US`），前端启动时探测记录。
+- **实现**：自研轻量 i18n（`web/src/i18n`）——英文文案即 key，`zh.ts` 提供「英文 → 中文」映射，缺失回退英文；
+  `t(key, params)` 支持单花括号占位符插值。语言状态为模块级单例 + `useSyncExternalStore` 订阅，
+  非 React 环境（api.ts）可直接调用 `t()`；`STATUS`/`CAPS`/`ARTIFACT_KINDS` 等展示词典用 getter 每次读取求值，切换即时生效。
+- **切换与持久化**：顶栏右上角与登录页右上角各有一个语言下拉（`LangToggle`），选择写入 `localStorage('tp_lang')`，
+  刷新保持；antd 内建文案经 `ConfigProvider locale`（zhCN/enUS）同步切换。
+- **Copilot 联动**：聊天请求经 `X-TP-Lang` 头把界面语言传给 Copilot（见 7.6）。
 
 ---
 

@@ -18,6 +18,7 @@ summarizer_model: ""            # 上下文压缩摘要器；空=同主模型
 # 自定义文件支持 {{schema}} / {{sdk_doc}} 占位符（相对路径按进程 CWD 解析）。
 system_prompt_file: ""
 summarizer_prompt_file: ""
+default_language: zh             # 回复语言默认值（zh|en）；请求头 X-TP-Lang 可按次覆盖
 context_window: 64000           # 压缩阈值基准（fraction 0.7 触发）
 
 scheduler_grpc: 127.0.0.1:9090  # CopilotToolService
