@@ -1,11 +1,11 @@
-import { App as AntdApp, Button, Dropdown, Input, Modal, Tag, Typography } from 'antd'
+import { Button, Dropdown, Input, Modal, Tag, Typography } from 'antd'
 import {
-  CloudUploadOutlined, CodeOutlined, DeleteOutlined, DownloadOutlined,
+  CloudUploadOutlined, CodeOutlined, DownloadOutlined,
   EyeOutlined, SaveOutlined,
 } from '@ant-design/icons'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { del, get, post, put } from '../api'
+import { get, post, put } from '../api'
 import type { DataModel } from '../api'
 import SchemaTree, { ensureEditable } from '../components/SchemaTree'
 import { jsonToSchema, schemaToExample } from '../lib/jsonSchema'
@@ -23,7 +23,6 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
 }) {
   const nav = useNavigate()
   const { id } = useParams()
-  const { modal } = AntdApp.useApp()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [schema, setSchema] = useState<JsonSchema>({ type: 'object', properties: {} })
@@ -117,26 +116,6 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
     }
   }
 
-  const confirmDelete = () => {
-    modal.confirm({
-      title: `删除数据模型「${name}」？`,
-      content: '删除后不可恢复。',
-      okText: '删除',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await del(`/api/v1/models/${savedId}`)
-          message.success('已删除')
-          onSaved?.()
-          nav('/models', { replace: true, state: null })
-        } catch (e: any) {
-          message.error(e.message)
-        }
-      },
-    })
-  }
-
   const openSchemaRaw = () => {
     setSchemaRaw(JSON.stringify(schema, null, 2))
     setSchemaRawOpen(true)
@@ -154,7 +133,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', background: '#FFFFFF' }}>
-      {/* 名称/描述/操作 */}
+      {/* 名称/描述/操作（删除入口在左侧树节点右键菜单，工作区不放删除按钮） */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px',
         borderBottom: `1px solid ${PALETTE.border}`, flexShrink: 0,
@@ -169,8 +148,7 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="说明（可空）"
         />
-        {dirty && <Tag color="warning" style={{ marginInlineEnd: 0 }}>未保存</Tag>}
-        <span style={{ flex: 1 }} />
+        {dirty && <Tag style={{ marginInlineEnd: 0 }} color="warning">未保存</Tag>}
         {savedId && (
           <Typography.Text
             copyable={{ text: savedId, tooltips: ['复制 ID', '已复制'] }}
@@ -180,9 +158,6 @@ export default function ModelDetail({ newMode, createParentId, onSaved }: {
           </Typography.Text>
         )}
         <Button icon={<SaveOutlined />} type="primary" onClick={save}>保存</Button>
-        {savedId && (
-          <Button danger icon={<DeleteOutlined />} onClick={confirmDelete}>删除</Button>
-        )}
       </div>
 
       {/* 工具栏：生成/导入/预览 */}
