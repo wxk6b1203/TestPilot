@@ -62,12 +62,15 @@ def test_metered_wrapper_counts_ok_and_error():
 
 def test_toolsets_register_wrapped_tools():
     """三个工具集经 _MeteredToolset 注册：数量齐全且 schema 可解析。"""
-    assert len(tools.readonly.tools) == 17
-    assert len(tools.writes.tools) == 21
+    assert len(tools.readonly.tools) == 19  # +2：list_data_models / get_data_model
+    assert len(tools.writes.tools) == 24    # +3：create/update/delete_data_model
     assert len(tools.probe.tools) == 6
     # 包装器不得破坏签名解析（__future__ annotations 的字符串求值路径）
     props = tools.writes.tools["update_api"].function_schema.json_schema["properties"]
     assert set(props) == {"api_id", "api", "kind"}
+    # 新增 REST 工具同样可解析（dict | None / Any 参数不破坏 schema 生成）
+    dm = tools.writes.tools["create_data_model"].function_schema.json_schema["properties"]
+    assert set(dm) == {"name", "json_schema", "json", "description", "parent_node_id", "project_id"}
 
 
 def test_observe_turn_rejected():

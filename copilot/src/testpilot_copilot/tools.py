@@ -23,6 +23,7 @@ from testpilot.common.v1 import types_pb2 as pb
 from testpilot.copilot.v1 import copilot_pb2 as cpb
 
 from . import metrics
+from .jsonschema_gen import json_to_schema
 from .scheduler_client import SchedulerClient, parse_struct, to_dict_async
 
 log = logging.getLogger("testpilot.copilot")
@@ -229,6 +230,29 @@ class _MeteredToolset(FunctionToolset):
         return lambda fn: inner(_metered(fn))
 
 
+async def _rest_json(ctx: RunContext[CopilotDeps], method: str, path: str, *,
+                     json_body: dict | None = None,
+                     params: dict | None = None) -> Any:
+    """经 deps.http（REST）调用 Scheduler：透传用户 Bearer（与 hydrate_ui_context
+    同一鉴权形态），非 2xx 抛含后端 error.message 的可读错误。
+
+    数据模型等尚未进 copilot.proto 的纯 REST 领域用本助手，避免为每个资源扩 gRPC 面；
+    访问控制仍由 Scheduler 按租户/用户校验。"""
+    if ctx.deps.http is None:
+        raise RuntimeError("Scheduler REST 客户端不可用")
+    headers = {"Authorization": f"Bearer {ctx.deps.token}"} if ctx.deps.token else {}
+    r = await ctx.deps.http.request(method, path, headers=headers, params=params, json=json_body)
+    if r.status_code >= 400:
+        try:
+            msg = (r.json().get("error") or {}).get("message") or r.text[:200]
+        except ValueError:
+            msg = r.text[:200]
+        raise ValueError(f"Scheduler {method} {path} -> HTTP {r.status_code}: {msg}")
+    if not r.content:
+        return {}
+    return r.json()
+
+
 # ---------------------------------------------------------------------------
 # 只读工具（免审批）
 # ---------------------------------------------------------------------------
@@ -417,6 +441,31 @@ async def query_api_directory(ctx: RunContext[CopilotDeps],
         cpb.QueryApiDirectoryRequest(ctx=ctx.deps.ctx(), project_id=pid,
                                      query=query, parent_node_id=parent_node_id))
     return await to_dict_async(r)
+
+
+@readonly.tool
+async def list_data_models(ctx: RunContext[CopilotDeps],
+                           project_id: str | None = None, query: str = "") -> list[dict]:
+    """列出项目下的数据模型（「结构」，JSON Schema 形态），返回 id/name/description 摘要。
+    project_id 省略时使用页面左上角当前选择的项目；query 按名称/说明模糊过滤。
+    需要完整 schema 字段时用 get_data_model。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    r = await _rest_json(ctx, "GET", "/api/v1/models",
+                         params={"project_id": pid, "page_size": 200})
+    out = [{"id": m.get("id"), "name": m.get("name"), "description": m.get("description") or ""}
+           for m in r.get("items", [])]
+    kw = (query or "").strip().lower()
+    if kw:
+        out = [m for m in out
+               if kw in str(m.get("name") or "").lower()
+               or kw in str(m.get("description") or "").lower()]
+    return out
+
+
+@readonly.tool
+async def get_data_model(ctx: RunContext[CopilotDeps], model_id: str) -> dict:
+    """获取数据模型详情（schema 字段为完整 JSON Schema 文档）。"""
+    return await _rest_json(ctx, "GET", f"/api/v1/models/{model_id}")
 
 
 @readonly.tool
@@ -1250,6 +1299,59 @@ async def move_node(ctx: RunContext[CopilotDeps], node_id: str,
         cpb.MoveNodeRequest(ctx=ctx.deps.ctx(), node_id=str(node_id),
                             parent_node_id=parent_node_id or ""))
     return await to_dict_async(r)
+
+
+@writes.tool(requires_approval=True)
+async def create_data_model(ctx: RunContext[CopilotDeps], name: str,
+                            json_schema: dict | None = None,
+                            json: Any = None,
+                            description: str = "",
+                            parent_node_id: str | None = None,
+                            project_id: str | None = None) -> dict:
+    """创建数据模型（「结构」，JSON Schema 形态）。结构二选一：
+    json_schema 直接给 JSON Schema 文档（draft-07 子集，如
+    {"type":"object","properties":{"code":{"type":"integer"}}}）；
+    json 给示例 JSON（自动推断结构，如 {"code":0,"msg":"ok"}）。
+    都缺省时创建空 object 根。parent_node_id 可选：创建后挂到该目录。
+    project_id 省略时使用页面左上角当前选择的项目。"""
+    pid = ctx.deps.resolve_project_id(project_id)
+    if json_schema is None:
+        json_schema = json_to_schema(json) if json is not None else {"type": "object", "properties": {}}
+    return await _rest_json(ctx, "POST", "/api/v1/models", json_body={
+        "project_id": pid,
+        "name": name,
+        "description": description,
+        "schema": json_schema,
+        **({"parent_node_id": str(parent_node_id)} if parent_node_id else {}),
+    })
+
+
+@writes.tool(requires_approval=True)
+async def update_data_model(ctx: RunContext[CopilotDeps], model_id: str,
+                            name: str | None = None,
+                            description: str | None = None,
+                            json_schema: dict | None = None,
+                            json: Any = None) -> dict:
+    """更新数据模型（部分更新：只传需要变更的字段）。json_schema/json 语义同
+    create_data_model；给 json 时 schema 整体替换为推断结果（不是合并）。"""
+    body: dict[str, Any] = {}
+    if name is not None:
+        body["name"] = name
+    if description is not None:
+        body["description"] = description
+    if json_schema is not None:
+        body["schema"] = json_schema
+    elif json is not None:
+        body["schema"] = json_to_schema(json)
+    if not body:
+        raise ValueError("未提供任何需要更新的字段（name/description/json_schema/json）")
+    return await _rest_json(ctx, "PUT", f"/api/v1/models/{model_id}", json_body=body)
+
+
+@writes.tool(requires_approval=True)
+async def delete_data_model(ctx: RunContext[CopilotDeps], model_id: str) -> dict:
+    """删除数据模型（软删，不可恢复，慎用）。接口设计中已引用的结构删除后引用不会自动清理。"""
+    return await _rest_json(ctx, "DELETE", f"/api/v1/models/{model_id}")
 
 
 # parse_struct 占位引用（部分响应含 Struct 时备用）
