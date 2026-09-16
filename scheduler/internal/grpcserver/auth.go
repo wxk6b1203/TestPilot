@@ -165,7 +165,7 @@ func WorkerAuthStream(workerToken string, tenantTokens map[int64]string) grpc.St
 		}
 		if workerToken == "" && len(known) == 0 {
 			return status.Error(codes.Unauthenticated,
-				"scheduler worker_token 未配置：拒绝一切 Worker 注册（请设置 TP_WORKER_TOKEN）")
+				"scheduler worker_token not configured: rejecting all worker registrations (set TP_WORKER_TOKEN)")
 		}
 		md, ok := metadata.FromIncomingContext(ss.Context())
 		if !ok {

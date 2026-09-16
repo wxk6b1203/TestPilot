@@ -328,14 +328,14 @@ func (s *Server) createIdentityProvider(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.Issuer == "" || in.ClientID == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "issuer 与 client_id 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "issuer and client_id are required"))
 	}
 	ptype := in.Type
 	if ptype == "" {
 		ptype = "oidc"
 	}
 	if ptype != "oidc" && ptype != "oauth2" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type 仅支持 oidc/oauth2"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type only supports oidc/oauth2"))
 	}
 	enabled := true
 	if in.Enabled != nil {
@@ -383,7 +383,7 @@ func (s *Server) updateIdentityProvider(ctx fiber.Ctx) error {
 	}
 	if in.Type != "" {
 		if in.Type != "oidc" && in.Type != "oauth2" {
-			return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type 仅支持 oidc/oauth2"))
+			return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "type only supports oidc/oauth2"))
 		}
 		row.Type = in.Type
 	}

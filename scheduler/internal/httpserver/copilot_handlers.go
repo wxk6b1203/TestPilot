@@ -56,7 +56,7 @@ func (s *Server) updateCopilotSession(ctx fiber.Ctx) error {
 	}
 	title := strings.TrimSpace(in.Title)
 	if title == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "标题不能为空"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "title must not be empty"))
 	}
 	res := s.db.Model(&model.CopilotSession{}).
 		Where("id = ? AND tenant_id = ? AND user_id = ? AND deleted_at IS NULL",

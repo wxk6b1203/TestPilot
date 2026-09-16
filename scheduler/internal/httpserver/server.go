@@ -72,6 +72,8 @@ func (s *Server) App() *fiber.App {
 	app.Get("/healthz", func(c fiber.Ctx) error {
 		return writeJSON(c, fiber.StatusOK, map[string]any{"ok": true})
 	})
+	// 语言声明（公开）：后端消息恒为英文，前端据此感知而非硬编码假设
+	app.Get("/api/v1/meta/locale", s.getMetaLocale)
 	// 登录/注册同享登录限流（防暴力破解与批量注册：同 IP 10 次/分钟）。
 	// 回环来源（本地开发/e2e/同机工具）不限流——攻击者无法伪造 TCP 源 IP，
 	// 限流只对真实远程来源生效。

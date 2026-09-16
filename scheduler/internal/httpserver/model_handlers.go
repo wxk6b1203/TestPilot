@@ -38,7 +38,7 @@ func (s *Server) createDataModel(ctx fiber.Ctx) error {
 	}
 	v := in.DataModel
 	if strings.TrimSpace(v.Name) == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name is required"))
 	}
 	assignIDs(&v, c.TenantID)
 	// C6：project_id 必须属于本租户（自定义创建路径不走 createOf，需单独校验）

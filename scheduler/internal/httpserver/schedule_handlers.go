@@ -39,7 +39,7 @@ func (s *Server) createSchedule(ctx fiber.Ctx) error {
 	}
 	planID, perr := strconv.ParseInt(in.PlanID, 10, 64)
 	if perr != nil || in.CronExpr == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "plan_id 与 cron_expr 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "plan_id and cron_expr are required"))
 	}
 	if !ensureEntity(s.db, ctx, "plan", planID) {
 		return nil

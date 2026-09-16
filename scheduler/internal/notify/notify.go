@@ -105,8 +105,8 @@ func RunFinished(db *gorm.DB, runID int64) {
 		// CI 集成：接收方可直接拉取 JUnit XML 报告（相对路径，拼接控制台 base URL）。
 		"junit_url": fmt.Sprintf("/api/v1/runs/%d/junit", run.ID),
 	}
-	title := "TestPilot 运行完成"
-	text := fmt.Sprintf("计划 %d 运行 %d：status=%d，summary=%s", run.PlanID, run.ID, run.Status, string(run.Summary))
+	title := "TestPilot run finished"
+	text := fmt.Sprintf("plan %d run %d: status=%d, summary=%s", run.PlanID, run.ID, run.Status, string(run.Summary))
 	send(db, run.TenantID, EventRunFinished, payload, title, text)
 }
 
@@ -124,8 +124,8 @@ func StressFinished(db *gorm.DB, runID int64) {
 		"summary":     json.RawMessage(run.Summary),
 		"finished_at": run.FinishedAt,
 	}
-	title := "TestPilot 压测完成"
-	text := fmt.Sprintf("压测计划 %d 运行 %d：status=%d，summary=%s", run.StressPlanID, run.ID, run.Status, string(run.Summary))
+	title := "TestPilot stress run finished"
+	text := fmt.Sprintf("stress plan %d run %d: status=%d, summary=%s", run.StressPlanID, run.ID, run.Status, string(run.Summary))
 	send(db, run.TenantID, EventStressFinished, payload, title, text)
 }
 

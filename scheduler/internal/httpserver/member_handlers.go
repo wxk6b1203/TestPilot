@@ -53,7 +53,7 @@ func (s *Server) addMember(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.Username == "" || in.Role < auth.RoleOwner || in.Role > auth.RoleViewer {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "username 必填，role ∈ [1..4]"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "username is required, role must be in [1..4]"))
 	}
 	// 路由门槛只到 admin：授予 owner 必须 caller 本身是 owner，否则 admin 可自我提权
 	if in.Role == auth.RoleOwner && c.Role != auth.RoleOwner {
@@ -196,7 +196,7 @@ func (s *Server) createTenant(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.Name == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name is required"))
 	}
 	t := &model.Tenant{ID: model.NextID(), Name: in.Name, Status: 1}
 	if err := s.db.Create(t).Error; err != nil {

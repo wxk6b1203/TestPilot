@@ -34,7 +34,7 @@ func (s *Server) createNotificationChannel(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.URL == "" || in.Type < 1 || in.Type > 3 {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "url 必填，type ∈ {1 webhook,2 dingtalk,3 feishu}"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "url is required, type must be one of {1 webhook, 2 dingtalk, 3 feishu}"))
 	}
 	if in.Events == "" {
 		in.Events = "run_finished,stress_finished"

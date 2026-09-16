@@ -47,7 +47,7 @@ var schemaIndex = sync.OnceValue(func() *schemaIdx {
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(domainSchema), &raw); err != nil {
-		panic("embedded domain-schema.json 解析失败: " + err.Error())
+		panic("failed to parse embedded domain-schema.json: " + err.Error())
 	}
 	for k, v := range raw {
 		if k == "messages" {

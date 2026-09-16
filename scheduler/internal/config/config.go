@@ -160,7 +160,7 @@ func Resolve(args []string, getenv func(string) (string, bool)) (Config, error) 
 	// 3) 显式 flag 覆盖（默认值预填当前 cfg，Parse 只改写出现的项）
 	fs := flag.NewFlagSet("scheduler", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
-	fs.String("config", "", "YAML 配置文件路径")
+	fs.String("config", "", "path to YAML config file")
 	bindFlags(fs, &cfg)
 	if err := fs.Parse(args); err != nil {
 		return cfg, err
@@ -250,17 +250,17 @@ func setFromString(f reflect.Value, name, raw string) error {
 	case reflect.Int, reflect.Int64:
 		n, err := strconv.ParseInt(raw, 10, 64)
 		if err != nil {
-			return fmt.Errorf("%s: %q 不是整数", name, raw)
+			return fmt.Errorf("%s: %q is not an integer", name, raw)
 		}
 		f.SetInt(n)
 	case reflect.Bool:
 		b, err := strconv.ParseBool(raw)
 		if err != nil {
-			return fmt.Errorf("%s: %q 不是布尔值", name, raw)
+			return fmt.Errorf("%s: %q is not a boolean", name, raw)
 		}
 		f.SetBool(b)
 	default:
-		return fmt.Errorf("%s: 不支持的字段类型 %s", name, f.Kind())
+		return fmt.Errorf("%s: unsupported field type %s", name, f.Kind())
 	}
 	return nil
 }

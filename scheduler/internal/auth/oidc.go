@@ -120,7 +120,7 @@ func Exchange(doc *DiscoveryDoc, clientID, clientSecret, code, redirectURI strin
 // 映射 sub/email/preferred_username（name 作退化）。
 func FetchUserInfo(userinfoEndpoint, accessToken string) (*OIDCClaims, error) {
 	if userinfoEndpoint == "" {
-		return nil, errors.New("userinfo_endpoint 未配置")
+		return nil, errors.New("userinfo_endpoint is not configured")
 	}
 	req, err := http.NewRequest("GET", userinfoEndpoint, nil)
 	if err != nil {

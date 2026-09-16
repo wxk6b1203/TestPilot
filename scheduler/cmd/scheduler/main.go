@@ -43,7 +43,7 @@ func main() {
 
 	// C1：JWT 默认/弱密钥直接拒绝启动，防止生产裸奔可被伪造任意身份 token
 	if cfg.JWTSecret == "" || cfg.JWTSecret == "dev-secret-change-me" || len(cfg.JWTSecret) < 16 {
-		logging.L.Fatalw("jwt_secret 未配置或为默认/弱值：请设置强随机密钥（>=16 字符，TP_JWT_SECRET）")
+		logging.L.Fatalw("jwt_secret is missing or weak: set a strong random secret (>=16 chars, TP_JWT_SECRET)")
 	}
 
 	shutdownTrace := tracing.Init("testpilot-scheduler", cfg.OTelExporter, cfg.OTelEndpoint)

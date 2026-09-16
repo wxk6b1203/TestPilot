@@ -20,53 +20,53 @@ var (
 	// HTTPRequestsInFlight / HTTPRequests / HTTPDuration 由 HTTPMiddleware 打点。
 	HTTPRequests = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Subsystem: "http", Name: "requests_total",
-		Help: "REST 请求总数（route=ServeMux 模板）。",
+		Help: "Total REST requests (route=ServeMux template).",
 	}, []string{"route", "method", "code"})
 	HTTPDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "testpilot", Subsystem: "http", Name: "request_duration_seconds",
-		Help:    "REST 请求耗时。",
+		Help:    "REST request duration.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"route"})
 
 	WorkersOnline = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "testpilot", Name: "workers_online",
-		Help: "当前在线 Worker 数。",
+		Help: "Current online worker count.",
 	})
 	WorkerLoadSum = promauto.NewGauge(prometheus.GaugeOpts{
 		Namespace: "testpilot", Name: "worker_load_sum",
-		Help: "全部 Worker 负载（在跑任务数）合计。",
+		Help: "Total load (running tasks) across all workers.",
 	})
 	DispatchTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "dispatch_total",
-		Help: "任务派发结果（ok/no_worker）。",
+		Help: "Task dispatch results (ok/no_worker).",
 	}, []string{"result"})
 
 	RunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "runs_total",
-		Help: "功能测试运行收尾计数（status=passed/failed，trigger=manual/scheduled）。",
+		Help: "Functional run finalization count (status=passed/failed, trigger=manual/scheduled).",
 	}, []string{"status", "trigger"})
 	RunDuration = promauto.NewHistogramVec(prometheus.HistogramOpts{
 		Namespace: "testpilot", Name: "run_duration_seconds",
-		Help:    "功能测试运行时长（收尾时观测）。",
+		Help:    "Functional run duration (observed at finalization).",
 		Buckets: []float64{1, 5, 10, 30, 60, 120, 300, 600, 1800},
 	}, []string{"status"})
 	StressRunsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "stress_runs_total",
-		Help: "压测运行收尾计数。",
+		Help: "Stress run finalization count.",
 	}, []string{"status"})
 
 	QuotaRejections = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "quota_rejections_total",
-		Help: "配额拒绝计数（按 metric）。",
+		Help: "Quota rejection count (by metric).",
 	}, []string{"metric"})
 	ArtifactsDropped = promauto.NewCounter(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "artifacts_dropped_total",
-		Help: "因 artifact_bytes 配额丢弃的产物数。",
+		Help: "Artifacts dropped due to artifact_bytes quota.",
 	})
 
 	Notifications = promauto.NewCounterVec(prometheus.CounterOpts{
 		Namespace: "testpilot", Name: "notifications_total",
-		Help: "通知发送计数（type=webhook/dingtalk/feishu，result=ok/error/disabled）。",
+		Help: "Notification send count (type=webhook/dingtalk/feishu, result=ok/error/disabled).",
 	}, []string{"type", "result"})
 )
 

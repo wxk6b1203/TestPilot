@@ -228,7 +228,7 @@ func (s *Server) createFolder(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.ProjectID == 0 || strings.TrimSpace(in.Name) == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 与 name 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id and name are required"))
 	}
 	// C6：project_id 必须属于本租户（ProjectID 直接取自 body）
 	if !ensureEntity(s.db, ctx, "project", in.ProjectID) {
@@ -284,7 +284,7 @@ func (s *Server) renameFolder(ctx fiber.Ctx) error {
 		return nil
 	}
 	if strings.TrimSpace(in.Name) == "" {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "name is required"))
 	}
 	res := s.db.Model(&model.TreeNode{}).
 		Where("id = ? AND tenant_id = ? AND node_type = ?", id, c.TenantID, model.NodeTypeFolder).
@@ -341,7 +341,7 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 		return nil
 	}
 	if in.ProjectID == 0 {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "project_id is required"))
 	}
 	// C6：project_id 必须属于本租户（ProjectID 直接取自 body；ref 实体下方已按租户查证）
 	if !ensureEntity(s.db, ctx, "project", in.ProjectID) {
@@ -357,7 +357,7 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 	}
 	if refID == 0 || (refType != model.NodeTypeHTTPAPI && refType != model.NodeTypeTestCase &&
 		refType != model.NodeTypeSuite && refType != model.NodeTypeDataMdl) {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ref_type/ref_id 不合法"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "invalid ref_type/ref_id"))
 	}
 
 	name := ""
@@ -529,7 +529,7 @@ func (s *Server) reorderTree(ctx fiber.Ctx) error {
 		return nil
 	}
 	if len(in.IDs) == 0 {
-		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ids 必填"))
+		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ids is required"))
 	}
 	err := s.db.Transaction(func(tx *gorm.DB) error {
 		for i, id := range in.IDs {
