@@ -81,8 +81,10 @@ export default function SchemaTree({ schema, onChange, resetKey = '' }: {
     })[0])
 
   const addChild = (parentKey: string, child: SchemaRow) => {
+    // 非目标行必须返回 null（而非 r）：mapRows 以返回值是否为真决定是否递归，
+    // 返回 r 会让根行提前命中、永不下钻——嵌套 object 的 + 号因此全部失效
     const next = mapRows([root], (r) =>
-      r.key === parentKey ? { ...r, children: [...(r.children ?? []), child] } : r)[0]
+      r.key === parentKey ? { ...r, children: [...(r.children ?? []), child] } : null)[0]
     write(next)
     setExpanded((prev) => new Set(prev).add(parentKey))
   }
