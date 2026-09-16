@@ -2,7 +2,8 @@
 
 Prompt 模板默认位于 prompts/system.md / prompts/summarizer.md；
 可通过 Settings.system_prompt_file / summarizer_prompt_file 指向自定义文件。
-模板占位符：{{schema}}（领域数据字典）、{{sdk_doc}}（低代码 SDK 文档）。
+模板占位符：{{schema}}（领域数据字典）、{{sdk_doc}}（低代码 SDK 文档）、
+{{language_directive}}（默认回复语言指令，可被请求头 X-TP-Lang 按请求覆盖）。
 """
 
 from __future__ import annotations
@@ -10,7 +11,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from pydantic_ai import Agent, DeferredToolRequests, ModelSettings
+from pydantic_ai import Agent, DeferredToolRequests, ModelSettings, RunContext
 from pydantic_ai_extensions import ContextCompression
 
 from .config import Settings
@@ -24,7 +25,19 @@ _PROMPTS = Path(__file__).parent / "prompts"
 
 _SYSTEM_PROMPT_FILE = "system.md"
 _SUMMARIZER_PROMPT_FILE = "summarizer.md"
-_SYSTEM_PLACEHOLDERS = ("{{schema}}", "{{sdk_doc}}")
+_SYSTEM_PLACEHOLDERS = ("{{schema}}", "{{sdk_doc}}", "{{language_directive}}")
+
+# 回复语言指令：{{language_directive}} 占位符的取值。
+# 默认语言由 Settings.default_language 决定（zh），单次请求可被 X-TP-Lang 头覆盖
+# （main.py → CopilotDeps.language → 动态指令，见 build_agent）；未知值回退中文。
+_LANGUAGE_DIRECTIVES: dict[str, str] = {
+    "zh": "始终用中文回答，简洁直接。",
+    "en": "Always respond in English. Be concise and direct.",
+}
+
+
+def _language_directive(lang: str) -> str:
+    return _LANGUAGE_DIRECTIVES.get((lang or "").strip().lower(), _LANGUAGE_DIRECTIVES["zh"])
 
 
 def _read_prompt(prompt_file: str, default_name: str, label: str) -> str:
@@ -32,28 +45,33 @@ def _read_prompt(prompt_file: str, default_name: str, label: str) -> str:
     try:
         return path.read_text(encoding="utf-8")
     except OSError as e:
-        raise RuntimeError(f"{label} prompt 文件不可读：{path}") from e
+        raise RuntimeError(f"{label} prompt file is unreadable: {path}") from e
 
 
-def _render_system_prompt(template: str, schema: str, sdk_doc: str) -> str:
+def _render_system_prompt(template: str, schema: str, sdk_doc: str, directive: str) -> str:
     for placeholder in _SYSTEM_PLACEHOLDERS:
         if placeholder not in template:
-            log.warning("system prompt 模板缺少占位符 %s，对应 grounding 不会注入", placeholder)
-    return template.replace("{{schema}}", schema).replace("{{sdk_doc}}", sdk_doc)
+            log.warning("system prompt template is missing placeholder %s; grounding will not be injected", placeholder)
+    return (template
+            .replace("{{schema}}", schema)
+            .replace("{{sdk_doc}}", sdk_doc)
+            .replace("{{language_directive}}", directive))
 
 
-def build_instructions(prompt_file: str = "") -> str:
+def build_instructions(prompt_file: str = "", default_language: str = "zh") -> str:
     """组装主 agent 的 system prompt；prompt_file 为空时使用包内置模板。
 
     {{schema}} 注入的是数据字典“目录”（schema-toc.md，由 scripts/gen_grounding.py
     从 proto 同步生成）：实体 → 字段名一览 + 按需查询指引；完整定义由 LLM 经
     query_schema(topic=...) 分片拉取进消息历史（可被上下文压缩回收），避免每轮
     固定注入 14KB 全量 schema。
+    {{language_directive}} 由 default_language 解析为默认回复语言指令。
     """
     schema = (_GROUNDING / "schema-toc.md").read_text(encoding="utf-8")
     sdk_doc = (_GROUNDING / "sdk-api.md").read_text(encoding="utf-8")
     template = _read_prompt(prompt_file, _SYSTEM_PROMPT_FILE, "system")
-    return _render_system_prompt(template, schema, sdk_doc)
+    return _render_system_prompt(template, schema, sdk_doc,
+                                 _language_directive(default_language))
 
 
 def _build_instructions() -> str:
@@ -82,9 +100,10 @@ def build_agent(settings: Settings) -> Agent[CopilotDeps, str]:
         output_type=str,
         model_settings=_model_settings(settings.summarizer_temperature, settings.summarizer_top_p),
     )
-    return Agent(
+    agent = Agent(
         build_model(settings),
-        instructions=build_instructions(settings.system_prompt_file),
+        instructions=build_instructions(settings.system_prompt_file,
+                                        default_language=settings.default_language),
         deps_type=CopilotDeps,
         output_type=[str, DeferredToolRequests],  # 审批型工具 → 挂起交前端 HITL
         toolsets=[readonly, writes, probe],
@@ -98,3 +117,17 @@ def build_agent(settings: Settings) -> Agent[CopilotDeps, str]:
             ),
         ],
     )
+
+    # 回复语言按请求覆盖：前端每次 chat 带 X-TP-Lang 头（zh/en），main.py 解析后
+    # 放进 CopilotDeps.language；未带头时返回空串，走 system prompt 的默认语言。
+    # 指令写成显式 override 措辞，避免与模板里默认语言指令冲突时被模型忽略。
+    @agent.instructions
+    def _reply_language(ctx: RunContext[CopilotDeps]) -> str:
+        lang = (getattr(ctx.deps, "language", "") or "").strip().lower()
+        if not lang:
+            return ""
+        name = {"zh": "Chinese (Simplified)", "en": "English"}.get(lang, lang)
+        return (f"The user interface language is {name}. "
+                f"Always respond in {name}, overriding any other language instruction.")
+
+    return agent

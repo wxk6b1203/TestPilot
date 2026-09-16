@@ -28,23 +28,23 @@ meter = otel_metrics.get_meter("testpilot.copilot")
 # ok（流正常结束）/ cancelled（客户端断开或 idle 超时取消）/ error（流内异常）。
 CHAT_TURNS = meter.create_counter(
     "testpilot.copilot.chat_turns", unit="{turn}",
-    description="对话轮次计数（按结果：rejected/ok/cancelled/error）。")
+    description="Conversation turn count (by result: rejected/ok/cancelled/error).")
 _CHAT_DURATION_NAME = "testpilot.copilot.chat_duration"  # proxy instrument 无 .name，View 按名匹配
 CHAT_DURATION = meter.create_histogram(
     _CHAT_DURATION_NAME, unit="s",
-    description="对话轮次时长（请求进入到流结束；rejected 为短响应耗时）。")
+    description="Conversation turn duration (request to stream end; rejected measures short responses).")
 ACTIVE_STREAMS = meter.create_up_down_counter(
     "testpilot.copilot.active_streams", unit="{stream}",
-    description="当前活跃的 SSE 对话流数。")
+    description="Currently active SSE conversation streams.")
 
 # 工具调用（含审批型：仅在批准后实际执行时计数，拒绝不执行不计）。
 TOOL_CALLS = meter.create_counter(
     "testpilot.copilot.tool_calls", unit="{call}",
-    description="工具调用计数（tool=工具名，result=ok/error）。")
+    description="Tool call count (tool=name, result=ok/error).")
 _TOOL_DURATION_NAME = "testpilot.copilot.tool_duration"  # 同上
 TOOL_DURATION = meter.create_histogram(
     _TOOL_DURATION_NAME, unit="s",
-    description="工具执行时长。")
+    description="Tool execution duration.")
 
 # 直方图桶边界必须定制：SDK 默认桶 (0,5,10,…,10000) 是毫秒刻度，与本处记录的
 # 秒不匹配（工具调用普遍 0.01-5s 会全挤进 le=5 桶，分布不可用）。

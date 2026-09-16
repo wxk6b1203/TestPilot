@@ -60,6 +60,20 @@ def _context_id_header(value: str | None) -> str:
     return v
 
 
+def _lang_header(value: str | None) -> str:
+    """规范化前端语言头（X-TP-Lang）：仅接受 zh/en 族（zh-CN/zh_TW/en-US 归一化）。
+
+    非法/未带时返回空串，走 Settings.default_language 的默认回复语言；
+    该值只影响回复语言指令，不参与任何信任判定。
+    """
+    v = (value or "").strip().lower()
+    if v.startswith("zh"):
+        return "zh"
+    if v.startswith("en"):
+        return "en"
+    return ""
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = load()
@@ -129,8 +143,8 @@ def attach_idle_timeout_stream(response, timeout: float) -> None:
             except asyncio.TimeoutError:
                 log.warning("copilot sse idle timeout: no chunk for %gs", timeout)
                 error_text = (
-                    f"Copilot 超过 {timeout:g} 秒未产生新输出，服务端已主动结束本次请求。"
-                    "请缩短输入或稍后重试。")
+                    f"Copilot produced no new output for {timeout:g}s; the server ended this request. "
+                    "Try a shorter input or retry later.")
                 yield _sse_json({"type": "error", "errorText": error_text})
                 yield _sse_json({"type": "done"})
                 return
@@ -240,7 +254,9 @@ async def _chat_inner(request: Request):
                        ui_project_id=_context_id_header(
                            request.headers.get("x-tp-project-id")),
                        ui_env_id=_context_id_header(
-                           request.headers.get("x-tp-env-id")))
+                           request.headers.get("x-tp-env-id")),
+                       language=_lang_header(
+                           request.headers.get("x-tp-lang")))
     # 校验页面上下文与用户消息去重落库互不依赖：并行执行，
     # 每个续聊请求少等一次「GET 历史消息」的 RTT。
     await asyncio.gather(

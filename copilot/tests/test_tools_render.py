@@ -303,7 +303,7 @@ def test_update_api_merges_partial_fields_and_preserves_headers():
              "params": [{"key": "page", "value": "2"}],
              "headers": [{"key": "Authorization", "value": "***"}]}))
     assert out["apiId"] == "100"
-    assert out["note"] == "headers 含掩码项已原样保留"  # 全掩码字段未动，须让模型知晓
+    assert out["note"] == "headers: masked items kept as-is"  # 全掩码字段未动，须让模型知晓
     assert [name for name, _ in stub.requests] == ["GetApi", "UpdateApi"]
     _, req = stub.requests[1]
     assert req.kind == cpb.API_KIND_HTTP
@@ -426,7 +426,7 @@ def test_create_api_defaults_to_ui_project_and_explicit_wins():
 
 def test_create_api_without_any_project_fails_before_rpc():
     stub = _RecordingStub(cpb.CreateApiResponse())
-    with pytest.raises(ValueError, match="未选择项目"):
+    with pytest.raises(ValueError, match="no project_id given and no project is selected"):
         asyncio.run(create_api(SimpleNamespace(deps=_fake_deps(stub)),
                                method="GET", uri="/x"))
     assert stub.requests == []
@@ -456,7 +456,7 @@ def test_create_test_plan_requires_env_from_ui():
     assert req.project_id == "p5"
     assert req.plan.env_id == "e5"
 
-    with pytest.raises(ValueError, match="未选择环境"):
+    with pytest.raises(ValueError, match="no env_id given and no environment is selected"):
         asyncio.run(create_test_plan(
             SimpleNamespace(deps=_fake_deps(stub, ui_project_id="p5")),
             name="plan", case_ids=["c1"]))
@@ -547,7 +547,7 @@ def test_get_current_context_no_selection():
     assert out["project"] is None
     assert out["environment_selected"] is False
     assert out["environment"] is None
-    assert "未选择项目" in out["hint"]
+    assert "No project selected" in out["hint"]
 
 
 def test_get_current_context_returns_authoritative_details():
@@ -624,18 +624,18 @@ def test_render_lowcode_ui_source_parameters_template_and_press():
 
 
 def test_render_lowcode_ui_source_rejects_bad_steps():
-    with pytest.raises(ValueError, match="不能为空"):
+    with pytest.raises(ValueError, match="steps must not be empty"):
         render_lowcode_ui_source("/login", [])
-    with pytest.raises(ValueError, match="action 不合法"):
+    with pytest.raises(ValueError, match=r"action is invalid"):
         render_lowcode_ui_source("/login", [{"action": "swipe", "target": "x"}])
-    with pytest.raises(ValueError, match="缺少 value"):
+    with pytest.raises(ValueError, match="missing value"):
         render_lowcode_ui_source("/login", [{"action": "fill", "target": "#x"}])
-    with pytest.raises(ValueError, match="毫秒整数"):
+    with pytest.raises(ValueError, match="integer number of milliseconds"):
         render_lowcode_ui_source("/login", [{"action": "wait", "value": "1.5"}])
-    with pytest.raises(ValueError, match="无法转换表达式模板"):
+    with pytest.raises(ValueError, match="cannot convert the expression template"):
         render_lowcode_ui_source("/login", [
             {"action": "wait", "value": "{{parameters.wait_ms / 1000}}"}])
-    with pytest.raises(ValueError, match="无法转换表达式模板"):
+    with pytest.raises(ValueError, match="cannot convert the expression template"):
         render_lowcode_ui_source("/login", [
             {"action": "fill", "target": "#x", "value": "前缀 {{vars.items[0]}}"}])
 
@@ -702,9 +702,9 @@ def test_build_declarative_ui_case_steps_and_units():
 
 
 def test_build_declarative_ui_case_rejects_missing_target_or_bad_wait():
-    with pytest.raises(ValueError, match="缺少 target"):
+    with pytest.raises(ValueError, match="missing target"):
         build_declarative_ui_case("/login", [{"action": "click", "value": "x"}])
-    with pytest.raises(ValueError, match="毫秒整数"):
+    with pytest.raises(ValueError, match="integer number of milliseconds"):
         build_declarative_ui_case("/login", [{"action": "wait", "value": "abc"}])
 
 
@@ -763,11 +763,11 @@ def test_create_ui_test_case_rejects_invalid_inputs_before_rpc():
     stub = _RecordingStub(cpb.CreateTestCaseResponse())
     deps = _fake_deps(stub, ui_project_id="p9")
 
-    with pytest.raises(ValueError, match="declarative 或 lowcode"):
+    with pytest.raises(ValueError, match="case_type must be declarative or lowcode"):
         asyncio.run(create_ui_test_case(
             SimpleNamespace(deps=deps), name="x", start_url="/",
             steps=[{"action": "click", "target": "#x"}], case_type="raw"))
-    with pytest.raises(ValueError, match="未选择项目"):
+    with pytest.raises(ValueError, match="no project_id given and no project is selected"):
         asyncio.run(create_ui_test_case(
             SimpleNamespace(deps=_fake_deps(stub)), name="x", start_url="/",
             steps=[{"action": "click", "target": "#x"}]))

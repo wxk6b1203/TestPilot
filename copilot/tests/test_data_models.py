@@ -132,7 +132,7 @@ def test_update_data_model_json_replaces_schema():
 
 def test_update_data_model_without_fields_raises():
     deps = _deps(lambda request: httpx.Response(200, json={}))
-    with pytest.raises(ValueError, match="未提供任何需要更新的字段"):
+    with pytest.raises(ValueError, match="no fields to update"):
         asyncio.run(tools.update_data_model(_FakeRunContext(deps), "9001"))
 
 

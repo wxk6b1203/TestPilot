@@ -103,5 +103,16 @@ def test_custom_system_prompt_file_replaces_default(tmp_path):
 
 
 def test_missing_system_prompt_file_raises():
-    with pytest.raises(RuntimeError, match="system prompt 文件不可读"):
+    with pytest.raises(RuntimeError, match="prompt file is unreadable"):
         build_instructions("/no/such/copilot-prompt.md")
+
+
+def test_instructions_language_directive():
+    """{{language_directive}} 占位符按 default_language 解析；未知值回退中文。"""
+    zh = build_instructions()
+    assert "始终用中文回答，简洁直接。" in zh
+    assert "{{language_directive}}" not in zh
+    en = build_instructions(default_language="en")
+    assert "Always respond in English" in en and "始终用中文回答" not in en
+    fallback = build_instructions(default_language="fr")
+    assert "始终用中文回答，简洁直接。" in fallback

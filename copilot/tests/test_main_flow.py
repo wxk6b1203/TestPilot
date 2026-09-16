@@ -89,7 +89,7 @@ def test_idle_timeout_stream_emits_error_done_when_stalled():
     assert out[1].startswith(b"data: ")
     payload = json.loads(out[1].decode("utf-8").removeprefix("data: ").strip())
     assert payload["type"] == "error"
-    assert "未产生新输出" in payload["errorText"]
+    assert "no new output" in payload["errorText"]
     assert json.loads(out[2].decode("utf-8").removeprefix("data: ").strip()) == {
         "type": "done"}
 
@@ -202,3 +202,14 @@ def test_context_id_header_rejects_non_numeric_or_oversized():
     assert _context_id_header("12; drop") == ""
     assert _context_id_header("9" * 33) == ""
 
+
+
+def test_lang_header_normalization():
+    """X-TP-Lang 头归一化：zh/en 族归一，未知/缺失回空串（走默认语言）。"""
+    from testpilot_copilot.main import _lang_header
+    assert _lang_header("zh") == "zh"
+    assert _lang_header("zh-CN") == "zh"
+    assert _lang_header(" en-US ") == "en"
+    assert _lang_header("") == ""
+    assert _lang_header(None) == ""
+    assert _lang_header("fr") == ""

@@ -115,6 +115,9 @@ class CopilotDeps:
     # UI 探测会话 ID（v1）：main.py 按 chat 会话生成注入，工具不再让 LLM 传会话 ID，
     # 杜绝串会话；Scheduler 侧按 tenant 归属校验。
     probe_session_id: str = ""
+    # 回复语言（X-TP-Lang 头 → main.py 解析，""=未指定走默认）：zh | en。
+    # 仅用于动态回复语言指令，不参与任何信任判定。
+    language: str = ""
 
     def ctx(self) -> pb.RequestContext:
         return SchedulerClient.ctx(self.tenant_id, self.user_id)
@@ -175,8 +178,8 @@ class CopilotDeps:
             pid = self.ui_project_id.strip()
         if not pid:
             raise ValueError(
-                "未提供 project_id，且页面左上角当前未选择项目；"
-                "请先在页面选择项目，或显式给出 project_id")
+                "no project_id given and no project is selected at the top-left of the page; "
+                "select one in the page or pass project_id explicitly")
         return pid
 
     def resolve_env_id(self, env_id: str | None = None,
@@ -187,8 +190,8 @@ class CopilotDeps:
             eid = self.ui_env_id.strip()
         if not eid and required:
             raise ValueError(
-                "未提供 env_id，且页面左上角当前未选择环境；"
-                "请先在页面选择环境，或显式给出 env_id")
+                "no env_id given and no environment is selected at the top-left of the page; "
+                "select one in the page or pass env_id explicitly")
         return eid
 
 
@@ -239,7 +242,7 @@ async def _rest_json(ctx: RunContext[CopilotDeps], method: str, path: str, *,
     数据模型等尚未进 copilot.proto 的纯 REST 领域用本助手，避免为每个资源扩 gRPC 面；
     访问控制仍由 Scheduler 按租户/用户校验。"""
     if ctx.deps.http is None:
-        raise RuntimeError("Scheduler REST 客户端不可用")
+        raise RuntimeError("Scheduler REST client is unavailable")
     headers = {"Authorization": f"Bearer {ctx.deps.token}"} if ctx.deps.token else {}
     r = await ctx.deps.http.request(method, path, headers=headers, params=params, json=json_body)
     if r.status_code >= 400:
@@ -311,14 +314,14 @@ async def get_current_context(ctx: RunContext[CopilotDeps]) -> dict:
         return {
             "project_selected": False, "project": None,
             "environment_selected": False, "environment": None,
-            "hint": "页面左上角未选择项目（或所选项目已失效）："
-                    "请提醒用户重新选择项目，或调用 list_projects 让用户指定。",
+            "hint": "No project selected at the top-left of the page (or it is stale): "
+                    "ask the user to reselect a project, or call list_projects so the user can pick one.",
         }
 
     env_hint = (
-        "当前环境已选择，环境相关工具的缺省参数会使用它。"
+        "Environment is selected; environment-related tools will default to it."
         if deps.ui_environment is not None else
-        "页面左上角未选择环境；环境相关操作请先用 list_environments 确定 env_id。"
+        "No environment selected at the top-left of the page; resolve an env_id with list_environments before environment-related operations."
     )
     return {
         "project_selected": True,
@@ -649,7 +652,7 @@ async def update_api(ctx: RunContext[CopilotDeps], api_id: str, api: dict,
     out = await to_dict_async(r)
     if redacted_fields:
         # 让 LLM 知道哪些字段因全为掩码项而未动，避免误报"已更新"
-        out["note"] = "；".join(f"{f} 含掩码项已原样保留" for f in redacted_fields)
+        out["note"] = "; ".join(f"{f}: masked items kept as-is" for f in redacted_fields)
     return out
 
 
@@ -840,22 +843,22 @@ _ANY_TEMPLATE_RE = re.compile(r"\{\{.*?\}\}", re.S)
 
 def _normalize_ui_steps(steps: Any) -> list[dict[str, Any]]:
     if not isinstance(steps, list) or not steps:
-        raise ValueError("steps 不能为空，至少需要一个 UI 动作")
+        raise ValueError("steps must not be empty: at least one UI action is required")
     out: list[dict[str, Any]] = []
     for i, raw in enumerate(steps):
         if not isinstance(raw, dict):
-            raise ValueError(f"steps[{i}] 必须是对象")
+            raise ValueError(f"steps[{i}] must be an object")
         action = str(raw.get("action", "")).strip().lower()
         if action not in _UI_ACTION_ENUM:
             allowed = ", ".join(sorted(_UI_ACTION_ENUM))
-            raise ValueError(f"steps[{i}].action 不合法：{action!r}；可用动作：{allowed}")
+            raise ValueError(f"steps[{i}].action is invalid: {action!r}; allowed: {allowed}")
         target = str(raw.get("target") or "").strip()
         value = raw.get("value")
         for field in _UI_STEP_REQUIRED[action]:
             if field == "target" and not target:
-                raise ValueError(f"steps[{i}]（{action}）缺少 target")
+                raise ValueError(f"steps[{i}] ({action}) is missing target")
             if field == "value" and value in (None, ""):
-                raise ValueError(f"steps[{i}]（{action}）缺少 value")
+                raise ValueError(f"steps[{i}] ({action}) is missing value")
         full_page = raw.get("full_page", True)
         if isinstance(full_page, str):
             full_page = full_page.strip().lower() not in ("false", "0", "no", "off")
@@ -871,7 +874,7 @@ def _normalize_ui_steps(steps: Any) -> list[dict[str, Any]]:
 def _py_path_expr(root: str, path: str) -> str:
     parts = [p.strip() for p in path.split(".") if p.strip()]
     if not parts:
-        raise ValueError(f"变量引用 {{...}} 路径为空：{path!r}")
+        raise ValueError(f"variable reference {{...}} path is empty: {path!r}")
     return f"ctx.{root}[" + "][".join(json.dumps(p, ensure_ascii=False) for p in parts) + "]"
 
 
@@ -881,9 +884,9 @@ def _validate_lowcode_templates(text: str) -> None:
     for m in _ANY_TEMPLATE_RE.finditer(text):
         if _TEMPLATE_RE.fullmatch(m.group(0)) is None:
             raise ValueError(
-                "lowcode 模式仅支持 {{vars.a.b}} / {{parameters.a.b}} 模板，"
-                f"无法转换表达式模板 {m.group(0)!r}；请改用 ctx.vars / ctx.parameters "
-                "Python 表达式，或选择 declarative 模式")
+                "lowcode mode only supports {{vars.a.b}} / {{parameters.a.b}} templates; "
+                f"cannot convert the expression template {m.group(0)!r}; use ctx.vars / ctx.parameters "
+                "Python expressions instead, or choose the declarative mode")
 
 
 def _lowcode_text(value: Any) -> str:
@@ -915,13 +918,13 @@ def _lowcode_wait_ms(value: Any) -> str:
     try:
         return str(int(text))
     except ValueError as e:
-        raise ValueError("wait 的 value 必须是毫秒整数（如 1000）或 {{parameters.wait_ms}}") from e
+        raise ValueError("wait value must be an integer number of milliseconds (e.g. 1000) or {{parameters.wait_ms}}") from e
 
 
 def render_lowcode_ui_source(start_url: str, steps: Any) -> str:
     """把 UI 步骤渲染为 lowcode case_type 的 Python 源码（仅使用 ctx.page）。"""
     if not str(start_url).strip():
-        raise ValueError("start_url 不能为空")
+        raise ValueError("start_url must not be empty")
     normalized = _normalize_ui_steps(steps)
     lines = ["from testpilot_sdk import Context", "", "", "async def run(ctx):"]
     # LLM 常把 start_url 同时作为首个 goto 步骤；与首步完全相同时不重复导航。
@@ -998,7 +1001,7 @@ def _decl_value(s: dict[str, Any]) -> str:
         try:
             return str(int(text) / 1000)
         except ValueError:
-            raise ValueError("wait 的 value 必须是毫秒整数（如 1000）或 {{parameters.wait_ms}}")
+            raise ValueError("wait value must be an integer number of milliseconds (e.g. 1000) or {{parameters.wait_ms}}")
     if action == "screenshot":
         return "full" if s["full_page"] else ""
     if action == "expect_visible":
@@ -1009,7 +1012,7 @@ def _decl_value(s: dict[str, Any]) -> str:
 def build_declarative_ui_case(start_url: str, steps: Any) -> pb.DeclarativeCase:
     """把 UI 步骤渲染为声明式用例：首个 UI_ACTION GOTO + 后续 UI_ACTION 步骤。"""
     if not str(start_url).strip():
-        raise ValueError("start_url 不能为空")
+        raise ValueError("start_url must not be empty")
     normalized = _normalize_ui_steps(steps)
     dc = pb.DeclarativeCase()
     # LLM 常把 start_url 同时作为首个 goto 步骤；与首步完全相同时不重复导航。
@@ -1017,7 +1020,7 @@ def build_declarative_ui_case(start_url: str, steps: Any) -> pb.DeclarativeCase:
             and normalized[0]["target"] == str(start_url).strip()):
         first = dc.steps.add()
         first.type = pb.STEP_TYPE_UI_ACTION
-        first.name = "打开页面"
+        first.name = "Open page"
         first.ui_action.action = pb.UI_ACTION_GOTO
         first.ui_action.target = str(start_url)
     for s in normalized:
@@ -1074,7 +1077,7 @@ async def create_ui_test_case(ctx: RunContext[CopilotDeps], name: str,
         case.type = pb.TEST_CASE_TYPE_DECLARATIVE
         case.declarative.CopyFrom(build_declarative_ui_case(start_url, steps))
     else:
-        raise ValueError("case_type 只能是 declarative 或 lowcode")
+        raise ValueError("case_type must be declarative or lowcode")
     r = await ctx.deps.sched.stub.CreateTestCase(
         cpb.CreateTestCaseRequest(ctx=ctx.deps.ctx(), project_id=pid, case=case,
                                   parent_node_id=parent_node_id or ""))
@@ -1119,7 +1122,7 @@ async def import_openapi(ctx: RunContext[CopilotDeps],
     elif openapi_document:
         req.openapi_document = openapi_document
     else:
-        raise ValueError("openapi_document 与 openapi_url 需提供一个")
+        raise ValueError("provide one of openapi_document or openapi_url")
     r = await ctx.deps.sched.stub.ImportOpenApi(req)
     return await to_dict_async(r)
 
@@ -1344,7 +1347,7 @@ async def update_data_model(ctx: RunContext[CopilotDeps], model_id: str,
     elif json is not None:
         body["schema"] = json_to_schema(json)
     if not body:
-        raise ValueError("未提供任何需要更新的字段（name/description/json_schema/json）")
+        raise ValueError("no fields to update (name/description/json_schema/json)")
     return await _rest_json(ctx, "PUT", f"/api/v1/models/{model_id}", json_body=body)
 
 
@@ -1380,7 +1383,7 @@ def _clip_probe_snapshot(d: dict) -> dict:
         maxb = 16384
     raw = snap.encode("utf-8")
     if len(raw) > maxb:
-        tail = "\n… [已截断]"
+        tail = "\n… [truncated]"
         cut = raw[:max(0, maxb - len(tail.encode("utf-8")))]
         d["ariaSnapshot"] = cut.decode("utf-8", "ignore") + tail
         d["snapshotTruncated"] = True
@@ -1397,7 +1400,7 @@ async def ui_probe_open(ctx: RunContext[CopilotDeps], url: str,
     相对路径必须已选择环境（env_id 或页面左上角当前环境）。
     会话空闲由 Scheduler 自动回收；探测结束应调用 ui_probe_close。"""
     if not ctx.deps.probe_session_id:
-        raise ValueError("UI 探测会话不可用（probe_session_id 未注入）")
+        raise ValueError("UI probe session is unavailable (probe_session_id not injected)")
     eid = ctx.deps.resolve_env_id(env_id, required=False)
     r = await ctx.deps.sched.stub.OpenProbe(cpb.OpenProbeRequest(
         ctx=ctx.deps.ctx(), session_id=ctx.deps.probe_session_id,

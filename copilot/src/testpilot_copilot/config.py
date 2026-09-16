@@ -57,6 +57,8 @@ _FIELDS: dict[str, tuple[str, str, object, type, bool]] = {
     # Prompt 模板路径：空 = 使用包内置 prompts/system.md / prompts/summarizer.md
     "system_prompt_file":     ("system_prompt_file", "TP_COPILOT_SYSTEM_PROMPT_FILE", "", str, True),
     "summarizer_prompt_file": ("summarizer_prompt_file", "TP_COPILOT_SUMMARIZER_PROMPT_FILE", "", str, True),
+    # 回复语言默认值（前端可用 X-TP-Lang 头按请求覆盖）：zh | en
+    "default_language":       ("default_language", "TP_COPILOT_DEFAULT_LANGUAGE", "zh", str, True),
     "context_window":   ("context_window", "TP_COPILOT_CONTEXT_WINDOW", 64000, int, True),
     "scheduler_grpc":   ("scheduler_grpc", "TP_SCHEDULER_GRPC", "127.0.0.1:9090", str, True),
     "scheduler_rest":   ("scheduler_rest", "TP_SCHEDULER_REST", "http://127.0.0.1:8080", str, True),
@@ -85,6 +87,7 @@ class Settings:
     probe_snapshot_max_bytes: int = 16384
     system_prompt_file: str = ""
     summarizer_prompt_file: str = ""
+    default_language: str = "zh"
     context_window: int = 64000
     scheduler_grpc: str = "127.0.0.1:9090"
     scheduler_rest: str = "http://127.0.0.1:8080"
@@ -97,18 +100,18 @@ class Settings:
 
     def validate(self) -> None:
         if not self.api_key:
-            raise RuntimeError("TP_COPILOT_API_KEY 未设置（见 copilot/.env.example）")
+            raise RuntimeError("TP_COPILOT_API_KEY is not set (see copilot/.env.example)")
         for name, t, p in (("temperature", self.temperature, self.top_p),
                            ("summarizer", self.summarizer_temperature, self.summarizer_top_p)):
             if t is not None and not 0 <= t <= 2:
-                raise SystemExit(f"config {name}: {t} 应在 [0, 2]")
+                raise SystemExit(f"config {name}: {t} must be in [0, 2]")
             if p is not None and not 0 < p <= 1:
-                raise SystemExit(f"config {name} top_p: {p} 应在 (0, 1]")
+                raise SystemExit(f"config {name} top_p: {p} must be in (0, 1]")
 
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="testpilot-copilot", description="TestPilot Copilot")
-    p.add_argument("--config", default="", help="YAML 配置路径（> TP_COPILOT_CONFIG > ./copilot.yaml）")
+    p.add_argument("--config", default="", help="YAML config path (> TP_COPILOT_CONFIG > ./copilot.yaml)")
     for dest, (key, _env, _default, typ, cli_ok) in _FIELDS.items():
         if not cli_ok:
             continue
@@ -137,7 +140,7 @@ def resolve(args: argparse.Namespace, env: dict[str, str] | None = None,
     if path:
         ydoc = yaml.safe_load(Path(path).read_text(encoding="utf-8")) or {}
         if not isinstance(ydoc, dict):
-            raise SystemExit(f"config {path}: 顶层必须是 mapping")
+            raise SystemExit(f"config {path}: top-level must be a mapping")
 
     values: dict[str, object] = {}
     for dest, (key, env_key, default, typ, _cli) in _FIELDS.items():
@@ -155,7 +158,7 @@ def resolve(args: argparse.Namespace, env: dict[str, str] | None = None,
             try:
                 v = typ(v)
             except (TypeError, ValueError):
-                raise SystemExit(f"config {key}: {v!r} 类型应为 {typ.__name__}") from None
+                raise SystemExit(f"config {key}: {v!r} must be of type {typ.__name__}") from None
         values[dest] = v
     return Settings(**values)
 
