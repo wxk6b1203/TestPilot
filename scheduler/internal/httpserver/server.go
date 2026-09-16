@@ -150,6 +150,13 @@ func (s *Server) App() *fiber.App {
 	h(fiber.MethodPut, "/proto-files/:id", auth.RoleMember, s.updateProtoFile)
 	h(fiber.MethodDelete, "/proto-files/:id", auth.RoleMember, s.deleteProtoFile)
 
+	// 数据模型（结构）：JSON Schema 形态的结构定义
+	h(fiber.MethodGet, "/models", auth.RoleViewer, s.listDataModels)
+	h(fiber.MethodPost, "/models", auth.RoleMember, s.createDataModel)
+	h(fiber.MethodGet, "/models/:id", auth.RoleViewer, s.getDataModel)
+	h(fiber.MethodPut, "/models/:id", auth.RoleMember, s.updateDataModel)
+	h(fiber.MethodDelete, "/models/:id", auth.RoleMember, s.deleteDataModel)
+
 	h(fiber.MethodGet, "/cases", auth.RoleViewer, s.listCases)
 	h(fiber.MethodPost, "/cases", auth.RoleMember, s.createCase)
 	h(fiber.MethodGet, "/cases/:id", auth.RoleViewer, s.getCase)

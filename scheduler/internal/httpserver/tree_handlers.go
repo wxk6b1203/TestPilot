@@ -71,6 +71,8 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 		leafTypes = []int16{model.NodeTypeTestCase}
 	case "suite", "suites":
 		leafTypes = []int16{model.NodeTypeSuite}
+	case "model", "models":
+		leafTypes = []int16{model.NodeTypeDataMdl}
 	default:
 		leafTypes = []int16{model.NodeTypeHTTPAPI}
 	}
@@ -89,6 +91,7 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 	caseByName := map[int64]model.TestCase{}
 	suiteByName := map[int64]model.TestSuite{}
 	apiByName := map[int64]model.HttpApi{}
+	dmByName := map[int64]model.DataModel{}
 	for _, n := range nodes {
 		if n.RefID == 0 {
 			continue
@@ -118,6 +121,14 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 			}
 			for _, x := range ss {
 				suiteByName[x.ID] = x
+			}
+		case model.NodeTypeDataMdl:
+			var ms []model.DataModel
+			if err := s.db.Where("tenant_id = ? AND id = ?", c.TenantID, n.RefID).Find(&ms).Error; err != nil {
+				return writeAppErr(ctx, apperr.Internal(err.Error()))
+			}
+			for _, x := range ms {
+				dmByName[x.ID] = x
 			}
 		}
 	}
@@ -149,6 +160,10 @@ func (s *Server) getProjectTree(ctx fiber.Ctx) error {
 		case model.NodeTypeSuite:
 			if s, ok := suiteByName[n.RefID]; ok {
 				v.Ref = map[string]any{"id": s.ID, "name": s.Name, "description": s.Description}
+			}
+		case model.NodeTypeDataMdl:
+			if m, ok := dmByName[n.RefID]; ok {
+				v.Ref = map[string]any{"id": m.ID, "name": m.Name, "description": m.Description}
 			}
 		}
 		byParent[n.ParentID] = append(byParent[n.ParentID], v)
@@ -340,7 +355,8 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 	if refType == 0 {
 		refType = model.NodeTypeHTTPAPI
 	}
-	if refID == 0 || (refType != model.NodeTypeHTTPAPI && refType != model.NodeTypeTestCase && refType != model.NodeTypeSuite) {
+	if refID == 0 || (refType != model.NodeTypeHTTPAPI && refType != model.NodeTypeTestCase &&
+		refType != model.NodeTypeSuite && refType != model.NodeTypeDataMdl) {
 		return writeAppErr(ctx, apperr.BadRequest(apperr.CodeInvalidParam, "ref_type/ref_id 不合法"))
 	}
 
@@ -367,6 +383,12 @@ func (s *Server) mountAPI(ctx fiber.Ctx) error {
 			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "suite not found"))
 		}
 		name = su.Name
+	case model.NodeTypeDataMdl:
+		var dm model.DataModel
+		if err := s.db.Where("id = ? AND tenant_id = ?", refID, c.TenantID).First(&dm).Error; err != nil {
+			return writeAppErr(ctx, apperr.NotFound(apperr.CodeNotFound, "data model not found"))
+		}
+		name = dm.Name
 	}
 
 	path, err := s.nodePath(c.TenantID, in.ParentID)
@@ -478,7 +500,7 @@ func (s *Server) moveNode(ctx fiber.Ctx) error {
 	return writeJSON(ctx, fiber.StatusOK, map[string]any{"ok": true})
 }
 
-// unmountAPI 摘挂接口/用例/套件（只删树节点，不删实体）。
+// unmountAPI 摘挂接口/用例/套件/数据模型（只删树节点，不删实体）。
 func (s *Server) unmountAPI(ctx fiber.Ctx) error {
 	c := claimsOf(ctx)
 	id, ok := pathID(ctx, "id")
@@ -486,7 +508,7 @@ func (s *Server) unmountAPI(ctx fiber.Ctx) error {
 		return nil
 	}
 	res := s.db.Where("id = ? AND tenant_id = ? AND node_type IN ?", id, c.TenantID,
-		[]int16{model.NodeTypeHTTPAPI, model.NodeTypeTestCase, model.NodeTypeSuite}).Delete(&model.TreeNode{})
+		[]int16{model.NodeTypeHTTPAPI, model.NodeTypeTestCase, model.NodeTypeSuite, model.NodeTypeDataMdl}).Delete(&model.TreeNode{})
 	if res.Error != nil {
 		return writeAppErr(ctx, apperr.Internal(res.Error.Error()))
 	}

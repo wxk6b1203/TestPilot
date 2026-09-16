@@ -202,9 +202,33 @@ type HttpApi struct {
 	PostScripts   JSON           `json:"post_scripts,omitempty" gorm:"type:text"`
 	Settings      JSON           `json:"settings,omitempty" gorm:"type:text"`
 	CertificateID int64          `json:"certificate_id"`
-	CreatedAt     time.Time      `json:"created_at"`
-	UpdatedAt     time.Time      `json:"updated_at"`
-	DeletedAt     gorm.DeletedAt `json:"-" gorm:"index"`
+	// 设计态元数据（设计/调试分离）：*_design 是参数/头/Cookie 的预设
+	//（[{name,type,required,default,description,example}]，type 为 JSON Schema 类型词）；
+	// 调试运行值仍存 Params/Headers/Cookies。请求/响应体为 JSON Schema 文档（draft-07
+	// 子集），空 = 未设计（调试时自由编辑，不做校验约束）。
+	ParamsDesign   JSON           `json:"params_design,omitempty" gorm:"column:params_design;type:text"`
+	HeadersDesign  JSON           `json:"headers_design,omitempty" gorm:"column:headers_design;type:text"`
+	CookiesDesign  JSON           `json:"cookies_design,omitempty" gorm:"column:cookies_design;type:text"`
+	RequestSchema  JSON           `json:"request_schema,omitempty" gorm:"column:request_schema;type:text"`
+	ResponseSchema JSON           `json:"response_schema,omitempty" gorm:"column:response_schema;type:text"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
+	DeletedAt      gorm.DeletedAt `json:"-" gorm:"index"`
+}
+
+// DataModel 数据模型（前端「结构」）：JSON Schema 形态的结构定义，接口设计时可
+// 引用/复制到请求体或响应。列名用 schema_text 而非 schema：SCHEMA 是 MySQL 保留字，
+// 规避双方言（SQLite/PG/MySQL 参考 DDL）的列名转义差异。
+type DataModel struct {
+	ID          int64          `json:"id" gorm:"primaryKey"`
+	TenantID    int64          `json:"tenant_id" gorm:"index:idx_dmodel_tp"`
+	ProjectID   int64          `json:"project_id" gorm:"index:idx_dmodel_tp"`
+	Name        string         `json:"name"`
+	Description string         `json:"description"`
+	SchemaText  JSON           `json:"schema,omitempty" gorm:"column:schema_text;type:text"`
+	CreatedAt   time.Time      `json:"created_at"`
+	UpdatedAt   time.Time      `json:"updated_at"`
+	DeletedAt   gorm.DeletedAt `json:"-" gorm:"index"`
 }
 
 // ---- 目录树 ----
@@ -230,6 +254,7 @@ const (
 	NodeTypeTestCase int16 = 4
 	NodeTypeSuite    int16 = 5
 	NodeTypePlan     int16 = 6
+	NodeTypeDataMdl  int16 = 7 // 数据模型（叶子）
 )
 
 // ---- 测试用例 / 计划 ----
@@ -600,7 +625,7 @@ func AllModels() []any {
 	return []any{
 		&Tenant{}, &User{}, &TenantMember{},
 		&Project{}, &Environment{}, &Variable{}, &Certificate{},
-		&HttpApi{}, &TreeNode{},
+		&HttpApi{}, &TreeNode{}, &DataModel{},
 		&TestCase{}, &TestPlan{}, &TestPlanItem{},
 		&TestSuite{}, &TestSuiteItem{}, &Script{},
 		&TenantSetting{},
