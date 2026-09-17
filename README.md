@@ -16,6 +16,8 @@ TestPilot is an LLM-enhanced integration testing platform: manage HTTP / gRPC AP
 
 ![Copilot page](./assets/screenshot_3.png)
 
+![Copilot generating a low-code case (HITL approval)](./assets/screenshot_4.png)
+
 ### API management
 
 - HTTP APIs: method / URI / params / headers / cookies / body / TLS / redirects / JSONC / binary references;
